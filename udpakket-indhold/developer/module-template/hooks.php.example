@@ -1,0 +1,4 @@
+<?php
+hsg_add_action('reservation.created', function(array $payload): void {
+    // Integration eller anden reaktion på reservation.
+});
