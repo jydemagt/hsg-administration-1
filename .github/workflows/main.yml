@@ -1,0 +1,29 @@
+name: Unzip File Automatically
+
+on:
+  push:
+    paths:
+      - '**.zip' # Kører kun, når en .zip-fil uploades
+
+jobs:
+  unzip:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Giver GitHub lov til at gemme de udpakkede filer
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Unzip files
+        run: |
+          # Udskift 'arkiv.zip' med navnet på din zip-fil, eller brug *.zip
+          unzip -o "*.zip" -d ./udpakket-indhold/
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@://github.com"
+          git add .
+          git commit -m "Automatisk udpakning af ZIP-fil" || exit 0
+          git push
