@@ -1,4 +1,0 @@
-Options -Indexes
-<FilesMatch "^(config\.php|schema\.sql|initial-stock\.json|README\.txt|app_version\.php|migrations\.php)$">
-  Require all denied
-</FilesMatch>
