@@ -1,0 +1,8 @@
+config.php
+config.local.php
+.env
+storage/backups/
+storage/data/
+uploads/
+*.log
+*.zip
