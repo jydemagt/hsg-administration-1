@@ -73,7 +73,7 @@
         "core/quality.php": "4a3fe22c20473c54396a0f152a99b1723d4b05eceab3b7f9b4a3c4da0b01defa",
         "core/settings.php": "c7235f51743933d467fdfeba89213b97edcaafb3fe5784a611fdf4c6b08bf8d7",
         "core/supplier_import.php": "8bbc7c82d993c6f87a08114e10337cd3a41ae9b7a9237f479ee030687d514a7d",
-        "core/updater.php": "e3ed29dd97d167f1b1b412b8fb603c116afe505b6688b37b0ccdf16e41b8557c",
+        "core/updater.php": "26e7d5eb4657e6938983aa7ca2716f8abde5683eb954f231166c119d945c0b0c",
         "cron/backup.php": "3908e23adbb3eb539305521d1d0c1986af535fd6953fb7059e1de623fddc5be1",
         "db.php": "e4613d2c99a3fdfb315f4d510242f06d4761d938da8262e9d967e4c7d2ad4d7e",
         "developer/module-template/README.md": "f749f06c6b4629667625c08c1578b75a88d2527a593d35651043400d8e4d2cf8",
