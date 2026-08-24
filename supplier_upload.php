@@ -2,8 +2,27 @@
 require __DIR__.'/auth.php';require_module_enabled('supplier_upload');require_capability('imports.manage');require_once __DIR__.'/core/supplier_import.php';
 
 $fieldLabels=[
- 'cask_number'=>'Fadnummer','cask_type'=>'Fadtype','wholesale_price'=>'Engrospris','retail_price'=>'Udsalgspris','abv'=>'ABV','distillery'=>'Destilleri',
+ 'sku'=>'SKU / Varenummer','name'=>'Produktnavn','brand_name'=>'Brand / Mærke','cask_number'=>'Fadnummer','cask_type'=>'Fadtype',
+ 'wholesale_price'=>'Engrospris','retail_price'=>'Udsalgspris','abv'=>'ABV','distillery'=>'Destilleri',
  'age_text'=>'Alder','vintage_year'=>'Årgang','category'=>'Kategori','country'=>'Land','bottle_size_cl'=>'Flaskestørrelse','bottle_count'=>'Antal flasker'
+];
+$assignableFields=[
+ ''=>'– Ignorer kolonne –',
+ 'sku'=>'SKU / Varenummer',
+ 'name'=>'Produktnavn',
+ 'cask_number'=>'Fadnummer (Cask #)',
+ 'cask_type'=>'Fadtype',
+ 'wholesale_price'=>'Engrospris / Indkøbspris',
+ 'retail_price'=>'Udsalgspris (RRP)',
+ 'abv'=>'ABV / Alkoholprocent (% Vol.)',
+ 'distillery'=>'Destilleri',
+ 'age_text'=>'Alder (f.eks. 12 Years)',
+ 'vintage_year'=>'Årgang / Destilleringsår',
+ 'brand_name'=>'Brand / Mærke / Aftapper',
+ 'category'=>'Kategori (f.eks. Single Malt)',
+ 'country'=>'Land',
+ 'bottle_size_cl'=>'Flaskestørrelse (cl)',
+ 'bottle_count'=>'Antal flasker (Outturn)'
 ];
 $token=trim((string)($_GET['preview']??$_POST['preview_token']??''));
 
@@ -16,6 +35,17 @@ if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='uplo
         audit_log($pdo,'supplier_import.preview','import',null,['filename'=>$name,'sheet'=>$preview['sheet'],'rows'=>count($preview['items']),'brand_id'=>$brandId]);
         redirect('supplier_upload.php?preview='.$token);
     }catch(Throwable $e){flash('error',$e->getMessage());redirect('supplier_upload.php');}
+}
+
+if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='remap'){
+    try{
+        $preview=hsg_supplier_preview_load($token);
+        $customMap=(array)($_POST['col_map']??[]);
+        $preview=hsg_supplier_recalculate_preview($pdo,$preview,$customMap);
+        hsg_supplier_preview_save($preview);
+        flash('success','Kolonnemapping blev opdateret og preview er genberegnet.');
+        redirect('supplier_upload.php?preview='.$token);
+    }catch(Throwable $e){flash('error','Kunne ikke genberegne mapping: '.$e->getMessage());redirect('supplier_upload.php'.($token?'?preview='.$token:''));}
 }
 
 if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='apply'){
@@ -68,6 +98,39 @@ $detected=array_keys((array)$preview['mapping']);$detectedLabels=[];foreach($det
   <div class="page-title"><div><h2>Preview: <?=h($preview['filename'])?></h2><p class="muted">Fundet i <strong><?=h($preview['sheet'])?></strong>, overskriftsrække <?=$preview['header_row']?>. Genkendte felter: <?=h(implode(', ',$detectedLabels))?>.</p></div></div>
   <p><span class="badge green">90–100 %</span> vælges som udgangspunkt automatisk. <span class="badge">70–89 %</span> kræver din vurdering. Usikre/umatchede rækker ændrer intet.</p>
 </div>
+
+<details class="card" <?=isset($_GET['remap'])||count($detected)===0?'open':''?>>
+  <summary style="cursor:pointer;font-weight:600;font-size:1.1rem;">⚙️ Kolonnemapping (Tilknytning af felter)</summary>
+  <p class="muted" style="margin-top:8px;">Vælg hvilken kolonne fra filen der svarer til hvilken egenskab i HSG. Systemet har automatisk forslået de mest sandsynlige matchende felter:</p>
+  <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="remap"><input type="hidden" name="preview_token" value="<?=h($token)?>">
+    <div class="table-wrap" style="max-height:380px;overflow-y:auto;margin-bottom:12px;">
+      <table>
+        <thead><tr><th>Fil-kolonne</th><th>Overskrift i dokument</th><th>Tilknyttet HSG-felt</th></tr></thead>
+        <tbody>
+          <?php
+          $headers=(array)($preview['headers']??[]);
+          $colMapping=(array)($preview['col_mapping']??[]);
+          foreach($headers as $ci=>$headerText):
+            $curField=$colMapping[$ci]??'';
+          ?>
+          <tr>
+            <td><strong>Kolonne #<?=($ci+1)?></strong></td>
+            <td><code><?=h($headerText!==''?$headerText:'(Tom overskrift)')?></code></td>
+            <td>
+              <select name="col_map[<?=$ci?>]">
+                <?php foreach($assignableFields as $fKey=>$fLabel): ?>
+                  <option value="<?=$fKey?>" <?=$curField===$fKey?'selected':''?>><?=h($fLabel)?></option>
+                <?php endforeach; ?>
+              </select>
+            </td>
+          </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+    <button class="button secondary">Genberegn preview med tilpasset kolonnemapping</button>
+  </form>
+</details>
 <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="apply"><input type="hidden" name="preview_token" value="<?=h($token)?>">
 <div class="table-wrap"><table><thead><tr><th>Opdatér</th><th>Filrække</th><th>Leverandørens vare</th><th>Match i HSG</th><th>Foreslåede ændringer</th></tr></thead><tbody>
 <?php foreach($preview['items'] as $i=>$item):$src=(array)$item['source'];$mid=(int)($item['match']['id']??0);$score=(int)($item['match']['score']??0);$changes=(array)$item['changes'];?>
