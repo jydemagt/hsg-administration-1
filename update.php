@@ -24,8 +24,10 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 flash('info','Du har allerede den nyeste version ('.$release['version'].') ifølge GitHub.');
             }
         } elseif($action==='stage_github'){
-            $url=(string)($_POST['download_url']??'');
-            $ver=(string)($_POST['version']??'');
+            $release=hsg_github_check_latest_release();
+            $_SESSION['hsg_github_release']=$release;
+            $url=$release['download_url']!==''?$release['download_url']:(string)($_POST['download_url']??'');
+            $ver=$release['version']!==''?$release['version']:(string)($_POST['version']??'');
             if($url==='' || $ver==='') throw new RuntimeException('Mangler oplysninger om GitHub-opdatering.');
             $old=hsg_staged_update_from_session(); if($old) hsg_update_cleanup_staged((string)$old['path']);
             $info=hsg_github_download_and_stage($url, $ver);
