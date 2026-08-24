@@ -74,6 +74,7 @@
         "core/settings.php": "c7235f51743933d467fdfeba89213b97edcaafb3fe5784a611fdf4c6b08bf8d7",
         "core/supplier_import.php": "8bbc7c82d993c6f87a08114e10337cd3a41ae9b7a9237f479ee030687d514a7d",
         "core/updater.php": "aa4b1f8e6680e4939f42fe636be87be2c3d43645d3d9add8ac0e4552b9b23ef6",
+        "core/updater.php": "31be621fd91dfefc6829a739c9f4eb64cc20c6221a82ef51463faf9d8f6d6ed9",
         "cron/backup.php": "3908e23adbb3eb539305521d1d0c1986af535fd6953fb7059e1de623fddc5be1",
         "db.php": "e4613d2c99a3fdfb315f4d510242f06d4761d938da8262e9d967e4c7d2ad4d7e",
         "developer/module-template/README.md": "f749f06c6b4629667625c08c1578b75a88d2527a593d35651043400d8e4d2cf8",
