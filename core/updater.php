@@ -155,14 +155,14 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
         $hashes=(array)($manifest['files']??[]);
         $ignoredMetaFiles=['.gitignore','.gitattributes','.htaccess','.DS_Store','README.md','storage/.htaccess'];
         foreach($entries as $rel=>$entry){
-            if(!empty($entry['dir']) || $rel==='hsg-package.json') continue;
+            if(!empty($entry['dir']) || $rel==='hsg-package.json' || str_ends_with(strtolower($rel),'.zip')) continue;
             if(in_array($rel,$ignoredMetaFiles,true) && !array_key_exists($rel,$hashes)) continue;
             if(!array_key_exists($rel,$hashes)) throw new RuntimeException('Pakken indeholder en fil, som ikke er med i integritetsmanifestet: '.$rel);
         }
         foreach($hashes as $rel=>$expected){
             $rel=hsg_update_normalize_entry((string)$rel);
             $expected=strtolower(trim((string)$expected));
-            if(in_array($rel,$ignoredMetaFiles,true) && !isset($entries[$rel])) continue;
+            if((in_array($rel,$ignoredMetaFiles,true) || str_ends_with(strtolower($rel),'.zip')) && !isset($entries[$rel])) continue;
             if($rel==='' || !isset($entries[$rel]) || $entries[$rel]['dir']) throw new RuntimeException('Manifestet refererer til en manglende fil: '.$rel);
             if(!preg_match('/^[a-f0-9]{64}$/',$expected)) throw new RuntimeException('Ugyldig filhash i pakkemanifestet.');
             $contents=$zip->getFromIndex((int)$entries[$rel]['index']);
