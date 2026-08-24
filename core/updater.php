@@ -396,6 +396,9 @@ function hsg_github_http_get(string $url, int &$status = 0): string {
 }
 
 function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administration-1'): array {
+    $releaseData = null;
+    $releaseVersion = '0.0.0';
+
     // Check GitHub Releases first
     $releaseUrl = "https://api.github.com/repos/{$repo}/releases/latest";
     try {
@@ -417,7 +420,8 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
             if($downloadUrl === '') {
                 $downloadUrl = (string)($data['zipball_url'] ?? "https://github.com/{$repo}/archive/refs/tags/{$tag}.zip");
             }
-            return [
+            $releaseVersion = $version;
+            $releaseData = [
                 'tag' => $tag,
                 'version' => $version,
                 'current_version' => app_version(),
@@ -439,20 +443,28 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
         $manifestJson = hsg_github_http_get($rawManifestUrl, $manifestStatus);
         if($manifestStatus === 200 && trim($manifestJson) !== '') {
             $manifest = json_decode($manifestJson, true, 32, JSON_THROW_ON_ERROR);
-            $version = (string)($manifest['version'] ?? app_version());
-            return [
-                'tag' => 'main',
-                'version' => $version,
-                'current_version' => app_version(),
-                'has_update' => version_compare($version, app_version(), '>'),
-                'name' => 'GitHub main branch (v'.$version.')',
-                'notes' => (string)($manifest['release_notes'] ?? 'Ny opdatering fra GitHub main branch.'),
-                'download_url' => "https://github.com/{$repo}/archive/refs/heads/main.zip",
-                'published_at' => date('Y-m-d H:i:s'),
-            ];
+            $mainVersion = (string)($manifest['version'] ?? app_version());
+            if(version_compare($mainVersion, $releaseVersion, '>')) {
+                return [
+                    'tag' => 'main',
+                    'version' => $mainVersion,
+                    'current_version' => app_version(),
+                    'has_update' => version_compare($mainVersion, app_version(), '>'),
+                    'name' => 'GitHub main branch (v'.$mainVersion.')',
+                    'notes' => (string)($manifest['release_notes'] ?? 'Ny opdatering fra GitHub main branch.'),
+                    'download_url' => "https://github.com/{$repo}/archive/refs/heads/main.zip",
+                    'published_at' => date('Y-m-d H:i:s'),
+                ];
+            }
         }
     } catch(Throwable $e) {
-        throw new RuntimeException('Kunne ikke hente oplysninger fra GitHub: '.$e->getMessage(), 0, $e);
+        if(!$releaseData) {
+            throw new RuntimeException('Kunne ikke hente oplysninger fra GitHub: '.$e->getMessage(), 0, $e);
+        }
+    }
+
+    if($releaseData) {
+        return $releaseData;
     }
 
     return [
