@@ -1,7 +1,7 @@
 {
     "product": "HSG Administration",
     "package_type": "update",
-    "version": "1.7.4",
+    "version": "1.7.5",
     "min_php": "8.1.0",
     "required_extensions": [
         "pdo_mysql",
@@ -35,7 +35,7 @@
         "core/access_links.php",
         "users.php"
     ],
-    "release_notes": "v1.7.4: Tilf\u00f8jet mulighed for tilpasset kolonnemapping med automatisk felt-forslag ved leverand\u00f8r-upload.",
+    "release_notes": "v1.7.5: Priorit\u00e9r main branch download fra GitHub samt forbedret opdateringskontrol.",
     "delete": [
         "test-catalog-v151.pdf"
     ],
@@ -48,7 +48,7 @@
         "admin-login.php": "04b061728bcf753ba6dbeb535bc69fae7a3fff3d1ed5605ef9b8a85339691cfe",
         "admin-setup.php": "323ecd555ca2f7b4e920c482736e53829c14e7ef0ef400e7421872f2b954e8d2",
         "admin.php": "e0ab785ffc6f69eea80462fd663709c43c88fe3b7b95ce4318107163aaed7dbc",
-        "app_version.php": "d5e457ad9f83c45b4a123eb1c48c71494bb8e8fa7b8ca3c519df131adaa86462",
+        "app_version.php": "294e9811a08cdd30ad6226d014008aaa6dfb0c710c2bfdea79b40100ed5d2e36",
         "assets/bottle-placeholder.svg": "bb77203924ece9b630dce344f4d700e017028398787a1bdb1612b9a70b9599f4",
         "assets/style.css": "c2a0233da8ab45e7f3518462ac0ca51b815557d6e6ff996908a7507080708048",
         "auth.php": "a34d291e367c49c6163dd3220624d8202c57b028bd6fa5d1db95e29cac66c556",
@@ -73,7 +73,7 @@
         "core/quality.php": "4a3fe22c20473c54396a0f152a99b1723d4b05eceab3b7f9b4a3c4da0b01defa",
         "core/settings.php": "c7235f51743933d467fdfeba89213b97edcaafb3fe5784a611fdf4c6b08bf8d7",
         "core/supplier_import.php": "2b51010c55bf29a1040ec4c59a7aef771da1d1db34429cfaf541032c606e6ad9",
-        "core/updater.php": "aa4b1f8e6680e4939f42fe636be87be2c3d43645d3d9add8ac0e4552b9b23ef6",
+        "core/updater.php": "fbca0360f36e94505758f535f0f0f1dfba727df9444808df68ac67dc9fc7550e",
         "cron/backup.php": "3908e23adbb3eb539305521d1d0c1986af535fd6953fb7059e1de623fddc5be1",
         "db.php": "e4613d2c99a3fdfb315f4d510242f06d4761d938da8262e9d967e4c7d2ad4d7e",
         "developer/module-template/README.md": "f749f06c6b4629667625c08c1578b75a88d2527a593d35651043400d8e4d2cf8",

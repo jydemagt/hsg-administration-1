@@ -444,7 +444,7 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
         if($manifestStatus === 200 && trim($manifestJson) !== '') {
             $manifest = json_decode($manifestJson, true, 32, JSON_THROW_ON_ERROR);
             $mainVersion = (string)($manifest['version'] ?? app_version());
-            if(version_compare($mainVersion, $releaseVersion, '>')) {
+            if(version_compare($mainVersion, $releaseVersion, '>=')) {
                 return [
                     'tag' => 'main',
                     'version' => $mainVersion,
