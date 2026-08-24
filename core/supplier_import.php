@@ -142,6 +142,32 @@ function hsg_supplier_find_match(array $src,array $products,?int $brandId=null):
     return $best;
 }
 
+function hsg_supplier_suggest_columns(array $headers): array {
+    $aliases=hsg_supplier_aliases();$reverse=[];
+    foreach($aliases as $field=>$names)foreach($names as $n)$reverse[hsg_supplier_norm($n)]=$field;
+    $colMap=[];$usedFields=[];
+    foreach($headers as $ci=>$cell){
+        $cell=trim((string)$cell);if($cell===''){$colMap[(int)$ci]='';continue;}
+        $n=hsg_supplier_norm($cell);$matched=null;
+        if(isset($reverse[$n])){$matched=$reverse[$n];}
+        else{
+            foreach($aliases as $field=>$names){
+                foreach($names as $alias){
+                    $an=hsg_supplier_norm($alias);
+                    if(strlen($an)>=4 && (str_contains($n,$an)||str_contains($an,$n))){$matched=$field;break 2;}
+                }
+            }
+        }
+        if($matched && !in_array($matched,$usedFields,true)){
+            $usedFields[]=$matched;
+            $colMap[(int)$ci]=$matched;
+        } else {
+            $colMap[(int)$ci]='';
+        }
+    }
+    return $colMap;
+}
+
 function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?int $brandId=null): array {
     $bestSheet=null;$bestHeader=null;
     foreach($sheets as $sheet=>$rows){try{$h=hsg_supplier_detect_header($rows);if($bestHeader===null||$h['score']>$bestHeader['score']){$bestSheet=$sheet;$bestHeader=$h;}}catch(Throwable $e){}}
@@ -149,12 +175,74 @@ function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?i
     $products=$pdo->query('SELECT p.*,b.name brand_name FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id ORDER BY p.name')->fetchAll(PDO::FETCH_ASSOC);
     $byId=[];foreach($products as $p)$byId[(int)$p['id']]=$p;
     $rows=$sheets[$bestSheet];$items=[];$start=$bestHeader['row']+1;
-    foreach(array_slice($rows,$start,null,true) as $ri=>$row){$src=hsg_supplier_source_fields($row,$bestHeader['map']);if(!$src)continue;if(empty($src['name'])&&empty($src['sku'])&&empty($src['cask_number']))continue;
+    $headers=(array)$bestHeader['headers'];
+    $colMap=hsg_supplier_suggest_columns($headers);
+    $fieldMap=[];
+    foreach($colMap as $ci=>$field){if($field!==''){$fieldMap[$field]=(int)$ci;}}
+    $rawRows=array_values(array_slice($rows,$start,null,true));
+
+    foreach($rawRows as $i=>$row){
+        $src=hsg_supplier_source_fields((array)$row,$fieldMap);if(!$src)continue;if(empty($src['name'])&&empty($src['sku'])&&empty($src['cask_number']))continue;
         $match=hsg_supplier_find_match($src,$products,$brandId);$pid=(int)$match['id'];$changes=[];
         if($pid&&isset($byId[$pid]))$changes=hsg_supplier_changes_for_product($src,$byId[$pid]);
-        $items[]=['row'=>(int)$ri+1,'source'=>$src,'match'=>$match,'changes'=>$changes,'selected'=>$pid>0&&$match['score']>=90&&count($changes)>0];
+        $items[]=['row'=>(int)$start+1+$i,'source'=>$src,'match'=>$match,'changes'=>$changes,'selected'=>$pid>0&&$match['score']>=90&&count($changes)>0];
     }
-    return ['filename'=>$filename,'sheet'=>$bestSheet,'header_row'=>$bestHeader['row']+1,'headers'=>$bestHeader['headers'],'mapping'=>$bestHeader['map'],'items'=>$items,'created_at'=>date('c'),'brand_id'=>$brandId];
+    return [
+        'filename'=>$filename,
+        'sheet'=>$bestSheet,
+        'header_row'=>$bestHeader['row']+1,
+        'headers'=>$headers,
+        'mapping'=>$fieldMap,
+        'col_mapping'=>$colMap,
+        'raw_rows'=>$rawRows,
+        'items'=>$items,
+        'created_at'=>date('c'),
+        'brand_id'=>$brandId
+    ];
+}
+
+function hsg_supplier_recalculate_preview(PDO $pdo, array $preview, array $customColMap): array {
+    $colMap = [];
+    $fieldMap = [];
+    foreach($customColMap as $ci => $field) {
+        $ci = (int)$ci;
+        $field = trim((string)$field);
+        $colMap[$ci] = $field;
+        if($field !== '') {
+            $fieldMap[$field] = $ci;
+        }
+    }
+    $products = $pdo->query('SELECT p.*,b.name brand_name FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id ORDER BY p.name')->fetchAll(PDO::FETCH_ASSOC);
+    $byId = [];
+    foreach($products as $p) $byId[(int)$p['id']] = $p;
+
+    $brandId = !empty($preview['brand_id']) ? (int)$preview['brand_id'] : null;
+    $rawRows = (array)($preview['raw_rows'] ?? []);
+    $items = [];
+    $start = (int)($preview['header_row'] ?? 1);
+
+    foreach($rawRows as $i => $row) {
+        $src = hsg_supplier_source_fields((array)$row, $fieldMap);
+        if(!$src || (empty($src['name']) && empty($src['sku']) && empty($src['cask_number']))) continue;
+        $match = hsg_supplier_find_match($src, $products, $brandId);
+        $pid = (int)$match['id'];
+        $changes = [];
+        if($pid && isset($byId[$pid])) {
+            $changes = hsg_supplier_changes_for_product($src, $byId[$pid]);
+        }
+        $items[] = [
+            'row' => $start + 1 + $i,
+            'source' => $src,
+            'match' => $match,
+            'changes' => $changes,
+            'selected' => $pid > 0 && $match['score'] >= 90 && count($changes) > 0
+        ];
+    }
+
+    $preview['mapping'] = $fieldMap;
+    $preview['col_mapping'] = $colMap;
+    $preview['items'] = $items;
+    return $preview;
 }
 
 function hsg_supplier_preview_dir(): string {$d=__DIR__.'/../storage/import-previews';if(!is_dir($d)&&!@mkdir($d,0770,true)&&!is_dir($d))throw new RuntimeException('Kunne ikke oprette preview-mappe.');return $d;}
