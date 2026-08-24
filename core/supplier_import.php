@@ -202,6 +202,7 @@ function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?i
 }
 
 function hsg_supplier_recalculate_preview(PDO $pdo, array $preview, array $customColMap): array {
+    $headers = (array)($preview['headers'] ?? []);
     $colMap = [];
     $fieldMap = [];
     foreach($customColMap as $ci => $field) {
@@ -212,6 +213,13 @@ function hsg_supplier_recalculate_preview(PDO $pdo, array $preview, array $custo
             $fieldMap[$field] = $ci;
         }
     }
+    foreach(array_keys($headers) as $ci) {
+        $ci = (int)$ci;
+        if(!array_key_exists($ci, $colMap)) {
+            $colMap[$ci] = '';
+        }
+    }
+    ksort($colMap);
     $products = $pdo->query('SELECT p.*,b.name brand_name FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id ORDER BY p.name')->fetchAll(PDO::FETCH_ASSOC);
     $byId = [];
     foreach($products as $p) $byId[(int)$p['id']] = $p;
@@ -246,7 +254,12 @@ function hsg_supplier_recalculate_preview(PDO $pdo, array $preview, array $custo
 }
 
 function hsg_supplier_preview_dir(): string {$d=__DIR__.'/../storage/import-previews';if(!is_dir($d)&&!@mkdir($d,0770,true)&&!is_dir($d))throw new RuntimeException('Kunne ikke oprette preview-mappe.');return $d;}
-function hsg_supplier_preview_save(array $preview): string {$token=bin2hex(random_bytes(20));$path=hsg_supplier_preview_dir().'/'.$token.'.json';file_put_contents($path,json_encode($preview,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT|JSON_THROW_ON_ERROR),LOCK_EX);return $token;}
+function hsg_supplier_preview_save(array $preview, ?string $existingToken = null): string {
+    $token = ($existingToken !== null && preg_match('/^[a-f0-9]{40}$/', $existingToken)) ? $existingToken : bin2hex(random_bytes(20));
+    $path = hsg_supplier_preview_dir().'/'.$token.'.json';
+    file_put_contents($path, json_encode($preview, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT|JSON_THROW_ON_ERROR), LOCK_EX);
+    return $token;
+}
 function hsg_supplier_preview_load(string $token): array {if(!preg_match('/^[a-f0-9]{40}$/',$token))throw new RuntimeException('Ugyldigt preview-token.');$path=hsg_supplier_preview_dir().'/'.$token.'.json';if(!is_file($path))throw new RuntimeException('Previewet er udløbet eller findes ikke.');$data=json_decode((string)file_get_contents($path),true,512,JSON_THROW_ON_ERROR);return is_array($data)?$data:[];}
 function hsg_supplier_preview_delete(string $token): void {if(preg_match('/^[a-f0-9]{40}$/',$token))@unlink(hsg_supplier_preview_dir().'/'.$token.'.json');}
 

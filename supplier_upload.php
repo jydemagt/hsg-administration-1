@@ -42,10 +42,10 @@ if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='rema
         $preview=hsg_supplier_preview_load($token);
         $customMap=(array)($_POST['col_map']??[]);
         $preview=hsg_supplier_recalculate_preview($pdo,$preview,$customMap);
-        hsg_supplier_preview_save($preview);
+        hsg_supplier_preview_save($preview,$token);
         flash('success','Kolonnemapping blev opdateret og preview er genberegnet.');
-        redirect('supplier_upload.php?preview='.$token);
-    }catch(Throwable $e){flash('error','Kunne ikke genberegne mapping: '.$e->getMessage());redirect('supplier_upload.php'.($token?'?preview='.$token:''));}
+        redirect('supplier_upload.php?preview='.$token.'&remap=1');
+    }catch(Throwable $e){flash('error','Kunne ikke genberegne mapping: '.$e->getMessage());redirect('supplier_upload.php'.($token?'?preview='.$token.'&remap=1':''));}
 }
 
 if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='apply'){
