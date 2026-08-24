@@ -1,7 +1,7 @@
 {
     "product": "HSG Administration",
     "package_type": "update",
-    "version": "1.7.3",
+    "version": "1.7.4",
     "min_php": "8.1.0",
     "required_extensions": [
         "pdo_mysql",
@@ -35,7 +35,7 @@
         "core/access_links.php",
         "users.php"
     ],
-    "release_notes": "v1.7.3: Rettelse af automatisk GitHub opdatering samt opgraderingstjek.",
+    "release_notes": "v1.7.4: Tilf\u00f8jet mulighed for tilpasset kolonnemapping med automatisk felt-forslag ved leverand\u00f8r-upload.",
     "delete": [
         "test-catalog-v151.pdf"
     ],
@@ -48,7 +48,7 @@
         "admin-login.php": "04b061728bcf753ba6dbeb535bc69fae7a3fff3d1ed5605ef9b8a85339691cfe",
         "admin-setup.php": "323ecd555ca2f7b4e920c482736e53829c14e7ef0ef400e7421872f2b954e8d2",
         "admin.php": "e0ab785ffc6f69eea80462fd663709c43c88fe3b7b95ce4318107163aaed7dbc",
-        "app_version.php": "2ca38d44fb51eb867c708188b8d42f2daeea093a09fb84bb11560e6930c9ffae",
+        "app_version.php": "d5e457ad9f83c45b4a123eb1c48c71494bb8e8fa7b8ca3c519df131adaa86462",
         "assets/bottle-placeholder.svg": "bb77203924ece9b630dce344f4d700e017028398787a1bdb1612b9a70b9599f4",
         "assets/style.css": "c2a0233da8ab45e7f3518462ac0ca51b815557d6e6ff996908a7507080708048",
         "auth.php": "a34d291e367c49c6163dd3220624d8202c57b028bd6fa5d1db95e29cac66c556",
