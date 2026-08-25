@@ -4,7 +4,27 @@ require __DIR__.'/auth.php';require_module_enabled('supplier_upload');require_ca
 $fieldLabels=[
  'sku'=>'SKU / Varenummer','name'=>'Produktnavn','brand_name'=>'Brand / Mærke','cask_number'=>'Fadnummer','cask_type'=>'Fadtype',
  'wholesale_price'=>'Engrospris','retail_price'=>'Udsalgspris','abv'=>'ABV','distillery'=>'Destilleri',
- 'age_text'=>'Alder','vintage_year'=>'Årgang','category'=>'Kategori','country'=>'Land','bottle_size_cl'=>'Flaskestørrelse','bottle_count'=>'Antal flasker'
+ 'age_text'=>'Alder','vintage_year'=>'Årgang','category'=>'Kategori','country'=>'Land','bottle_size_cl'=>'Flaskestørrelse','bottle_count'=>'Antal flasker',
+ 'stock_quantity'=>'Lagerantal'
+];
+$assignableFields=[
+ ''=>'– Ignorer kolonne –',
+ 'sku'=>'SKU / Varenummer',
+ 'name'=>'Produktnavn',
+ 'cask_number'=>'Fadnummer (Cask #)',
+ 'cask_type'=>'Fadtype',
+ 'wholesale_price'=>'Engrospris / Indkøbspris',
+ 'retail_price'=>'Udsalgspris (RRP)',
+ 'abv'=>'ABV / Alkoholprocent (% Vol.)',
+ 'distillery'=>'Destilleri',
+ 'age_text'=>'Alder (f.eks. 12 Years)',
+ 'vintage_year'=>'Årgang / Destilleringsår',
+ 'brand_name'=>'Brand / Mærke / Aftapper',
+ 'category'=>'Kategori (f.eks. Single Malt)',
+ 'country'=>'Land',
+ 'bottle_size_cl'=>'Flaskestørrelse (cl)',
+ 'bottle_count'=>'Antal flasker (Outturn)',
+ 'stock_quantity'=>'Lagerantal / Beholdning'
 ];
 $assignableFields=[
  ''=>'– Ignorer kolonne –',

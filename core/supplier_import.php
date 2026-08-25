@@ -68,6 +68,7 @@ function hsg_supplier_aliases(): array {
       'country'=>['land','country','origin','oprindelse'],
       'bottle_size_cl'=>['flaskestorrelse','flaskestørrelse','flaskestorrelsecl','size','bottlesize','cl','volume','volumeml'],
       'bottle_count'=>['antalflasker','bottlecount','outturn','yield','numberofbottles'],
+      'stock_quantity'=>['lagerantal','antalpaalager','lagerbeholdning','stockquantity','stockqty','quantity','qty','beholdning','lager','antal'],
     ];
 }
 
@@ -104,6 +105,11 @@ function hsg_supplier_source_fields(array $row,array $map): array {
     foreach(['sku','name','distillery','age_text','brand_name','category','country','cask_type','cask_number','bottle_count'] as $f){$v=hsg_supplier_row_value($row,$map,$f);if($v!=='')$fields[$f]=$v;}
     foreach(['wholesale_price','retail_price','abv','bottle_size_cl'] as $f){$v=hsg_supplier_row_value($row,$map,$f);$n=hsg_supplier_parse_decimal($v);if($n!==null)$fields[$f]=$n;}
     $vy=hsg_supplier_row_value($row,$map,'vintage_year');if(preg_match('/\b(19|20)\d{2}\b/',$vy,$m))$fields['vintage_year']=(int)$m[0];
+    $sq=hsg_supplier_row_value($row,$map,'stock_quantity');
+    if($sq!==''){
+        $sqNum=hsg_supplier_parse_decimal($sq);
+        if($sqNum!==null)$fields['stock_quantity']=(int)max(0,round($sqNum));
+    }
     if($name!==''){
         $parsed=hsg_product_parse_text($name);foreach((array)($parsed['fields']??[]) as $f=>$v)if(!isset($fields[$f])&&$v!==null&&trim((string)$v)!=='')$fields[$f]=$v;
         if(empty($fields['cask_number'])){$c=hsg_extract_cask_number($name);if($c)$fields['cask_number']=$c;}
@@ -264,7 +270,7 @@ function hsg_supplier_preview_load(string $token): array {if(!preg_match('/^[a-f
 function hsg_supplier_preview_delete(string $token): void {if(preg_match('/^[a-f0-9]{40}$/',$token))@unlink(hsg_supplier_preview_dir().'/'.$token.'.json');}
 
 function hsg_supplier_update_fields(): array {
-    return ['cask_number','cask_type','wholesale_price','retail_price','abv','distillery','age_text','vintage_year','category','country','bottle_size_cl','bottle_count'];
+    return ['cask_number','cask_type','wholesale_price','retail_price','abv','distillery','age_text','vintage_year','category','country','bottle_size_cl','bottle_count','stock_quantity'];
 }
 
 function hsg_supplier_changes_for_product(array $src,array $product): array {
@@ -273,18 +279,41 @@ function hsg_supplier_changes_for_product(array $src,array $product): array {
         if(!array_key_exists($field,$src))continue;$new=$src[$field];if($new===null||trim((string)$new)==='')continue;$old=$product[$field]??null;
         $same=in_array($field,['wholesale_price','retail_price','abv','bottle_size_cl'],true)
             ?($old!==null&&trim((string)$old)!==''&&abs((float)$old-(float)$new)<0.001)
-            :hsg_supplier_norm((string)$old)===hsg_supplier_norm((string)$new);
+            :($field==='stock_quantity'
+                ?($old!==null&&trim((string)$old)!==''&&(int)$old===(int)$new)
+                :hsg_supplier_norm((string)$old)===hsg_supplier_norm((string)$new));
         if(!$same)$changes[$field]=['old'=>$old,'new'=>$new];
     }
     return $changes;
 }
 
 function hsg_supplier_apply_product(PDO $pdo,int $productId,array $src): array {
-    $st=$pdo->prepare('SELECT * FROM lager_products WHERE id=?');$st->execute([$productId]);$product=$st->fetch(PDO::FETCH_ASSOC);
+    $st=$pdo->prepare('SELECT p.*, COALESCE((SELECT SUM(s.quantity) FROM lager_stock s JOIN lager_locations l ON l.id=s.location_id WHERE s.product_id=p.id AND l.active=1), 0) stock_quantity FROM lager_products p WHERE p.id=?');
+    $st->execute([$productId]);$product=$st->fetch(PDO::FETCH_ASSOC);
     if(!$product)throw new RuntimeException('Det valgte HSG-produkt findes ikke.');
     $changes=hsg_supplier_changes_for_product($src,$product);if(!$changes)return [];
     $sets=[];$params=[];
-    foreach($changes as $field=>$change){$sets[]="$field=?";$params[]=$change['new'];}
-    $params[]=$productId;$pdo->prepare('UPDATE lager_products SET '.implode(',',$sets).' WHERE id=?')->execute($params);
+    foreach($changes as $field=>$change){
+        if($field==='stock_quantity') continue;
+        $sets[]="$field=?";$params[]=$change['new'];
+    }
+    if($sets){
+        $params[]=$productId;
+        $pdo->prepare('UPDATE lager_products SET '.implode(',',$sets).' WHERE id=?')->execute($params);
+    }
+    if(isset($changes['stock_quantity'])){
+        $newQty=(int)$changes['stock_quantity']['new'];
+        $locSt=$pdo->query('SELECT id FROM lager_locations WHERE active=1 ORDER BY sort_order ASC, id ASC LIMIT 1');
+        $locationId=(int)($locSt->fetchColumn()?:0);
+        if($locationId>0){
+            $stLoc=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=? FOR UPDATE');
+            $stLoc->execute([$productId,$locationId]);
+            $oldQty=(int)($stLoc->fetchColumn()?:0);
+            $changeQty=$newQty-$oldQty;
+            $pdo->prepare('INSERT INTO lager_stock(product_id,location_id,quantity) VALUES(?,?,?) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity)')->execute([$productId,$locationId,$newQty]);
+            $pdo->prepare('INSERT INTO lager_stock_movements(product_id,location_id,change_qty,balance_after,movement_type,reference,created_by,created_by_admin) VALUES(?,?,?,?,?,?,?,?)')
+                ->execute([$productId,$locationId,$changeQty,$newQty,'import','Leverandørupload opdatering',null,current_admin_id()]);
+        }
+    }
     return $changes;
 }
