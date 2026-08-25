@@ -1,8 +1,8 @@
 {
     "product": "HSG Administration",
     "package_type": "update",
-    "version": "1.7.9",
-    "generated_at": "2026-08-24T15:10:14+00:00",
+    "version": "1.8.0",
+    "generated_at": "2026-08-24T15:20:23+00:00",
     "min_php": "8.1.0",
     "required_files": [
         "app_version.php",
