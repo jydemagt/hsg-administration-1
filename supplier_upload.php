@@ -26,24 +26,6 @@ $assignableFields=[
  'bottle_count'=>'Antal flasker (Outturn)',
  'stock_quantity'=>'Lagerantal / Beholdning'
 ];
-$assignableFields=[
- ''=>'– Ignorer kolonne –',
- 'sku'=>'SKU / Varenummer',
- 'name'=>'Produktnavn',
- 'cask_number'=>'Fadnummer (Cask #)',
- 'cask_type'=>'Fadtype',
- 'wholesale_price'=>'Engrospris / Indkøbspris',
- 'retail_price'=>'Udsalgspris (RRP)',
- 'abv'=>'ABV / Alkoholprocent (% Vol.)',
- 'distillery'=>'Destilleri',
- 'age_text'=>'Alder (f.eks. 12 Years)',
- 'vintage_year'=>'Årgang / Destilleringsår',
- 'brand_name'=>'Brand / Mærke / Aftapper',
- 'category'=>'Kategori (f.eks. Single Malt)',
- 'country'=>'Land',
- 'bottle_size_cl'=>'Flaskestørrelse (cl)',
- 'bottle_count'=>'Antal flasker (Outturn)'
-];
 $token=trim((string)($_GET['preview']??$_POST['preview_token']??''));
 
 if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='upload'){
