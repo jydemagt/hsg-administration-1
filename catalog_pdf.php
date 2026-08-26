@@ -6,21 +6,25 @@ require_once __DIR__.'/pdf_simple.php';require_once __DIR__.'/core/catalog_layou
 $price=(($_GET['price']??'retail')==='wholesale')?'wholesale':'retail';
 $priceMeta=hsg_catalog_price_meta($price);$priceField=$priceMeta['field'];$priceLabel=$priceMeta['label'];
 
-$brandRows=$pdo->query("SELECT id,name,description,logo_path,sort_order FROM lager_brands ORDER BY sort_order,name")->fetchAll();
+$brandRows=$pdo->query("SELECT b.id,b.name,b.description,b.logo_path,b.sort_order,pb.name parent_name FROM lager_brands b LEFT JOIN lager_brands pb ON pb.id=b.parent_id ORDER BY COALESCE(pb.sort_order,b.sort_order),COALESCE(pb.name,b.name),b.parent_id IS NOT NULL,b.sort_order,b.name")->fetchAll();
 $brandMeta=[];foreach($brandRows as $b)$brandMeta[(string)$b['name']]=$b;
-$rows=$pdo->query("SELECT p.*,b.name brand_name,b.description brand_description,b.logo_path brand_logo_path,b.sort_order,
+
+$rows=$pdo->query("SELECT p.*,b.name brand_name,b.description brand_description,b.logo_path brand_logo_path,b.sort_order brand_sort_order,pb.name parent_brand_name,pb.sort_order parent_sort_order,
  COALESCE(st.physical,0)-COALESCE(rs.reserved,0) available
- FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id
+ FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id LEFT JOIN lager_brands pb ON pb.id=b.parent_id
  LEFT JOIN (SELECT product_id,SUM(quantity) physical FROM lager_stock GROUP BY product_id) st ON st.product_id=p.id
  LEFT JOIN (SELECT product_id,SUM(quantity) reserved FROM lager_reservations WHERE status='reserved' GROUP BY product_id) rs ON rs.product_id=p.id
  WHERE p.status='active' AND p.show_in_catalog=1 AND COALESCE(st.physical,0)-COALESCE(rs.reserved,0)>0
- ORDER BY COALESCE(b.sort_order,999),COALESCE(b.name,'Uden brand'),p.name")->fetchAll();
+ ORDER BY COALESCE(pb.sort_order,b.sort_order,999),COALESCE(pb.name,b.name,'Uden brand'),b.sort_order,b.name,p.name")->fetchAll();
 
 $families=[];
 foreach($rows as $p){
-    $brand=(string)($p['brand_name']?:'Uden brand');$family=hsg_catalog_family($brand);
-    if(!isset($families[$family]))$families[$family]=['sort'=>(int)($p['sort_order']??999),'sections'=>[]];
-    $families[$family]['sort']=min($families[$family]['sort'],(int)($p['sort_order']??999));
+    $brand=(string)($p['brand_name']?:'Uden brand');
+    $parentBrand=$p['parent_brand_name']?(string)$p['parent_brand_name']:null;
+    $family=hsg_catalog_family($brand,$parentBrand);
+    $familySort=(int)($p['parent_sort_order']??$p['brand_sort_order']??999);
+    if(!isset($families[$family]))$families[$family]=['sort'=>$familySort,'sections'=>[]];
+    $families[$family]['sort']=min($families[$family]['sort'],$familySort);
     $families[$family]['sections'][$brand][]=$p;
 }
 uasort($families,static fn($a,$b)=>$a['sort']<=>$b['sort']);
