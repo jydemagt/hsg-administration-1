@@ -58,6 +58,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $pdo->prepare('DELETE FROM lager_stock_movements WHERE product_id=?')->execute([$sourceId]);
             $pdo->prepare('DELETE FROM lager_products WHERE id=?')->execute([$sourceId]);
 
+            hsg_sync_product_stock_status($pdo,$targetId);
             $pdo->commit();
             hsg_quality_invalidate($pdo,$targetId);
             audit_log($pdo,'product.merge','product',(string)$targetId,['source_id'=>$sourceId,'source_sku'=>$src['sku'],'target_sku'=>$tgt['sku']]);
@@ -105,9 +106,11 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         if($id){
             $sql='UPDATE lager_products SET sku=?,name=?,brand_id=?,category=?,distillery=?,country=?,age_text=?,vintage_year=?,abv=?,bottle_size_cl=?,cask_type=?,cask_number=?,bottle_count=?,wholesale_price=?,retail_price=?,is_new=?,show_in_catalog=?,status=?,supplier_name=?,supplier_domain=?,supplier_url=?,notes=? WHERE id=?';
             $vals[]=$id;$pdo->prepare($sql)->execute($vals);
+            hsg_sync_product_stock_status($pdo,$id);
         }else{
             $sql='INSERT INTO lager_products(sku,name,brand_id,category,distillery,country,age_text,vintage_year,abv,bottle_size_cl,cask_type,cask_number,bottle_count,wholesale_price,retail_price,is_new,show_in_catalog,status,supplier_name,supplier_domain,supplier_url,notes) VALUES('.implode(',',array_fill(0,22,'?')).')';
             $pdo->prepare($sql)->execute($vals);$id=(int)$pdo->lastInsertId();
+            hsg_sync_product_stock_status($pdo,$id);
         }
         hsg_quality_invalidate($pdo,$id);
         audit_log($pdo,'product.save','product',(string)$id,['sku'=>$sku,'name'=>$name,'status'=>$status]);

@@ -162,6 +162,7 @@ function ensure_schema_updates(PDO $pdo): void {
     if(!db_column_exists($pdo,'lager_stock_movements','created_by_admin'))$pdo->exec('ALTER TABLE lager_stock_movements ADD created_by_admin INT UNSIGNED NULL AFTER created_by');
     if(db_table_exists($pdo,'lager_admins') && (int)$pdo->query('SELECT COUNT(*) FROM lager_admins')->fetchColumn()>0)$pdo->exec("UPDATE lager_users SET role='user' WHERE role='admin'");
     if(db_table_exists($pdo,'lager_login_attempts'))$pdo->exec("DELETE FROM lager_login_attempts WHERE attempted_at < (NOW() - INTERVAL 30 DAY)");
+    $pdo->exec("UPDATE lager_products p SET status='inactive' WHERE p.status='active' AND COALESCE((SELECT SUM(s.quantity) FROM lager_stock s WHERE s.product_id=p.id),0) - COALESCE((SELECT SUM(r.quantity) FROM lager_reservations r WHERE r.product_id=p.id AND r.status='reserved'),0) <= 0");
     $old=$pdo->query("SELECT id FROM lager_locations WHERE name='Lager Gert' LIMIT 1")->fetchColumn();$new=$pdo->query("SELECT id FROM lager_locations WHERE name='Gert Lager' LIMIT 1")->fetchColumn();if($old && !$new)$pdo->prepare('UPDATE lager_locations SET name=? WHERE id=?')->execute(['Gert Lager',(int)$old]);
     $pdo->exec("INSERT IGNORE INTO lager_locations(name,description,active,sort_order) VALUES ('Hovedlager','Primært lager',1,10),('Gert Lager','Gert lager',1,20)");
     $brandSeeds=[

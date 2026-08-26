@@ -382,5 +382,6 @@ function hsg_supplier_apply_product(PDO $pdo,int $productId,array $src): array {
                 ->execute([$productId,$locationId,$changeQty,$newQty,'import','Leverandørupload opdatering',null,current_admin_id()]);
         }
     }
+    hsg_sync_product_stock_status($pdo,$productId);
     return $changes;
 }
