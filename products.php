@@ -60,7 +60,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 
 $q=trim((string)($_GET['q']??''));$missingCaskFilter=!empty($_GET['missing_cask']);$negativeStockFilter=!empty($_GET['negative_stock']);$edit=null;
 if(is_admin()&&isset($_GET['edit'])){$st=$pdo->prepare('SELECT * FROM lager_products WHERE id=?');$st->execute([(int)$_GET['edit']]);$edit=$st->fetch();}
-$brands=$pdo->query('SELECT id,name FROM lager_brands WHERE active=1 ORDER BY sort_order,name')->fetchAll();
+$brands=$pdo->query('SELECT b.id,b.name,b.parent_id,pb.name parent_name FROM lager_brands b LEFT JOIN lager_brands pb ON pb.id=b.parent_id WHERE b.active=1 ORDER BY COALESCE(pb.sort_order,b.sort_order),COALESCE(pb.name,b.name),b.parent_id IS NOT NULL,b.sort_order,b.name')->fetchAll();
 $params=[];$conditions=[];
 if($q!==''){$conditions[]='(p.sku LIKE ? OR p.name LIKE ? OR b.name LIKE ? OR p.cask_number LIKE ?)';$params=array_fill(0,4,'%'.$q.'%');}
 if($missingCaskFilter)$conditions[]="(p.status<>'discontinued' AND (p.cask_number IS NULL OR p.cask_number=''))";

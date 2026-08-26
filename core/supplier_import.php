@@ -68,6 +68,7 @@ function hsg_supplier_aliases(): array {
       'country'=>['land','country','origin','oprindelse'],
       'bottle_size_cl'=>['flaskestorrelse','flaskestørrelse','flaskestorrelsecl','size','bottlesize','cl','volume','volumeml'],
       'bottle_count'=>['antalflasker','bottlecount','outturn','yield','numberofbottles'],
+      'stock_quantity'=>['lagerantal','antalpaalager','lagerbeholdning','stockquantity','stockqty','quantity','qty','beholdning','lager','antal'],
     ];
 }
 
@@ -104,6 +105,11 @@ function hsg_supplier_source_fields(array $row,array $map): array {
     foreach(['sku','name','distillery','age_text','brand_name','category','country','cask_type','cask_number','bottle_count'] as $f){$v=hsg_supplier_row_value($row,$map,$f);if($v!=='')$fields[$f]=$v;}
     foreach(['wholesale_price','retail_price','abv','bottle_size_cl'] as $f){$v=hsg_supplier_row_value($row,$map,$f);$n=hsg_supplier_parse_decimal($v);if($n!==null)$fields[$f]=$n;}
     $vy=hsg_supplier_row_value($row,$map,'vintage_year');if(preg_match('/\b(19|20)\d{2}\b/',$vy,$m))$fields['vintage_year']=(int)$m[0];
+    $sq=hsg_supplier_row_value($row,$map,'stock_quantity');
+    if($sq!==''){
+        $sqNum=hsg_supplier_parse_decimal($sq);
+        if($sqNum!==null)$fields['stock_quantity']=(int)max(0,round($sqNum));
+    }
     if($name!==''){
         $parsed=hsg_product_parse_text($name);foreach((array)($parsed['fields']??[]) as $f=>$v)if(!isset($fields[$f])&&$v!==null&&trim((string)$v)!=='')$fields[$f]=$v;
         if(empty($fields['cask_number'])){$c=hsg_extract_cask_number($name);if($c)$fields['cask_number']=$c;}
@@ -142,6 +148,32 @@ function hsg_supplier_find_match(array $src,array $products,?int $brandId=null):
     return $best;
 }
 
+function hsg_supplier_suggest_columns(array $headers): array {
+    $aliases=hsg_supplier_aliases();$reverse=[];
+    foreach($aliases as $field=>$names)foreach($names as $n)$reverse[hsg_supplier_norm($n)]=$field;
+    $colMap=[];$usedFields=[];
+    foreach($headers as $ci=>$cell){
+        $cell=trim((string)$cell);if($cell===''){$colMap[(int)$ci]='';continue;}
+        $n=hsg_supplier_norm($cell);$matched=null;
+        if(isset($reverse[$n])){$matched=$reverse[$n];}
+        else{
+            foreach($aliases as $field=>$names){
+                foreach($names as $alias){
+                    $an=hsg_supplier_norm($alias);
+                    if(strlen($an)>=4 && (str_contains($n,$an)||str_contains($an,$n))){$matched=$field;break 2;}
+                }
+            }
+        }
+        if($matched && !in_array($matched,$usedFields,true)){
+            $usedFields[]=$matched;
+            $colMap[(int)$ci]=$matched;
+        } else {
+            $colMap[(int)$ci]='';
+        }
+    }
+    return $colMap;
+}
+
 function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?int $brandId=null): array {
     $bestSheet=null;$bestHeader=null;
     foreach($sheets as $sheet=>$rows){try{$h=hsg_supplier_detect_header($rows);if($bestHeader===null||$h['score']>$bestHeader['score']){$bestSheet=$sheet;$bestHeader=$h;}}catch(Throwable $e){}}
@@ -149,21 +181,96 @@ function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?i
     $products=$pdo->query('SELECT p.*,b.name brand_name FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id ORDER BY p.name')->fetchAll(PDO::FETCH_ASSOC);
     $byId=[];foreach($products as $p)$byId[(int)$p['id']]=$p;
     $rows=$sheets[$bestSheet];$items=[];$start=$bestHeader['row']+1;
-    foreach(array_slice($rows,$start,null,true) as $ri=>$row){$src=hsg_supplier_source_fields($row,$bestHeader['map']);if(!$src)continue;if(empty($src['name'])&&empty($src['sku'])&&empty($src['cask_number']))continue;
+    $headers=(array)$bestHeader['headers'];
+    $colMap=hsg_supplier_suggest_columns($headers);
+    $fieldMap=[];
+    foreach($colMap as $ci=>$field){if($field!==''){$fieldMap[$field]=(int)$ci;}}
+    $rawRows=array_values(array_slice($rows,$start,null,true));
+
+    foreach($rawRows as $i=>$row){
+        $src=hsg_supplier_source_fields((array)$row,$fieldMap);if(!$src)continue;if(empty($src['name'])&&empty($src['sku'])&&empty($src['cask_number']))continue;
         $match=hsg_supplier_find_match($src,$products,$brandId);$pid=(int)$match['id'];$changes=[];
         if($pid&&isset($byId[$pid]))$changes=hsg_supplier_changes_for_product($src,$byId[$pid]);
-        $items[]=['row'=>(int)$ri+1,'source'=>$src,'match'=>$match,'changes'=>$changes,'selected'=>$pid>0&&$match['score']>=90&&count($changes)>0];
+        $items[]=['row'=>(int)$start+1+$i,'source'=>$src,'match'=>$match,'changes'=>$changes,'selected'=>$pid>0&&$match['score']>=90&&count($changes)>0];
     }
-    return ['filename'=>$filename,'sheet'=>$bestSheet,'header_row'=>$bestHeader['row']+1,'headers'=>$bestHeader['headers'],'mapping'=>$bestHeader['map'],'items'=>$items,'created_at'=>date('c'),'brand_id'=>$brandId];
+    return [
+        'filename'=>$filename,
+        'sheet'=>$bestSheet,
+        'header_row'=>$bestHeader['row']+1,
+        'headers'=>$headers,
+        'mapping'=>$fieldMap,
+        'col_mapping'=>$colMap,
+        'raw_rows'=>$rawRows,
+        'items'=>$items,
+        'created_at'=>date('c'),
+        'brand_id'=>$brandId
+    ];
+}
+
+function hsg_supplier_recalculate_preview(PDO $pdo, array $preview, array $customColMap): array {
+    $headers = (array)($preview['headers'] ?? []);
+    $colMap = [];
+    $fieldMap = [];
+    foreach($customColMap as $ci => $field) {
+        $ci = (int)$ci;
+        $field = trim((string)$field);
+        $colMap[$ci] = $field;
+        if($field !== '') {
+            $fieldMap[$field] = $ci;
+        }
+    }
+    foreach(array_keys($headers) as $ci) {
+        $ci = (int)$ci;
+        if(!array_key_exists($ci, $colMap)) {
+            $colMap[$ci] = '';
+        }
+    }
+    ksort($colMap);
+    $products = $pdo->query('SELECT p.*,b.name brand_name FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id ORDER BY p.name')->fetchAll(PDO::FETCH_ASSOC);
+    $byId = [];
+    foreach($products as $p) $byId[(int)$p['id']] = $p;
+
+    $brandId = !empty($preview['brand_id']) ? (int)$preview['brand_id'] : null;
+    $rawRows = (array)($preview['raw_rows'] ?? []);
+    $items = [];
+    $start = (int)($preview['header_row'] ?? 1);
+
+    foreach($rawRows as $i => $row) {
+        $src = hsg_supplier_source_fields((array)$row, $fieldMap);
+        if(!$src || (empty($src['name']) && empty($src['sku']) && empty($src['cask_number']))) continue;
+        $match = hsg_supplier_find_match($src, $products, $brandId);
+        $pid = (int)$match['id'];
+        $changes = [];
+        if($pid && isset($byId[$pid])) {
+            $changes = hsg_supplier_changes_for_product($src, $byId[$pid]);
+        }
+        $items[] = [
+            'row' => $start + 1 + $i,
+            'source' => $src,
+            'match' => $match,
+            'changes' => $changes,
+            'selected' => $pid > 0 && $match['score'] >= 90 && count($changes) > 0
+        ];
+    }
+
+    $preview['mapping'] = $fieldMap;
+    $preview['col_mapping'] = $colMap;
+    $preview['items'] = $items;
+    return $preview;
 }
 
 function hsg_supplier_preview_dir(): string {$d=__DIR__.'/../storage/import-previews';if(!is_dir($d)&&!@mkdir($d,0770,true)&&!is_dir($d))throw new RuntimeException('Kunne ikke oprette preview-mappe.');return $d;}
-function hsg_supplier_preview_save(array $preview): string {$token=bin2hex(random_bytes(20));$path=hsg_supplier_preview_dir().'/'.$token.'.json';file_put_contents($path,json_encode($preview,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT|JSON_THROW_ON_ERROR),LOCK_EX);return $token;}
+function hsg_supplier_preview_save(array $preview, ?string $existingToken = null): string {
+    $token = ($existingToken !== null && preg_match('/^[a-f0-9]{40}$/', $existingToken)) ? $existingToken : bin2hex(random_bytes(20));
+    $path = hsg_supplier_preview_dir().'/'.$token.'.json';
+    file_put_contents($path, json_encode($preview, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT|JSON_THROW_ON_ERROR), LOCK_EX);
+    return $token;
+}
 function hsg_supplier_preview_load(string $token): array {if(!preg_match('/^[a-f0-9]{40}$/',$token))throw new RuntimeException('Ugyldigt preview-token.');$path=hsg_supplier_preview_dir().'/'.$token.'.json';if(!is_file($path))throw new RuntimeException('Previewet er udløbet eller findes ikke.');$data=json_decode((string)file_get_contents($path),true,512,JSON_THROW_ON_ERROR);return is_array($data)?$data:[];}
 function hsg_supplier_preview_delete(string $token): void {if(preg_match('/^[a-f0-9]{40}$/',$token))@unlink(hsg_supplier_preview_dir().'/'.$token.'.json');}
 
 function hsg_supplier_update_fields(): array {
-    return ['cask_number','cask_type','wholesale_price','retail_price','abv','distillery','age_text','vintage_year','category','country','bottle_size_cl','bottle_count'];
+    return ['cask_number','cask_type','wholesale_price','retail_price','abv','distillery','age_text','vintage_year','category','country','bottle_size_cl','bottle_count','stock_quantity'];
 }
 
 function hsg_supplier_changes_for_product(array $src,array $product): array {
@@ -172,18 +279,41 @@ function hsg_supplier_changes_for_product(array $src,array $product): array {
         if(!array_key_exists($field,$src))continue;$new=$src[$field];if($new===null||trim((string)$new)==='')continue;$old=$product[$field]??null;
         $same=in_array($field,['wholesale_price','retail_price','abv','bottle_size_cl'],true)
             ?($old!==null&&trim((string)$old)!==''&&abs((float)$old-(float)$new)<0.001)
-            :hsg_supplier_norm((string)$old)===hsg_supplier_norm((string)$new);
+            :($field==='stock_quantity'
+                ?($old!==null&&trim((string)$old)!==''&&(int)$old===(int)$new)
+                :hsg_supplier_norm((string)$old)===hsg_supplier_norm((string)$new));
         if(!$same)$changes[$field]=['old'=>$old,'new'=>$new];
     }
     return $changes;
 }
 
 function hsg_supplier_apply_product(PDO $pdo,int $productId,array $src): array {
-    $st=$pdo->prepare('SELECT * FROM lager_products WHERE id=?');$st->execute([$productId]);$product=$st->fetch(PDO::FETCH_ASSOC);
+    $st=$pdo->prepare('SELECT p.*, COALESCE((SELECT SUM(s.quantity) FROM lager_stock s JOIN lager_locations l ON l.id=s.location_id WHERE s.product_id=p.id AND l.active=1), 0) stock_quantity FROM lager_products p WHERE p.id=?');
+    $st->execute([$productId]);$product=$st->fetch(PDO::FETCH_ASSOC);
     if(!$product)throw new RuntimeException('Det valgte HSG-produkt findes ikke.');
     $changes=hsg_supplier_changes_for_product($src,$product);if(!$changes)return [];
     $sets=[];$params=[];
-    foreach($changes as $field=>$change){$sets[]="$field=?";$params[]=$change['new'];}
-    $params[]=$productId;$pdo->prepare('UPDATE lager_products SET '.implode(',',$sets).' WHERE id=?')->execute($params);
+    foreach($changes as $field=>$change){
+        if($field==='stock_quantity') continue;
+        $sets[]="$field=?";$params[]=$change['new'];
+    }
+    if($sets){
+        $params[]=$productId;
+        $pdo->prepare('UPDATE lager_products SET '.implode(',',$sets).' WHERE id=?')->execute($params);
+    }
+    if(isset($changes['stock_quantity'])){
+        $newQty=(int)$changes['stock_quantity']['new'];
+        $locSt=$pdo->query('SELECT id FROM lager_locations WHERE active=1 ORDER BY sort_order ASC, id ASC LIMIT 1');
+        $locationId=(int)($locSt->fetchColumn()?:0);
+        if($locationId>0){
+            $stLoc=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=? FOR UPDATE');
+            $stLoc->execute([$productId,$locationId]);
+            $oldQty=(int)($stLoc->fetchColumn()?:0);
+            $changeQty=$newQty-$oldQty;
+            $pdo->prepare('INSERT INTO lager_stock(product_id,location_id,quantity) VALUES(?,?,?) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity)')->execute([$productId,$locationId,$newQty]);
+            $pdo->prepare('INSERT INTO lager_stock_movements(product_id,location_id,change_qty,balance_after,movement_type,reference,created_by,created_by_admin) VALUES(?,?,?,?,?,?,?,?)')
+                ->execute([$productId,$locationId,$changeQty,$newQty,'import','Leverandørupload opdatering',null,current_admin_id()]);
+        }
+    }
     return $changes;
 }
