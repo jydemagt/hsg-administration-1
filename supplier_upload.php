@@ -74,7 +74,7 @@ $runs=db_table_exists($pdo,'hsg_supplier_import_runs')?$pdo->query('SELECT * FRO
 $missingCask=(int)$pdo->query("SELECT COUNT(*) FROM lager_products WHERE status<>'discontinued' AND (cask_number IS NULL OR cask_number='')")->fetchColumn();
 
 function supfmt(mixed $v,string $field): string {if($v===null||$v==='')return '—';if(in_array($field,['wholesale_price','retail_price'],true))return number_format((float)$v,2,',','.').' kr.';if($field==='abv')return rtrim(rtrim(number_format((float)$v,2,',',''),'0'),',').' %';if($field==='bottle_size_cl')return rtrim(rtrim(number_format((float)$v,2,',',''),'0'),',').' cl';return (string)$v;}
-page_header('Leverandør-upload');
+page_header('Kims uploadfil');
 ?>
 <div class="grid">
   <div class="card metric"><strong><?=$missingCask?></strong><span>Produkter mangler fadnummer</span></div>
@@ -82,8 +82,8 @@ page_header('Leverandør-upload');
 </div>
 
 <div class="card">
-  <h2>Upload leverandørfil</h2>
-  <p class="muted">Upload forskellige pris-, outturn- eller produktfiler. HSG finder selv tabellen og forsøger at genkende SKU, produktnavn, <strong>fadnummer, fadtype, engrospris, udsalgspris, ABV, destilleri, alder, årgang</strong> m.m. Intet ændres før previewet er godkendt.</p>
+  <h2>Upload Kims masterfil</h2>
+  <p class="muted">Upload masterfil (Excel eller CSV). Filen fungerer som stamdata-masterfil og opdaterer produktattributter i HSG Administration. Varenumre, der kun afviger med et ekstra bogstav (fx suffix), flettes automatisk, og deres lagerantal lægges sammen.</p>
   <form method="post" enctype="multipart/form-data"><?=csrf_field()?><input type="hidden" name="action" value="upload">
     <div class="split">
       <label>Excel/CSV<input type="file" name="file" accept=".xlsx,.csv" required></label>
@@ -138,7 +138,7 @@ $detected=array_keys((array)$preview['mapping']);$detectedLabels=[];foreach($det
 <?php foreach($preview['items'] as $i=>$item):$src=(array)$item['source'];$mid=(int)($item['match']['id']??0);$score=(int)($item['match']['score']??0);$changes=(array)$item['changes'];?>
 <tr>
   <td><input type="checkbox" name="apply_rows[]" value="<?=$i?>" <?=!empty($item['selected'])?'checked':''?> ></td>
-  <td>#<?=intval($item['row'])?></td>
+  <td><?=h($item['row_label'] ?? ('#'.intval($item['row'])))?></td>
   <td><strong><?=h($src['name']??'(uden navn)')?></strong><br><small class="muted"><?php if(!empty($src['sku'])):?>SKU <?=h($src['sku'])?> · <?php endif;?><?php if(!empty($src['cask_number'])):?>Fad #<?=h($src['cask_number'])?><?php endif;?></small></td>
   <td>
     <span class="badge <?=$score>=90?'green':($score>=70?'':'red')?>"><?=$score?> %</span> <small class="muted"><?=h($item['match']['reason']??'')?></small>
