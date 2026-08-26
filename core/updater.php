@@ -479,7 +479,7 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
     ];
 }
 
-function hsg_github_download_and_stage(string $downloadUrl, string $version): array {
+function hsg_github_download_and_stage(string $downloadUrl, string $version, bool $allowSameVersion = true): array {
     if(!filter_var($downloadUrl, FILTER_VALIDATE_URL)) {
         throw new RuntimeException('Ugyldig opdaterings-URL fra GitHub.');
     }
@@ -512,7 +512,7 @@ function hsg_github_download_and_stage(string $downloadUrl, string $version): ar
     }
 
     try {
-        $info = hsg_update_validate_package($dest);
+        $info = hsg_update_validate_package($dest, $allowSameVersion);
         $info['path'] = $dest;
         $info['original_name'] = 'GitHub Release '.$version;
         return $info;
