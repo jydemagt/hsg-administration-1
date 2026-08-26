@@ -7,7 +7,10 @@ function hsg_catalog_normalize_name(string $name): string {
     return trim(preg_replace('/\s+/',' ',$name)??$name);
 }
 
-function hsg_catalog_family(string $brand): string {
+function hsg_catalog_family(string $brand, ?string $parentBrand = null): string {
+    if($parentBrand !== null && trim($parentBrand) !== '') {
+        return trim($parentBrand);
+    }
     $n=hsg_catalog_normalize_name($brand);
     if(str_contains($n,'samhain')||str_contains($n,'dalgety')||str_contains($n,'bridget')) return "Lady of the Glen";
     if(str_contains($n,'jane street')) return "Woodrow's of Edinburgh";
