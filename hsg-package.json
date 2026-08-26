@@ -46,7 +46,7 @@
         "core/quality.php": "c03c9d65d27ead354d2f1daa6424df0c2a8f9c7f53942c91c1f3df41f46aec96",
         "core/settings.php": "c7235f51743933d467fdfeba89213b97edcaafb3fe5784a611fdf4c6b08bf8d7",
         "core/supplier_import.php": "1a8236f36fc424c6db06d2bc456a24d7690defe3b5325e2f23fe1949827daacc",
-        "core/updater.php": "cbc62dd694ee2b40273f9041bfdd246051419204a7bc46bf123bf8079c5deb68",
+        "core/updater.php": "bfdf9c5715a0206977bb0123e5968efce67bd305ed75a435804eb3aeeb7467e7",
         "cron/backup.php": "3908e23adbb3eb539305521d1d0c1986af535fd6953fb7059e1de623fddc5be1",
         "db.php": "e4613d2c99a3fdfb315f4d510242f06d4761d938da8262e9d967e4c7d2ad4d7e",
         "developer/module-template/README.md": "f749f06c6b4629667625c08c1578b75a88d2527a593d35651043400d8e4d2cf8",
@@ -181,7 +181,7 @@
         "supplier_upload.php": "afa0537a8d3a54f948a50a7de206941c7415fb2de5e589c2defedecf5236677b",
         "system.php": "aff882ede35a17219bc5d610de7953904e345628e869247313213c74069dd487",
         "tools/restore-standalone.php": "00ab77e3320c1e81e841c2ce3a9a671aef4c4094633a3d9dffb2f1febf8aa328",
-        "update.php": "fff9d72c499ff3e90a3aefdde9f3a7f3f81b4398ac4b28a98d9c6474c20d849d",
+        "update.php": "c0c0ac3ced45eb5a28fb057cccfb44e6f48336c8180bd43f5a59e1c0bca24d98",
         "user_permissions.php": "494b4d17cce138249baf2cbef73ddbc39cf49b8367cca8c9eb6c9a4bcdf1bfe9",
         "users.php": "23dc9b89b6cba3567af1f600a0ca3428946afe271ddb5c6c9e28dabe9828e92f",
         "xlsx_tools.php": "b27a362c4be18b98e19e0640a6dca060290f25a2373987d9d7c224b052027751"
