@@ -67,7 +67,7 @@ if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='appl
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();flash('error','Kunne ikke anvende ændringer: '.$e->getMessage());redirect('supplier_upload.php'.($token?'?preview='.$token:''));}
 }
 
-$brands=$pdo->query('SELECT id,name FROM lager_brands WHERE active=1 ORDER BY name')->fetchAll(PDO::FETCH_ASSOC);
+$brands=$pdo->query('SELECT b.id,b.name,b.parent_id,pb.name parent_name FROM lager_brands b LEFT JOIN lager_brands pb ON pb.id=b.parent_id WHERE b.active=1 ORDER BY COALESCE(pb.sort_order,b.sort_order),COALESCE(pb.name,b.name),b.parent_id IS NOT NULL,b.sort_order,b.name')->fetchAll(PDO::FETCH_ASSOC);
 $products=$pdo->query('SELECT p.id,p.sku,p.name,p.cask_number,p.brand_id,b.name brand_name FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id ORDER BY p.name')->fetchAll(PDO::FETCH_ASSOC);
 $preview=null;if($token!==''){try{$preview=hsg_supplier_preview_load($token);}catch(Throwable $e){flash('error',$e->getMessage());$token='';}}
 $runs=db_table_exists($pdo,'hsg_supplier_import_runs')?$pdo->query('SELECT * FROM hsg_supplier_import_runs ORDER BY id DESC LIMIT 12')->fetchAll(PDO::FETCH_ASSOC):[];
@@ -87,7 +87,7 @@ page_header('Leverandør-upload');
   <form method="post" enctype="multipart/form-data"><?=csrf_field()?><input type="hidden" name="action" value="upload">
     <div class="split">
       <label>Excel/CSV<input type="file" name="file" accept=".xlsx,.csv" required></label>
-      <label>Begræns til brand/leverandør (valgfri)<select name="brand_id"><option value="">Automatisk på tværs af alle produkter</option><?php foreach($brands as $b):?><option value="<?=$b['id']?>"><?=h($b['name'])?></option><?php endforeach;?></select></label>
+      <label>Begræns til brand/leverandør (valgfri)<select name="brand_id"><option value="">Automatisk på tværs af alle produkter</option><?php foreach($brands as $b): $bDisplayName = !empty($b['parent_id']) ? $b['parent_name'].' › '.$b['name'] : $b['name']; ?><option value="<?=$b['id']?>"><?=h($bDisplayName)?></option><?php endforeach;?></select></label>
     </div>
     <button>Analysér fil og vis preview</button>
   </form>
