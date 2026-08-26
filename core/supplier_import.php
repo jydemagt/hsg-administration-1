@@ -268,7 +268,7 @@ function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?i
     $bestSheet=null;$bestHeader=null;
     foreach($sheets as $sheet=>$rows){try{$h=hsg_supplier_detect_header($rows);if($bestHeader===null||$h['score']>$bestHeader['score']){$bestSheet=$sheet;$bestHeader=$h;}}catch(Throwable $e){}}
     if($bestHeader===null||$bestSheet===null)throw new RuntimeException('Kunne ikke finde en tabel med produkter/priser i nogen af arkene.');
-    $products=$pdo->query('SELECT p.*,b.name brand_name FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id ORDER BY p.name')->fetchAll(PDO::FETCH_ASSOC);
+    $products=$pdo->query('SELECT p.*,b.name brand_name, COALESCE((SELECT SUM(s.quantity) FROM lager_stock s JOIN lager_locations l ON l.id=s.location_id WHERE s.product_id=p.id AND l.active=1), 0) stock_quantity FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id ORDER BY p.name')->fetchAll(PDO::FETCH_ASSOC);
     $rows=$sheets[$bestSheet];$start=$bestHeader['row']+1;
     $headers=(array)$bestHeader['headers'];
     $savedRaw=trim((string)setting_get($pdo,'supplier_import_last_col_map',''));
@@ -313,7 +313,7 @@ function hsg_supplier_recalculate_preview(PDO $pdo, array $preview, array $custo
         }
     }
     ksort($colMap);
-    $products = $pdo->query('SELECT p.*,b.name brand_name FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id ORDER BY p.name')->fetchAll(PDO::FETCH_ASSOC);
+    $products = $pdo->query('SELECT p.*,b.name brand_name, COALESCE((SELECT SUM(s.quantity) FROM lager_stock s JOIN lager_locations l ON l.id=s.location_id WHERE s.product_id=p.id AND l.active=1), 0) stock_quantity FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id ORDER BY p.name')->fetchAll(PDO::FETCH_ASSOC);
 
     $brandId = !empty($preview['brand_id']) ? (int)$preview['brand_id'] : null;
     $rawRows = (array)($preview['raw_rows'] ?? []);

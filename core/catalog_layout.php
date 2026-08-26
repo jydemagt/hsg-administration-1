@@ -149,7 +149,7 @@ function hsg_catalog_product_title(array $p): string {
 
 function hsg_catalog_price_meta(string $price): array {
     if($price==='retail') return ['field'=>'retail_price','label'=>'Vejl. pris (inkl. moms)','short'=>'Vejl. pris'];
-    return ['field'=>'wholesale_price','label'=>'Engros pris (ekskl. moms)','short'=>'Engros pris'];
+    return ['field'=>'wholesale_price','label'=>'Engrospris (ekskl. moms)','short'=>'Engrospris'];
 }
 
 function hsg_catalog_abv($v): string {

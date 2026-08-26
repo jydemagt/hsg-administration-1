@@ -65,9 +65,9 @@ function add_hsg_logo(SimplePdf $pdf,array &$ops,array &$images,?string $path): 
 }
 function add_page_no(SimplePdf $pdf,array &$ops,int $page): void {$ops[]=$pdf->textFont(548,22,8,(string)$page,'helvetica');}
 function add_product_table(SimplePdf $pdf,array &$ops,array $rows,float $x,float $top,float $w=250): void {
-    $labelW=130;$metrics=[];$totalH=0;
+    $labelW=135;$metrics=[];$totalH=0;
     foreach($rows as [$label,$value]){
-        $valueLines=$pdf->wrap((string)$value,30);$labelLines=$pdf->wrap((string)$label,24);$lines=max(1,count($valueLines),count($labelLines));$rh=max(24,8+$lines*12);
+        $valueLines=$pdf->wrap((string)$value,30);$labelLines=$pdf->wrap((string)$label,26);$lines=max(1,count($valueLines),count($labelLines));$rh=max(24,8+$lines*12);
         $metrics[]=['label'=>$labelLines,'value'=>$valueLines,'height'=>$rh];$totalH+=$rh;
     }
     if($totalH<=0)return;$bottom=$top-$totalH;$cursor=$top;
