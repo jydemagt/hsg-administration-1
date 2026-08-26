@@ -34,6 +34,9 @@ if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='uplo
         $name=(string)$_FILES['file']['name'];$ext=strtolower(pathinfo($name,PATHINFO_EXTENSION));if(!in_array($ext,['xlsx','csv'],true))throw new RuntimeException('Brug en Excel-fil (.xlsx) eller CSV-fil.');
         $sheets=$ext==='xlsx'?hsg_supplier_read_xlsx($_FILES['file']['tmp_name']):hsg_supplier_read_csv($_FILES['file']['tmp_name']);
         $brandId=(int)($_POST['brand_id']??0)?:null;$preview=hsg_supplier_prepare_preview($pdo,$sheets,$name,$brandId);$token=hsg_supplier_preview_save($preview);
+        if(!empty($preview['col_mapping'])){
+            setting_set($pdo,'supplier_import_last_col_map',json_encode($preview['col_mapping'],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+        }
         audit_log($pdo,'supplier_import.preview','import',null,['filename'=>$name,'sheet'=>$preview['sheet'],'rows'=>count($preview['items']),'brand_id'=>$brandId]);
         redirect('supplier_upload.php?preview='.$token);
     }catch(Throwable $e){flash('error',$e->getMessage());redirect('supplier_upload.php');}
@@ -45,6 +48,9 @@ if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='rema
         $customMap=(array)($_POST['col_map']??[]);
         $preview=hsg_supplier_recalculate_preview($pdo,$preview,$customMap);
         hsg_supplier_preview_save($preview,$token);
+        if(!empty($preview['col_mapping'])){
+            setting_set($pdo,'supplier_import_last_col_map',json_encode($preview['col_mapping'],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+        }
         flash('success','Kolonnemapping blev opdateret og preview er genberegnet.');
         redirect('supplier_upload.php?preview='.$token.'&remap=1');
     }catch(Throwable $e){flash('error','Kunne ikke genberegne mapping: '.$e->getMessage());redirect('supplier_upload.php'.($token?'?preview='.$token.'&remap=1':''));}

@@ -148,12 +148,19 @@ function hsg_supplier_find_match(array $src,array $products,?int $brandId=null):
     return $best;
 }
 
-function hsg_supplier_suggest_columns(array $headers): array {
+function hsg_supplier_suggest_columns(array $headers, array $savedColMap = []): array {
     $aliases=hsg_supplier_aliases();$reverse=[];
     foreach($aliases as $field=>$names)foreach($names as $n)$reverse[hsg_supplier_norm($n)]=$field;
     $colMap=[];$usedFields=[];
     foreach($headers as $ci=>$cell){
-        $cell=trim((string)$cell);if($cell===''){$colMap[(int)$ci]='';continue;}
+        $ci=(int)$ci;
+        $cell=trim((string)$cell);if($cell===''){$colMap[$ci]='';continue;}
+        $savedField=isset($savedColMap[$ci])?trim((string)$savedColMap[$ci]):'';
+        if($savedField!=='' && isset($aliases[$savedField]) && !in_array($savedField,$usedFields,true)){
+            $usedFields[]=$savedField;
+            $colMap[$ci]=$savedField;
+            continue;
+        }
         $n=hsg_supplier_norm($cell);$matched=null;
         if(isset($reverse[$n])){$matched=$reverse[$n];}
         else{
@@ -166,9 +173,9 @@ function hsg_supplier_suggest_columns(array $headers): array {
         }
         if($matched && !in_array($matched,$usedFields,true)){
             $usedFields[]=$matched;
-            $colMap[(int)$ci]=$matched;
+            $colMap[$ci]=$matched;
         } else {
-            $colMap[(int)$ci]='';
+            $colMap[$ci]='';
         }
     }
     return $colMap;
@@ -264,7 +271,10 @@ function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?i
     $products=$pdo->query('SELECT p.*,b.name brand_name FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id ORDER BY p.name')->fetchAll(PDO::FETCH_ASSOC);
     $rows=$sheets[$bestSheet];$start=$bestHeader['row']+1;
     $headers=(array)$bestHeader['headers'];
-    $colMap=hsg_supplier_suggest_columns($headers);
+    $savedRaw=trim((string)setting_get($pdo,'supplier_import_last_col_map',''));
+    $savedColMap=json_decode($savedRaw,true);
+    if(!is_array($savedColMap))$savedColMap=[];
+    $colMap=hsg_supplier_suggest_columns($headers,$savedColMap);
     $fieldMap=[];
     foreach($colMap as $ci=>$field){if($field!==''){$fieldMap[$field]=(int)$ci;}}
     $rawRows=array_values(array_slice($rows,$start,null,true));

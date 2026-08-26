@@ -6,6 +6,64 @@ require_once __DIR__.'/core/quality.php';
 if($_SERVER['REQUEST_METHOD']==='POST'){
     try{
         $action=(string)($_POST['action']??'save');
+        if($action==='merge_products'){
+            $sourceId=(int)($_POST['source_id']??0);
+            $targetId=(int)($_POST['target_id']??0);
+            if($sourceId<=0 || $targetId<=0) throw new RuntimeException('Vælg både kilde- og målprodukt.');
+            if($sourceId===$targetId) throw new RuntimeException('Kildeprodukt og målprodukt skal være forskellige.');
+
+            $pdo->beginTransaction();
+            $stSrc=$pdo->prepare('SELECT * FROM lager_products WHERE id=? FOR UPDATE');$stSrc->execute([$sourceId]);$src=$stSrc->fetch(PDO::FETCH_ASSOC);
+            $stTgt=$pdo->prepare('SELECT * FROM lager_products WHERE id=? FOR UPDATE');$stTgt->execute([$targetId]);$tgt=$stTgt->fetch(PDO::FETCH_ASSOC);
+            if(!$src || !$tgt) throw new RuntimeException('Et af de valgte produkter findes ikke længere.');
+
+            // 1. Move stock from Source to Target for each location
+            $stStock=$pdo->prepare('SELECT location_id, quantity FROM lager_stock WHERE product_id=? FOR UPDATE');$stStock->execute([$sourceId]);$stockRows=$stStock->fetchAll(PDO::FETCH_ASSOC);
+            foreach($stockRows as $sr){
+                $locId=(int)$sr['location_id'];
+                $srcQty=(int)$sr['quantity'];
+                if($srcQty===0) continue;
+
+                $stTgtLoc=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=? FOR UPDATE');
+                $stTgtLoc->execute([$targetId, $locId]);
+                $oldTgtQty=(int)($stTgtLoc->fetchColumn()?:0);
+                $newTgtQty=$oldTgtQty + $srcQty;
+
+                $pdo->prepare('INSERT INTO lager_stock(product_id,location_id,quantity) VALUES(?,?,?) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity)')->execute([$targetId,$locId,$newTgtQty]);
+                $pdo->prepare('INSERT INTO lager_stock_movements(product_id,location_id,change_qty,balance_after,movement_type,reference,created_by,created_by_admin) VALUES(?,?,?,?,?,?,?,?)')
+                    ->execute([$targetId,$locId,$srcQty,$newTgtQty,'transfer_in','Flettet fra '.($src['sku']?:$src['id']),null,current_admin_id()]);
+            }
+            $pdo->prepare('DELETE FROM lager_stock WHERE product_id=?')->execute([$sourceId]);
+
+            // 2. Reassign reservations
+            $pdo->prepare('UPDATE lager_reservations SET product_id=? WHERE product_id=?')->execute([$targetId, $sourceId]);
+
+            // 3. Fill missing attributes on Target from Source
+            $fillable=['brand_id','category','distillery','country','age_text','vintage_year','abv','bottle_size_cl','cask_type','cask_number','bottle_count','wholesale_price','retail_price','supplier_name','supplier_domain','supplier_url','notes','image_path'];
+            $sets=[];$params=[];
+            foreach($fillable as $f){
+                $tgtVal=$tgt[$f]??null;$srcVal=$src[$f]??null;
+                if(($tgtVal===null||trim((string)$tgtVal)==='') && $srcVal!==null && trim((string)$srcVal)!==''){
+                    $sets[]="$f=?";$params[]=$srcVal;
+                }
+            }
+            if($sets){
+                $params[]=$targetId;
+                $pdo->prepare('UPDATE lager_products SET '.implode(',',$sets).' WHERE id=?')->execute($params);
+            }
+
+            // 4. Cleanup candidates/rejections and remove Source product
+            if(db_table_exists($pdo,'lager_image_candidates'))$pdo->prepare('DELETE FROM lager_image_candidates WHERE product_id=?')->execute([$sourceId]);
+            if(db_table_exists($pdo,'lager_image_rejections'))$pdo->prepare('DELETE FROM lager_image_rejections WHERE product_id=?')->execute([$sourceId]);
+            $pdo->prepare('DELETE FROM lager_stock_movements WHERE product_id=?')->execute([$sourceId]);
+            $pdo->prepare('DELETE FROM lager_products WHERE id=?')->execute([$sourceId]);
+
+            $pdo->commit();
+            hsg_quality_invalidate($pdo,$targetId);
+            audit_log($pdo,'product.merge','product',(string)$targetId,['source_id'=>$sourceId,'source_sku'=>$src['sku'],'target_sku'=>$tgt['sku']]);
+            flash('success','Produkt '.h($src['sku']).' blev flettet ind i '.h($tgt['sku']).'.');
+            redirect('products.php');
+        }
         if($action==='delete_negative'){
             $id=(int)($_POST['id']??0);
             if($id<=0) throw new RuntimeException('Produktet mangler.');
@@ -76,6 +134,32 @@ page_header('Produkter');
 ?>
 <form class="searchbar" method="get"><input name="q" value="<?=h($q)?>" placeholder="Søg produkt, SKU, fadnummer eller brand"><button>Søg</button></form>
 <div class="card"><div class="actions"><a class="button <?=$missingCaskFilter?'':'secondary'?>" href="products.php?missing_cask=1">Fadnummer mangler (<?=$missingCaskCount?>)</a><a class="button <?=$negativeStockFilter?'danger':'secondary'?>" href="products.php?negative_stock=1">Negativt lager (<?=$negativeStockCount?>)</a><?php if($missingCaskFilter||$negativeStockFilter):?><a class="button secondary" href="products.php">Vis alle produkter</a><?php endif;?></div><p class="muted">Fadnummer aflæses kun automatisk, når det står eksplicit som fx <strong>#300805</strong>, <strong>Cask No. 620P</strong> eller <strong>Fad nr. 892-4</strong>. Batchnumre gættes ikke som fadnumre. Produkter med negativt fysisk lager kan slettes fra listen <strong>Negativt lager</strong>; aktive reservationer skal først håndteres.</p></div>
+
+<?php if(is_admin()):?>
+<div class="card">
+  <details>
+    <summary style="cursor:pointer;font-weight:600;font-size:1.1rem;">🔀 Flet to varenumre / produkter</summary>
+    <p class="muted" style="margin-top:8px">Vælg et kildeprodukt, der skal flettes ind i et målprodukt. Kildeproduktets lagerbeholdning overføres til målproduktet, reservationer flyttes, og manglende felter udfyldes automatisk. Kildeproduktet slettes derefter.</p>
+    <form method="post" onsubmit="return confirm('Er du sikker på, at du vil flette disse to produkter? Kildeproduktet vil blive slettet og lageret lagt sammen med målproduktet.');"><?=csrf_field()?><input type="hidden" name="action" value="merge_products">
+      <div class="split">
+        <label>Kildeprodukt (Slettes efter fletning)
+          <select name="source_id" required>
+            <option value="">– Vælg kildeprodukt –</option>
+            <?php foreach($products as $p):?><option value="<?=$p['id']?>"><?=h($p['sku'].' · '.$p['name'].(!empty($p['cask_number'])?' · #'.$p['cask_number']:''))?></option><?php endforeach;?>
+          </select>
+        </label>
+        <label>Målprodukt (Beholdes og opdateres)
+          <select name="target_id" required>
+            <option value="">– Vælg målprodukt –</option>
+            <?php foreach($products as $p):?><option value="<?=$p['id']?>"><?=h($p['sku'].' · '.$p['name'].(!empty($p['cask_number'])?' · #'.$p['cask_number']:''))?></option><?php endforeach;?>
+          </select>
+        </label>
+      </div>
+      <button class="button">Flet varenumre og saml lager</button>
+    </form>
+  </details>
+</div>
+<?php endif;?>
 
 <?php if(is_admin()):?>
 <div class="card">
