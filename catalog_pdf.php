@@ -65,9 +65,9 @@ function add_hsg_logo(SimplePdf $pdf,array &$ops,array &$images,?string $path): 
 }
 function add_page_no(SimplePdf $pdf,array &$ops,int $page): void {$ops[]=$pdf->textFont(548,22,8,(string)$page,'helvetica');}
 function add_product_table(SimplePdf $pdf,array &$ops,array $rows,float $x,float $top,float $w=250): void {
-    $labelW=135;$metrics=[];$totalH=0;
+    $labelW=145;$metrics=[];$totalH=0;
     foreach($rows as [$label,$value]){
-        $valueLines=$pdf->wrap((string)$value,30);$labelLines=$pdf->wrap((string)$label,26);$lines=max(1,count($valueLines),count($labelLines));$rh=max(24,8+$lines*12);
+        $valueLines=$pdf->wrap((string)$value,22);$labelLines=$pdf->wrap((string)$label,32);$lines=max(1,count($valueLines),count($labelLines));$rh=max(24,8+$lines*12);
         $metrics[]=['label'=>$labelLines,'value'=>$valueLines,'height'=>$rh];$totalH+=$rh;
     }
     if($totalH<=0)return;$bottom=$top-$totalH;$cursor=$top;
@@ -77,7 +77,7 @@ function add_product_table(SimplePdf $pdf,array &$ops,array $rows,float $x,float
     foreach($metrics as $idx=>$m){
         $rowBottom=$cursor-$m['height'];
         if($idx<count($metrics)-1)$ops[]=$pdf->line($x,$rowBottom,$x+$w,$rowBottom,.55);
-        foreach(array_slice($m['label'],0,3) as $i=>$line)$ops[]=$pdf->textFont($x+7,$cursor-15-($i*11),9.2,$line,'helvetica-bold');
+        foreach(array_slice($m['label'],0,3) as $i=>$line)$ops[]=$pdf->textFont($x+7,$cursor-15-($i*11),8.6,$line,'helvetica-bold');
         foreach(array_slice($m['value'],0,3) as $i=>$line)$ops[]=$pdf->textFont($x+$labelW+7,$cursor-15-($i*11),9.2,$line,'helvetica');
         $cursor=$rowBottom;
     }
