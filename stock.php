@@ -14,6 +14,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     $pdo->prepare('INSERT INTO lager_stock(product_id,location_id,quantity) VALUES(?,?,?) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity)')->execute([$pid,$lid,$new]);
     $change=$new-$old;
     $pdo->prepare('INSERT INTO lager_stock_movements(product_id,location_id,change_qty,balance_after,movement_type,reference,created_by,created_by_admin) VALUES(?,?,?,?,?,?,?,?)')->execute([$pid,$lid,$change,$new,$action==='set'?'set':'adjust',$ref,null,current_admin_id()]);
+    hsg_sync_product_stock_status($pdo,$pid);
     $pdo->commit(); audit_log($pdo,'stock.'.($action==='set'?'set':'adjust'),'stock',$pid.':'.$lid,['old'=>$old,'new'=>$new,'change'=>$change,'reference'=>$ref]);hsg_do_action('stock.changed',['product_id'=>$pid,'location_id'=>$lid,'old'=>$old,'new'=>$new,'change'=>$change,'type'=>$action]); flash('success','Lagerbeholdning opdateret.'); redirect('stock.php');
   }
   if($action==='transfer'){
@@ -28,6 +29,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     $up=$pdo->prepare('INSERT INTO lager_stock(product_id,location_id,quantity) VALUES(?,?,?) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity)');$up->execute([$pid,$from,$fromNew]);$up->execute([$pid,$to,$toNew]);
     $mv=$pdo->prepare('INSERT INTO lager_stock_movements(product_id,location_id,change_qty,balance_after,movement_type,reference,created_by,created_by_admin) VALUES(?,?,?,?,?,?,?,?)');
     $mv->execute([$pid,$from,-$qty,$fromNew,'transfer_out',$ref,null,current_admin_id()]);$mv->execute([$pid,$to,$qty,$toNew,'transfer_in',$ref,null,current_admin_id()]);
+    hsg_sync_product_stock_status($pdo,$pid);
     $pdo->commit();audit_log($pdo,'stock.transfer','stock',(string)$pid,['from_location'=>$from,'to_location'=>$to,'quantity'=>$qty,'reference'=>$ref]);hsg_do_action('stock.transferred',['product_id'=>$pid,'from_location'=>$from,'to_location'=>$to,'quantity'=>$qty]);flash('success','Varerne er flyttet mellem lokationerne.');redirect('stock.php');
   }
  }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();flash('error',$e->getMessage());}

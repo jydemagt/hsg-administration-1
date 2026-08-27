@@ -24,8 +24,10 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 flash('info','Du har allerede den nyeste version ('.$release['version'].') ifølge GitHub.');
             }
         } elseif($action==='stage_github'){
-            $url=(string)($_POST['download_url']??'');
-            $ver=(string)($_POST['version']??'');
+            $release=hsg_github_check_latest_release();
+            $_SESSION['hsg_github_release']=$release;
+            $url=$release['download_url']!==''?$release['download_url']:(string)($_POST['download_url']??'');
+            $ver=$release['version']!==''?$release['version']:(string)($_POST['version']??'');
             if($url==='' || $ver==='') throw new RuntimeException('Mangler oplysninger om GitHub-opdatering.');
             $old=hsg_staged_update_from_session(); if($old) hsg_update_cleanup_staged((string)$old['path']);
             $info=hsg_github_download_and_stage($url, $ver);
@@ -63,6 +65,11 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 }
 
 $staged=hsg_staged_update_from_session();
+if(!isset($_SESSION['hsg_github_release'])){
+    try {
+        $_SESSION['hsg_github_release'] = hsg_github_check_latest_release();
+    } catch(Throwable $e) {}
+}
 $githubRelease=$_SESSION['hsg_github_release']??null;
 $history=db_table_exists($pdo,'hsg_update_runs')?$pdo->query('SELECT * FROM hsg_update_runs ORDER BY created_at DESC,id DESC LIMIT 30')->fetchAll():[];
 $uploadLimit=ini_get('upload_max_filesize')?:'?';$postLimit=ini_get('post_max_size')?:'?';
@@ -85,11 +92,11 @@ page_header('Opgradering');
 
   <?php if(is_array($githubRelease)): ?>
     <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-card, #f8f9fa); border: 1px solid var(--border-color, #e0e0e0); border-radius: 6px;">
-      <h3>Seneste release på GitHub: <?=h($githubRelease['version'])?></h3>
-      <p><strong>Status:</strong> <?= $githubRelease['has_update'] ? '<span style="color: green; font-weight: bold;">Ny version tilgængelig!</span>' : 'Du kører allerede nyeste version.' ?></p>
-      <?php if(!empty($githubRelease['published_at'])): ?><p class="muted">Udgivet: <?=h(date('d-m-Y H:i', strtotime($githubRelease['published_at'])))?></p><?php endif; ?>
+      <h3>Seneste kode på GitHub: <?=h($githubRelease['version'])?> (<?=h($githubRelease['name'])?>)</h3>
+      <p><strong>Status:</strong> <?= $githubRelease['has_update'] ? '<span style="color: green; font-weight: bold;">Ny version tilgængelig!</span>' : '<span style="color: #155eef; font-weight: bold;">Klar til opdatering / gen-installation fra GitHub main-branch</span>' ?></p>
+      <?php if(!empty($githubRelease['published_at'])): ?><p class="muted">Opdateret: <?=h(date('d-m-Y H:i', strtotime($githubRelease['published_at'])))?></p><?php endif; ?>
       <?php if(trim($githubRelease['notes']) !== ''): ?>
-        <p><strong>Release notes:</strong></p>
+        <p><strong>Release notes / ændringer:</strong></p>
         <p><?=nl2br(h($githubRelease['notes']))?></p>
       <?php endif; ?>
 
@@ -99,7 +106,7 @@ page_header('Opgradering');
           <input type="hidden" name="action" value="stage_github">
           <input type="hidden" name="version" value="<?=h($githubRelease['version'])?>">
           <input type="hidden" name="download_url" value="<?=h($githubRelease['download_url'])?>">
-          <button type="submit">Hent og kontrollér opdatering fra GitHub</button>
+          <button type="submit"><?= $githubRelease['has_update'] ? 'Hent og kontrollér opdatering fra GitHub' : 'Hent og opdatér fra GitHub main-branch' ?></button>
         </form>
       <?php endif; ?>
     </div>
