@@ -9,7 +9,7 @@ $priceMeta=hsg_catalog_price_meta($price);$priceField=$priceMeta['field'];$price
 $brandRows=$pdo->query("SELECT b.id,b.name,b.description,b.logo_path,b.sort_order,pb.name parent_name FROM lager_brands b LEFT JOIN lager_brands pb ON pb.id=b.parent_id ORDER BY COALESCE(pb.sort_order,b.sort_order),COALESCE(pb.name,b.name),b.parent_id IS NOT NULL,b.sort_order,b.name")->fetchAll();
 $brandMeta=[];foreach($brandRows as $b)$brandMeta[(string)$b['name']]=$b;
 
-$rows=$pdo->query("SELECT p.*,b.name brand_name,b.description brand_description,b.logo_path brand_logo_path,b.sort_order brand_sort_order,pb.name parent_brand_name,pb.sort_order parent_sort_order,
+$rows=$pdo->query("SELECT p.*,b.name brand_name,b.description brand_description,b.logo_path brand_logo_path,b.sort_order brand_sort_order,pb.name parent_brand_name,pb.description parent_brand_description,pb.sort_order parent_sort_order,
  COALESCE(st.physical,0)-COALESCE(rs.reserved,0) available
  FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id LEFT JOIN lager_brands pb ON pb.id=b.parent_id
  LEFT JOIN (SELECT product_id,SUM(quantity) physical FROM lager_stock GROUP BY product_id) st ON st.product_id=p.id
@@ -42,8 +42,7 @@ $tocPages=catalog_toc_page_count($families);
 $currentPage=2+$tocPages;$tocEntries=[];$pagePlan=[];
 foreach($families as $family=>$f){
     $introPage=$currentPage++;$tocEntries[]=['type'=>'family','text'=>hsg_catalog_family_display($family),'page'=>$introPage];
-    $familyMeta=$brandMeta[$family]??null;$familyDesc=(string)($familyMeta['description']??'');$familyLogo=(string)($familyMeta['logo_path']??'');
-    if($familyDesc==='')foreach($f['sections'] as $section=>$ps){if(!empty($brandMeta[$section]['description'])){$familyDesc=(string)$brandMeta[$section]['description'];break;}}
+    $familyMeta=$brandMeta[$family]??null;$familyDesc=hsg_catalog_get_family_desc($family,$f,$brandMeta);$familyLogo=(string)($familyMeta['logo_path']??'');
     $pagePlan[]=['type'=>'intro','family'=>$family,'display'=>hsg_catalog_family_display($family),'desc'=>$familyDesc,'logo'=>$familyLogo,'page'=>$introPage];
     foreach($f['sections'] as $section=>$products){
         foreach(array_chunk($products,2) as $chunk){

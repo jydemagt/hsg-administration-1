@@ -157,6 +157,32 @@ function hsg_catalog_abv($v): string {
     return rtrim(rtrim(number_format((float)$v,2,',',''),'0'),',').' %';
 }
 
+function hsg_catalog_get_family_desc(string $family, array $familyData, array $brandMeta): string {
+    if(!empty($brandMeta[$family]['description'])) {
+        return trim((string)$brandMeta[$family]['description']);
+    }
+    $norm = strtolower(trim($family));
+    foreach ($brandMeta as $bName => $bData) {
+        if (strtolower(trim((string)$bName)) === $norm && !empty($bData['description'])) {
+            return trim((string)$bData['description']);
+        }
+    }
+    foreach ((array)($familyData['sections'] ?? []) as $section => $products) {
+        if (!empty($brandMeta[$section]['description'])) {
+            return trim((string)$brandMeta[$section]['description']);
+        }
+        foreach ($products as $p) {
+            if (!empty($p['brand_description'])) {
+                return trim((string)$p['brand_description']);
+            }
+            if (!empty($p['parent_brand_description'])) {
+                return trim((string)$p['parent_brand_description']);
+            }
+        }
+    }
+    return '';
+}
+
 function hsg_catalog_product_rows(array $p,string $priceField,string $priceLabel): array {
     $p=hsg_catalog_product_effective($p);
     $rows=[
