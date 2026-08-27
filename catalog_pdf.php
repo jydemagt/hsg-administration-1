@@ -97,14 +97,26 @@ function add_product_slot(SimplePdf $pdf,array &$ops,array &$images,array $p,int
     }
 }
 
+function pdf_text_centered(SimplePdf $pdf, float $y, float $size, string $text, string $font = 'helvetica', float $pageWidth = 595): string {
+    $len = function_exists('mb_strlen') ? mb_strlen($text, 'UTF-8') : strlen($text);
+    $factor = match(strtolower($font)) {
+        'times-bold', 'helvetica-bold' => 0.56,
+        'times' => 0.50,
+        default => 0.52,
+    };
+    $w = $len * $size * $factor;
+    $x = max(10.0, ($pageWidth - $w) / 2);
+    return $pdf->textFont($x, $y, $size, $text, $font);
+}
+
 // Cover page
 $ops=[];$images=[];
 if($hsgLogo){$images['CoverLogo']=$hsgLogo;$op=pdf_image_fit('CoverLogo',$hsgLogo,180,535,235,150);if($op)$ops[]=$op;}
-$ops[]=$pdf->textFont(145,418,34,'Whisky Katalog','helvetica');
-$ops[]=$pdf->textFont(267,365,15,'Fra','helvetica');
-$ops[]=$pdf->textFont(182,321,22,'HSG Whisky Aps','helvetica');
-$ops[]=$pdf->textFont(248,139,9,'Opdateret','helvetica');
-$ops[]=$pdf->textFont(229,115,10,date('d. m. Y'),'helvetica');
+$ops[]=pdf_text_centered($pdf,418,34,'Whisky Katalog','helvetica');
+$ops[]=pdf_text_centered($pdf,365,15,'Fra','helvetica');
+$ops[]=pdf_text_centered($pdf,321,22,'HSG Whisky Aps','helvetica');
+$ops[]=pdf_text_centered($pdf,139,9,'Opdateret','helvetica');
+$ops[]=pdf_text_centered($pdf,115,10,date('d. m. Y'),'helvetica');
 $pdf->addPage($ops,$images);
 
 // TOC pages
