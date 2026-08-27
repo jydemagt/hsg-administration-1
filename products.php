@@ -6,6 +6,22 @@ require_once __DIR__.'/core/quality.php';
 if($_SERVER['REQUEST_METHOD']==='POST'){
     try{
         $action=(string)($_POST['action']??'save');
+        if($action==='toggle_flag'){
+            $id=(int)($_POST['id']??0);
+            $field=(string)($_POST['field']??'');
+            if($id<=0 || !in_array($field,['is_new','show_in_catalog'],true)) throw new RuntimeException('Ugyldig handling.');
+            $val=!empty($_POST['value'])?1:0;
+            $pdo->prepare("UPDATE lager_products SET {$field}=? WHERE id=?")->execute([$val,$id]);
+            audit_log($pdo,'product.toggle_'.$field,'product',(string)$id,['field'=>$field,'value'=>$val]);
+
+            if(!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH'])==='xmlhttprequest'){
+                header('Content-Type: application/json');
+                echo json_encode(['ok'=>true,'id'=>$id,'field'=>$field,'value'=>$val]);
+                exit;
+            }
+            flash('success','Produktoplysninger opdateret.');
+            redirect('products.php');
+        }
         if($action==='merge_products'){
             $sourceId=(int)($_POST['source_id']??0);
             $targetId=(int)($_POST['target_id']??0);
@@ -198,6 +214,22 @@ page_header('Produkter');
 
 <?php if(is_admin()):?>
 <script>
+async function toggleProductFlag(checkbox){
+  const form=checkbox.form;if(!form)return;
+  const fd=new FormData(form);
+  if(!checkbox.checked) fd.delete('value');
+  try{
+    const r=await fetch('products.php',{
+      method:'POST',
+      body:fd,
+      headers:{'X-Requested-With':'XMLHttpRequest'}
+    });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+  }catch(e){
+    checkbox.checked=!checkbox.checked;
+    alert('Kunne ikke gemme ændringen: '+e.message);
+  }
+}
 const enrichCsrf=<?=json_encode(csrf_token())?>;
 const missingProductIds=<?=json_encode(array_map('intval',$missingIds))?>;
 const productForm=document.getElementById('productForm');
