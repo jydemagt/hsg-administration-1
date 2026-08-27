@@ -1,6 +1,10 @@
 <?php
 require __DIR__.'/auth.php';require_module_enabled('catalog');require_capability('catalog.view');require_once __DIR__.'/core/catalog_layout.php';
-$price=(($_GET['price']??'retail')==='wholesale')?'wholesale':'retail';$priceMeta=hsg_catalog_price_meta($price);$field=$priceMeta['field'];$label=$priceMeta['label'];
+$price=(($_GET['price']??'retail')==='wholesale')?'wholesale':'retail';
+$newOnly=!empty($_GET['news']) || !empty($_GET['new_only']);
+$priceMeta=hsg_catalog_price_meta($price);$field=$priceMeta['field'];$label=$priceMeta['label'];
+$catalogTitle=$newOnly?'Nyhedskatalog':'Whisky Katalog';
+
 $brandRows=$pdo->query("SELECT b.id,b.name,b.description,b.logo_path,b.sort_order,pb.name parent_name,pb.description parent_description FROM lager_brands b LEFT JOIN lager_brands pb ON pb.id=b.parent_id ORDER BY COALESCE(pb.sort_order,b.sort_order),COALESCE(pb.name,b.name),b.parent_id IS NOT NULL,b.sort_order,b.name")->fetchAll();
 $brandMeta=[];
 foreach($brandRows as $b){
@@ -12,7 +16,12 @@ foreach($brandRows as $b){
     $brandMeta[(string)$b['name']]=$b;
 }
 
-$rows=$pdo->query("SELECT p.*,b.name brand_name,b.description brand_description,b.logo_path brand_logo_path,b.sort_order brand_sort_order,pb.name parent_brand_name,pb.description parent_brand_description,pb.sort_order parent_sort_order,COALESCE(st.physical,0)-COALESCE(rs.reserved,0) available FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id LEFT JOIN lager_brands pb ON pb.id=b.parent_id LEFT JOIN (SELECT product_id,SUM(quantity) physical FROM lager_stock GROUP BY product_id) st ON st.product_id=p.id LEFT JOIN (SELECT product_id,SUM(quantity) reserved FROM lager_reservations WHERE status='reserved' GROUP BY product_id) rs ON rs.product_id=p.id WHERE p.status='active' AND p.show_in_catalog=1 AND COALESCE(st.physical,0)-COALESCE(rs.reserved,0)>0 ORDER BY COALESCE(pb.sort_order,b.sort_order,999),COALESCE(pb.name,b.name,'Uden brand'),b.sort_order,b.name,p.name")->fetchAll();
+$whereClause="WHERE p.status='active' AND p.show_in_catalog=1 AND COALESCE(st.physical,0)-COALESCE(rs.reserved,0)>0";
+if($newOnly){
+    $whereClause.=" AND p.is_new=1";
+}
+
+$rows=$pdo->query("SELECT p.*,b.name brand_name,b.description brand_description,b.logo_path brand_logo_path,b.sort_order brand_sort_order,pb.name parent_brand_name,pb.description parent_brand_description,pb.sort_order parent_sort_order,COALESCE(st.physical,0)-COALESCE(rs.reserved,0) available FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id LEFT JOIN lager_brands pb ON pb.id=b.parent_id LEFT JOIN (SELECT product_id,SUM(quantity) physical FROM lager_stock GROUP BY product_id) st ON st.product_id=p.id LEFT JOIN (SELECT product_id,SUM(quantity) reserved FROM lager_reservations WHERE status='reserved' GROUP BY product_id) rs ON rs.product_id=p.id {$whereClause} ORDER BY COALESCE(pb.sort_order,b.sort_order,999),COALESCE(pb.name,b.name,'Uden brand'),b.sort_order,b.name,p.name")->fetchAll();
 
 $families=[];
 foreach($rows as $p){
@@ -76,12 +85,35 @@ for($tocPage = 0; $tocPage < $tocPages; $tocPage++) {
 
 page_header('Produktkatalog');
 ?>
-<div class="card"><form method="get" class="catalog-options"><label>Pristype<select name="price" onchange="this.form.submit()"><option value="wholesale" <?=$price==='wholesale'?'selected':''?>>Engrospris ekskl. moms</option><option value="retail" <?=$price==='retail'?'selected':''?>>Vejl. pris inkl. moms</option></select></label><a class="button" href="catalog_pdf.php?price=<?=h($price)?>">Download PDF i kataloglayout</a><?php if(is_admin()):?><a class="button secondary" href="products.php">Rediger produkter</a><a class="button secondary" href="brands.php">Rediger brands</a><?php endif;?></form></div>
+<div class="card">
+  <form method="get" class="catalog-options">
+    <label>Pristype
+      <select name="price" onchange="this.form.submit()">
+        <option value="wholesale" <?=$price==='wholesale'?'selected':''?>>Engrospris ekskl. moms</option>
+        <option value="retail" <?=$price==='retail'?'selected':''?>>Vejl. pris inkl. moms</option>
+      </select>
+    </label>
+    <label>Katalogtype
+      <select name="news" onchange="this.form.submit()">
+        <option value="0" <?=$newOnly?'':'selected'?>>Hele kataloget</option>
+        <option value="1" <?=$newOnly?'selected':''?>>Kun nyheder (Nyhedskatalog)</option>
+      </select>
+    </label>
+    <div class="actions" style="margin-left:auto">
+      <a class="button" href="catalog_pdf.php?price=wholesale&new_only=<?=$newOnly?1:0?>">Engrospris PDF</a>
+      <a class="button" href="catalog_pdf.php?price=retail&new_only=<?=$newOnly?1:0?>">Vejl. pris PDF</a>
+      <?php if(is_admin()):?>
+        <a class="button secondary" href="products.php">Rediger produkter</a>
+        <a class="button secondary" href="brands.php">Rediger brands</a>
+      <?php endif;?>
+    </div>
+  </form>
+</div>
 
 <div class="catalog-document-preview">
-  <section class="catalog-cover-preview">
+  <section class="catalog-cover-preview" id="page-1">
     <img src="<?=h(hsg_catalog_hsg_logo_url())?>" alt="HSG Whisky">
-    <h1>Whisky Katalog</h1><p>Fra</p><h2>HSG Whisky Aps</h2><small>Opdateret <?=h(date('d. m. Y'))?></small>
+    <h1><?=h($catalogTitle)?></h1><p>Fra</p><h2>HSG Whisky Aps</h2><small>Opdateret <?=h(date('d. m. Y'))?></small>
   </section>
 
 <?php foreach($tocPagePlans as $tocPlan):?>

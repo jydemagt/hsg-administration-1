@@ -4,17 +4,24 @@ require_module_enabled('catalog');require_capability('catalog.view');
 require_once __DIR__.'/pdf_simple.php';require_once __DIR__.'/core/catalog_layout.php';
 
 $price=(($_GET['price']??'retail')==='wholesale')?'wholesale':'retail';
+$newOnly=!empty($_GET['news']) || !empty($_GET['new_only']);
 $priceMeta=hsg_catalog_price_meta($price);$priceField=$priceMeta['field'];$priceLabel=$priceMeta['label'];
+$catalogTitle=$newOnly?'Nyhedskatalog':'Whisky Katalog';
 
 $brandRows=$pdo->query("SELECT b.id,b.name,b.description,b.logo_path,b.sort_order,pb.name parent_name FROM lager_brands b LEFT JOIN lager_brands pb ON pb.id=b.parent_id ORDER BY COALESCE(pb.sort_order,b.sort_order),COALESCE(pb.name,b.name),b.parent_id IS NOT NULL,b.sort_order,b.name")->fetchAll();
 $brandMeta=[];foreach($brandRows as $b)$brandMeta[(string)$b['name']]=$b;
+
+$whereClause="WHERE p.status='active' AND p.show_in_catalog=1 AND COALESCE(st.physical,0)-COALESCE(rs.reserved,0)>0";
+if($newOnly){
+    $whereClause.=" AND p.is_new=1";
+}
 
 $rows=$pdo->query("SELECT p.*,b.name brand_name,b.description brand_description,b.logo_path brand_logo_path,b.sort_order brand_sort_order,pb.name parent_brand_name,pb.description parent_brand_description,pb.sort_order parent_sort_order,
  COALESCE(st.physical,0)-COALESCE(rs.reserved,0) available
  FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id LEFT JOIN lager_brands pb ON pb.id=b.parent_id
  LEFT JOIN (SELECT product_id,SUM(quantity) physical FROM lager_stock GROUP BY product_id) st ON st.product_id=p.id
  LEFT JOIN (SELECT product_id,SUM(quantity) reserved FROM lager_reservations WHERE status='reserved' GROUP BY product_id) rs ON rs.product_id=p.id
- WHERE p.status='active' AND p.show_in_catalog=1 AND COALESCE(st.physical,0)-COALESCE(rs.reserved,0)>0
+ {$whereClause}
  ORDER BY COALESCE(pb.sort_order,b.sort_order,999),COALESCE(pb.name,b.name,'Uden brand'),b.sort_order,b.name,p.name")->fetchAll();
 
 $families=[];
@@ -116,7 +123,7 @@ function pdf_text_centered(SimplePdf $pdf, float $y, float $size, string $text, 
 // Cover page
 $ops=[];$images=[];
 if($hsgLogo){$images['CoverLogo']=$hsgLogo;$op=pdf_image_fit('CoverLogo',$hsgLogo,180,535,235,150);if($op)$ops[]=$op;}
-$ops[]=pdf_text_centered($pdf,418,34,'Whisky Katalog','helvetica');
+$ops[]=pdf_text_centered($pdf,418,34,$catalogTitle,'helvetica');
 $ops[]=pdf_text_centered($pdf,365,15,'Fra','helvetica');
 $ops[]=pdf_text_centered($pdf,321,22,'HSG Whisky Aps','helvetica');
 $ops[]=pdf_text_centered($pdf,139,9,'Opdateret','helvetica');
@@ -161,4 +168,5 @@ foreach($pagePlan as $plan){
 }
 
 if(!$rows){$pdf->addPage([$pdf->textFont(40,790,20,'HSG Whisky produktkatalog','helvetica-bold'),$pdf->textFont(40,755,11,'Ingen produkter med disponibelt lager er tilgængelige i kataloget.','helvetica')]);}
-$pdf->output('HSG-Whisky-Katalog-'.($price==='retail'?'vejl-priser':'engrospriser').'-'.date('Y-m-d').'.pdf');
+$pdfFilename=$newOnly?('HSG-Nyhedskatalog-'.($price==='retail'?'vejl-priser':'engrospriser').'-'.date('Y-m-d').'.pdf'):('HSG-Whisky-Katalog-'.($price==='retail'?'vejl-priser':'engrospriser').'-'.date('Y-m-d').'.pdf');
+$pdf->output($pdfFilename);
