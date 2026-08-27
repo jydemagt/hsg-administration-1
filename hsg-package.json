@@ -5,6 +5,8 @@
     "version": "3.4.0",
     "generated_at": "2026-08-27T14:05:17+00:00",
     "files": {
+        ".gitignore": "63d01d02bfadc4d1eb02fa4d985fe4b6ac0d304cf3dba9ecb55faa89d3458ed0",
+        ".htaccess": "5c8e8866bdbbd4d2ae7455d1a106ee62390fcb37cbe60a364827a50ae00fcc69",
         "JULES-HANDOFF/HSG_Jules_Handoff.md": "fae978b46ea3604ba2862339215ed527ab9c56d8a8eb014651adb140e966352c",
         "JULES-HANDOFF/HSG_Jules_Handoff.txt": "fae978b46ea3604ba2862339215ed527ab9c56d8a8eb014651adb140e966352c",
         "README.txt": "6fb9a25f0a8ee4651fcf953ddf3635c127c79484d33891d3def0b6633d9696cb",
