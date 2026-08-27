@@ -1,7 +1,7 @@
 {
     "product": "HSG Administration",
     "package_type": "update",
-    "version": "2.8.0",
+    "version": "2.9.0",
     "generated_at": "2026-08-26T11:27:06+00:00",
     "min_php": "8.1.0",
     "required_files": [
@@ -21,7 +21,7 @@
         "admin-login.php": "04b061728bcf753ba6dbeb535bc69fae7a3fff3d1ed5605ef9b8a85339691cfe",
         "admin-setup.php": "323ecd555ca2f7b4e920c482736e53829c14e7ef0ef400e7421872f2b954e8d2",
         "admin.php": "e0ab785ffc6f69eea80462fd663709c43c88fe3b7b95ce4318107163aaed7dbc",
-        "app_version.php": "84577a116e615cdebf59b84298452a7643954930e29bbee95b715bd51654f9c0",
+        "app_version.php": "25022f4af0f08fff6232ba40a32e7d250721491fa7a5a309f8131c82f73101c0",
         "assets/bottle-placeholder.svg": "bb77203924ece9b630dce344f4d700e017028398787a1bdb1612b9a70b9599f4",
         "assets/style.css": "9c525721cae459cb9a334cfe6e2742b5ee55795f240272b427fd6689f7c25e6b",
         "auth.php": "a34d291e367c49c6163dd3220624d8202c57b028bd6fa5d1db95e29cac66c556",
