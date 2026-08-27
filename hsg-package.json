@@ -1,16 +1,7 @@
 {
-    "product": "HSG Administration",
-    "package_type": "update",
-    "version": "3.3.0",
-    "generated_at": "2026-08-26T11:27:06+00:00",
-    "min_php": "8.1.0",
-    "required_files": [
-        "app_version.php",
-        "auth.php",
-        "migrations.php",
-        "core/modules.php"
-    ],
-    "file_count": 173,
+    "name": "hsg-administration",
+    "version": "3.4.0",
+    "generated_at": "2026-08-27T12:04:25+00:00",
     "files": {
         ".gitignore": "63d01d02bfadc4d1eb02fa4d985fe4b6ac0d304cf3dba9ecb55faa89d3458ed0",
         ".htaccess": "5c8e8866bdbbd4d2ae7455d1a106ee62390fcb37cbe60a364827a50ae00fcc69",
@@ -21,7 +12,7 @@
         "admin-login.php": "04b061728bcf753ba6dbeb535bc69fae7a3fff3d1ed5605ef9b8a85339691cfe",
         "admin-setup.php": "323ecd555ca2f7b4e920c482736e53829c14e7ef0ef400e7421872f2b954e8d2",
         "admin.php": "e0ab785ffc6f69eea80462fd663709c43c88fe3b7b95ce4318107163aaed7dbc",
-        "app_version.php": "0c3f90a06774417e5ee42f75bdc18580be6729cde90f94ce186424787abd613c",
+        "app_version.php": "7b95dbf7786584eedcc70108465f08147a16d1b89e20d36240086fbfe0e413b4",
         "assets/bottle-placeholder.svg": "bb77203924ece9b630dce344f4d700e017028398787a1bdb1612b9a70b9599f4",
         "assets/style.css": "4c0244c6d8eb921108125cdd12ff34e1a0fcfd5e2a795f93c6a5449a199926ae",
         "auth.php": "a34d291e367c49c6163dd3220624d8202c57b028bd6fa5d1db95e29cac66c556",
@@ -92,7 +83,7 @@
         "modules/updater/module.php": "eb4248a21df1b68155dc822acad2f1481e8c2adf5e769ba9eacb2a1bf54b1246",
         "pdf_simple.php": "dd0e5360b0ff55031d6cc89d353433843fe740b4ac5f598e4672b0efd071c92e",
         "product_enrich.php": "b103ed127f61bfeb0523dcd9c2427829befc068868da150f011a825ff36db153",
-        "products.php": "00be57108ce86bdf376861ed6f3e216aff91e4763c089c544c93dd94d32ee18f",
+        "products.php": "3a881d684dd43e44c30d6be1dbddf7d0bc1182792be005626ffd52a132de5de4",
         "quality.php": "769fb82e1d7ccdbf9c06a648540a8c963208d5b0c6539a8a5f9a2e39bf83aa07",
         "reservations.php": "5fb91b669b3540841376b53011fdd79a2cdf41dbbfbe59c687f457eb4a824e2f",
         "schema.sql": "8c3cf57e3b9233211190c9a7d4e9fbe75d7d6521ead06b3cddaa5b3b007af5c5",
