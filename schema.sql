@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS lager_brands (
   website_url VARCHAR(500) NULL,
   image_search_url VARCHAR(500) NULL,
   logo_path VARCHAR(255) NULL,
+  show_in_catalog TINYINT(1) NOT NULL DEFAULT 1,
   active TINYINT(1) NOT NULL DEFAULT 1,
   sort_order INT NOT NULL DEFAULT 100,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

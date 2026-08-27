@@ -10,10 +10,35 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         $description=$parentId?null:trim($_POST['description']??'');
         $web=trim($_POST['website_url']??'');
         $order=(int)($_POST['sort_order']??100);
+        $showInCatalog=!empty($_POST['show_in_catalog'])?1:0;
         if($name==='')throw new RuntimeException('Brandnavn skal udfyldes.');
         if($parentId && $parentId===$id)throw new RuntimeException('Et brand kan ikke være sit eget hovedbrand.');
-        if($id)$pdo->prepare('UPDATE lager_brands SET parent_id=?,name=?,description=?,website_url=?,sort_order=? WHERE id=?')->execute([$parentId,$name,$description,$web?:null,$order,$id]);
-        else{$pdo->prepare('INSERT INTO lager_brands(parent_id,name,description,website_url,sort_order,active) VALUES(?,?,?,?,?,1)')->execute([$parentId,$name,$description,$web?:null,$order]);$id=(int)$pdo->lastInsertId();}
+
+        $logoPath=null;
+        if(isset($_FILES['logo_file']) && ($_FILES['logo_file']['error']??UPLOAD_ERR_NO_FILE)===UPLOAD_ERR_OK){
+            $ext=strtolower(pathinfo($_FILES['logo_file']['name'],PATHINFO_EXTENSION));
+            if(!in_array($ext,['jpg','jpeg','png','webp','gif','svg'],true)){
+                throw new RuntimeException('Ugyldigt billedformat for brandlogo. Brug JPG, PNG, WEBP, GIF eller SVG.');
+            }
+            $targetDir=__DIR__.'/uploads/brand-logos';
+            if(!is_dir($targetDir)) @mkdir($targetDir,0775,true);
+            $filename='brand-'.$id.'-'.bin2hex(random_bytes(6)).'.'.$ext;
+            $dest=$targetDir.'/'.$filename;
+            if(move_uploaded_file($_FILES['logo_file']['tmp_name'],$dest)){
+                $logoPath='uploads/brand-logos/'.$filename;
+            }
+        }
+
+        if($id){
+            if($logoPath){
+                $pdo->prepare('UPDATE lager_brands SET parent_id=?,name=?,description=?,website_url=?,sort_order=?,show_in_catalog=?,logo_path=? WHERE id=?')->execute([$parentId,$name,$description,$web?:null,$order,$showInCatalog,$logoPath,$id]);
+            } else {
+                $pdo->prepare('UPDATE lager_brands SET parent_id=?,name=?,description=?,website_url=?,sort_order=?,show_in_catalog=? WHERE id=?')->execute([$parentId,$name,$description,$web?:null,$order,$showInCatalog,$id]);
+            }
+        }else{
+            $pdo->prepare('INSERT INTO lager_brands(parent_id,name,description,website_url,sort_order,show_in_catalog,logo_path,active) VALUES(?,?,?,?,?,?,?,1)')->execute([$parentId,$name,$description,$web?:null,$order,$showInCatalog,$logoPath]);
+            $id=(int)$pdo->lastInsertId();
+        }
         audit_log($pdo,'brand.save','brand',(string)$id,['name'=>$name,'parent_id'=>$parentId]);
         flash('success','Brand gemt.');redirect('brands.php');
     }
@@ -27,7 +52,7 @@ page_header('Brands');
 ?>
 <div class="card brand-editor">
   <h2><?=$edit?'Rediger brand / underbrand':'Opret brand / underbrand'?></h2>
-  <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="save"><input type="hidden" name="id" value="<?=$edit['id']??0?>">
+  <form method="post" enctype="multipart/form-data"><?=csrf_field()?><input type="hidden" name="action" value="save"><input type="hidden" name="id" value="<?=$edit['id']??0?>">
     <div class="split">
       <label>Brandnavn<input name="name" required value="<?=h($edit['name']??'')?>"></label>
       <label>Hovedbrand (Valgfrit underbrand)
@@ -43,6 +68,13 @@ page_header('Brands');
       <label>Hjemmeside<input type="url" name="website_url" placeholder="https://..." value="<?=h($edit['website_url']??'')?>"></label>
       <label>Sortering<input type="number" name="sort_order" value="<?=h($edit['sort_order']??100)?>"></label>
     </div>
+    <div class="split">
+      <label class="check" style="margin-top:22px"><input type="checkbox" name="show_in_catalog" value="1" <?=!$edit||!empty($edit['show_in_catalog'])?'checked':''?>> Vis brand i kataloget</label>
+      <label>Brandlogo / billede (JPG, PNG, SVG)
+        <input type="file" name="logo_file" accept="image/*">
+        <?php if(!empty($edit['logo_path'])):?><span class="muted">Nuværende: <?=h($edit['logo_path'])?></span><?php endif;?>
+      </label>
+    </div>
     <div id="desc_wrapper" style="display:<?=!empty($edit['parent_id'])?'none':'block'?>">
       <label>Brandbeskrivelse<textarea name="description" placeholder="Denne tekst placeres før brandets flasker i kataloget."><?=h($edit['description']??'')?></textarea></label>
     </div>
@@ -52,16 +84,18 @@ page_header('Brands');
 
 <div class="table-wrap">
   <table>
-    <thead><tr><th>Brand / Underbrand</th><th>Produkter</th><th>Beskrivelse</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Logo</th><th>Brand / Underbrand</th><th>Produkter</th><th>Katalog</th><th>Beskrivelse</th><th>Status</th><th></th></tr></thead>
     <tbody>
       <?php foreach($allRows as $b): $isSub=!empty($b['parent_id']); ?>
       <tr>
+        <td><?php if(!empty($b['logo_path'])):?><img src="<?=h($b['logo_path'])?>" alt="<?=h($b['name'])?>" style="max-height:36px;max-width:80px;object-fit:contain;"><?php else:?><span class="muted">–</span><?php endif;?></td>
         <td style="<?=$isSub?'padding-left:28px;':''?>">
           <?php if($isSub):?><span class="muted">↳ Underbrand af <strong><?=h($b['parent_name'])?></strong></span><br><?php endif;?>
           <strong><?=h($b['name'])?></strong>
           <?php if($b['website_url']):?><br><span class="muted"><?=h($b['website_url'])?></span><?php endif;?>
         </td>
         <td><?=$b['product_count']?></td>
+        <td><span class="badge <?=$b['show_in_catalog']?'green':''?>"><?=$b['show_in_catalog']?'Ja':'Nej'?></span></td>
         <td><?=$isSub?'<span class="muted">(Underbrand - ingen beskrivelse)</span>':h(strlen((string)$b['description'])>120?substr((string)$b['description'],0,117).'...':(string)$b['description'])?></td>
         <td><span class="badge <?=$b['active']?'green':''?>"><?=$b['active']?'Aktiv':'Deaktiveret'?></span></td>
         <td class="actions">

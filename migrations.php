@@ -38,6 +38,7 @@ function ensure_schema_updates(PDO $pdo): void {
     if(db_table_exists($pdo,'lager_brands')){
         if(!db_column_exists($pdo,'lager_brands','parent_id')) $pdo->exec('ALTER TABLE lager_brands ADD parent_id INT UNSIGNED NULL AFTER id');
         if(!db_column_exists($pdo,'lager_brands','image_search_url')) $pdo->exec('ALTER TABLE lager_brands ADD image_search_url VARCHAR(500) NULL AFTER website_url');
+        if(!db_column_exists($pdo,'lager_brands','show_in_catalog')) $pdo->exec('ALTER TABLE lager_brands ADD show_in_catalog TINYINT(1) NOT NULL DEFAULT 1 AFTER logo_path');
     }
 
     $productChanges=[

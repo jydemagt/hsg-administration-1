@@ -52,7 +52,12 @@ function hsg_catalog_logo_url(string $family,?string $dbLogo=null): ?string {
 
 function hsg_catalog_hsg_logo_path(): ?string {$p=hsg_catalog_seed_asset_path('hsg-logo.jpg');return is_file($p)?$p:null;}
 function hsg_catalog_hsg_logo_url(): string {return hsg_catalog_seed_asset_url('hsg-logo.jpg');}
-function hsg_catalog_new_badge_path(): ?string {$p=hsg_catalog_seed_asset_path('nyhed.jpg');return is_file($p)?$p:null;}
+function hsg_catalog_new_badge_path(): ?string {
+    $p=hsg_catalog_seed_asset_path('nyhed.png');
+    if(is_file($p)) return $p;
+    $jpg=hsg_catalog_seed_asset_path('nyhed.jpg');
+    return is_file($jpg)?$jpg:null;
+}
 
 
 /**

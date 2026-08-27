@@ -11,7 +11,7 @@ $catalogTitle=$newOnly?'Nyhedskatalog':'Whisky Katalog';
 $brandRows=$pdo->query("SELECT b.id,b.name,b.description,b.logo_path,b.sort_order,pb.name parent_name FROM lager_brands b LEFT JOIN lager_brands pb ON pb.id=b.parent_id ORDER BY COALESCE(pb.sort_order,b.sort_order),COALESCE(pb.name,b.name),b.parent_id IS NOT NULL,b.sort_order,b.name")->fetchAll();
 $brandMeta=[];foreach($brandRows as $b)$brandMeta[(string)$b['name']]=$b;
 
-$whereClause="WHERE p.status='active' AND p.show_in_catalog=1 AND COALESCE(st.physical,0)-COALESCE(rs.reserved,0)>0";
+$whereClause="WHERE p.status='active' AND p.show_in_catalog=1 AND COALESCE(b.show_in_catalog,1)=1 AND COALESCE(pb.show_in_catalog,1)=1 AND COALESCE(st.physical,0)-COALESCE(rs.reserved,0)>0";
 if($newOnly){
     $whereClause.=" AND p.is_new=1";
 }
@@ -100,7 +100,8 @@ function add_product_slot(SimplePdf $pdf,array &$ops,array &$images,array $p,int
     $title=hsg_catalog_product_title($p);$titleLines=$pdf->wrap($title,44);foreach(array_slice($titleLines,0,2) as $ti=>$tl)$ops[]=$pdf->textFont($tableX,$titleY-($ti*15),13.3,$tl,'times');$tableTop-=max(0,count($titleLines)-1)*15;
     $rows=hsg_catalog_product_rows($p,$priceField,$priceLabel);add_product_table($pdf,$ops,$rows,$tableX,$tableTop,250);
     $path=hsg_catalog_image_path((string)($p['image_path']??''));
-    if(($p['image_approval_status']??'')==='approved'&&$path&&is_file($path)&&(@getimagesize($path)[2]??0)===IMAGETYPE_JPEG){
+    $imgType=@getimagesize($path)[2]??0;
+    if(($p['image_approval_status']??'')==='approved'&&$path&&is_file($path)&&in_array($imgType,[IMAGETYPE_JPEG,IMAGETYPE_PNG],true)){
         $name='P'.(int)$p['id'].'_'.$slot;$images[$name]=$path;$op=pdf_image_fit($name,$path,$imgX,$imgY,$imgW,$imgH);if($op)$ops[]=$op;
         if(!empty($p['is_new'])&&$newBadge){$b='NB'.(int)$p['id'].'_'.$slot;$images[$b]=$newBadge;$bo=pdf_image_fit($b,$newBadge,$imgX-6,$imgY+$imgH-54,58,58);if($bo)$ops[]=$bo;}
     }else{

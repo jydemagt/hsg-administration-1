@@ -9,7 +9,30 @@ final class SimplePdf {
   $this->links[]=['from'=>max(1,$fromPage),'to'=>max(1,$toPage),'x1'=>$x1,'y1'=>$y1,'x2'=>$x2,'y2'=>$y2];
  }
  private function esc(string $s): string {$s=iconv('UTF-8','Windows-1252//TRANSLIT',$s)?:$s;return str_replace(['\\','(',')'],['\\\\','\\(','\\)'],$s);}
- private function imgObj(string $path): ?array {if(!is_file($path))return null;$info=@getimagesize($path);if(!$info||$info[2]!==IMAGETYPE_JPEG)return null;$data=file_get_contents($path);if($data===false)return null;return ['dict'=>'<< /Type /XObject /Subtype /Image /Width '.$info[0].' /Height '.$info[1].' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '.strlen($data).' >>','stream'=>$data,'w'=>$info[0],'h'=>$info[1]];}
+ private function imgObj(string $path): ?array {
+  if(!is_file($path))return null;
+  $info=@getimagesize($path);
+  if(!$info)return null;
+  if($info[2]===IMAGETYPE_PNG && function_exists('imagecreatefrompng') && function_exists('imagejpeg')){
+   $cacheDir=__DIR__.'/storage/tmp/pdf-cache';
+   if(!is_dir($cacheDir))@mkdir($cacheDir,0775,true);
+   $cachedJpeg=$cacheDir.'/png-'.md5($path.(string)@filemtime($path)).'.jpg';
+   if(!is_file($cachedJpeg)){
+    $src=@imagecreatefrompng($path);
+    if($src){
+     $w=imagesx($src);$h=imagesy($src);
+     $bg=imagecreatetruecolor($w,$h);$white=imagecolorallocate($bg,255,255,255);imagefill($bg,0,0,$white);
+     imagecopy($bg,$src,0,0,0,0,$w,$h);imagejpeg($bg,$cachedJpeg,92);
+     imagedestroy($bg);imagedestroy($src);
+    }
+   }
+   if(is_file($cachedJpeg)){$path=$cachedJpeg;$info=@getimagesize($path);}
+  }
+  if(!$info||$info[2]!==IMAGETYPE_JPEG)return null;
+  $data=file_get_contents($path);
+  if($data===false)return null;
+  return ['dict'=>'<< /Type /XObject /Subtype /Image /Width '.$info[0].' /Height '.$info[1].' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '.strlen($data).' >>','stream'=>$data,'w'=>$info[0],'h'=>$info[1]];
+ }
  public function text(float $x,float $y,float $size,string $text,bool $bold=false): string {$font=$bold?'F2':'F1';return 'BT /'.$font.' '.$size.' Tf '.$x.' '.$y.' Td ('.$this->esc($text).') Tj ET';}
  public function textFont(float $x,float $y,float $size,string $text,string $font='helvetica'): string {$f=$this->fontMap[strtolower($font)]??'F1';return 'BT /'.$f.' '.$size.' Tf '.$x.' '.$y.' Td ('.$this->esc($text).') Tj ET';}
  public function dottedLine(float $x1,float $y,float $x2,float $w=.5): string {return '[1.2 2] 0 d '.$w.' w '.$x1.' '.$y.' m '.$x2.' '.$y.' l S [] 0 d';}

@@ -16,7 +16,7 @@ foreach($brandRows as $b){
     $brandMeta[(string)$b['name']]=$b;
 }
 
-$whereClause="WHERE p.status='active' AND p.show_in_catalog=1 AND COALESCE(st.physical,0)-COALESCE(rs.reserved,0)>0";
+$whereClause="WHERE p.status='active' AND p.show_in_catalog=1 AND COALESCE(b.show_in_catalog,1)=1 AND COALESCE(pb.show_in_catalog,1)=1 AND COALESCE(st.physical,0)-COALESCE(rs.reserved,0)>0";
 if($newOnly){
     $whereClause.=" AND p.is_new=1";
 }
@@ -158,7 +158,7 @@ page_header('Produktkatalog');
             <table><?php foreach($dataRows as [$k,$v]):?><tr><th><?=h($k)?></th><td><?=h($v)?></td></tr><?php endforeach;?></table>
           </div>
           <div class="catalog-doc-image-wrap">
-            <?php if(!empty($p['is_new'])):?><img class="catalog-new-sticker" src="<?=h(hsg_catalog_seed_asset_url('nyhed.jpg'))?>" alt="Nyhed"><?php endif;?>
+            <?php if(!empty($p['is_new'])):?><img class="catalog-new-sticker" src="<?=h(hsg_catalog_seed_asset_url('nyhed.png'))?>" alt="Nyhed"><?php endif;?>
             <?php $previewImage=!empty($p['image_path'])?$p['image_path']:null;$catalogImage=$previewImage?hsg_catalog_image_url($previewImage):null; ?>
             <img class="catalog-doc-bottle" src="<?=h($catalogImage?:product_image_url($previewImage))?>" alt="<?=h(hsg_catalog_product_title($p))?>">
             <?php if($previewImage && ($p['image_approval_status']??'')!=='approved'):?><span class="catalog-preview-pending">Afventer billedgodkendelse</span><?php endif;?>
