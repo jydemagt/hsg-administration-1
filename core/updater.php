@@ -122,8 +122,10 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
         $manifestRaw=$zip->getFromIndex((int)$entries['hsg-package.json']['index']);
         if($manifestRaw===false) throw new RuntimeException('Kunne ikke læse pakkemanifestet.');
         $manifest=json_decode($manifestRaw,true,32,JSON_THROW_ON_ERROR);
-        if(!is_array($manifest) || ($manifest['product']??'')!=='HSG Administration') throw new RuntimeException('Pakken er ikke beregnet til HSG Administration.');
-        if(!in_array((string)($manifest['package_type']??''),['distribution','update'],true)) throw new RuntimeException('Ukendt HSG-pakketype.');
+        $product = (string)($manifest['product'] ?? (($manifest['name']??'') === 'hsg-administration' ? 'HSG Administration' : ''));
+        if(!is_array($manifest) || $product !== 'HSG Administration') throw new RuntimeException('Pakken er ikke beregnet til HSG Administration.');
+        $packageType = (string)($manifest['package_type'] ?? 'distribution');
+        if(!in_array($packageType,['distribution','update'],true)) throw new RuntimeException('Ukendt HSG-pakketype.');
         $target=trim((string)($manifest['version']??''));
         if(!preg_match('/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/',$target)) throw new RuntimeException('Pakken har et ugyldigt versionsnummer.');
         $current=app_version();
