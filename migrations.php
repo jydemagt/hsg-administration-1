@@ -181,7 +181,7 @@ function ensure_schema_updates(PDO $pdo): void {
             $stP=$pdo->prepare('SELECT id FROM lager_brands WHERE name=?');$stP->execute([$parentName]);$parentId=(int)($stP->fetchColumn()?:0)?:null;
         }
         $pdo->prepare('INSERT IGNORE INTO lager_brands(name,description,active,sort_order,parent_id) VALUES(?,?,1,?,?)')->execute([$b[0],$b[1],$b[2],$parentId]);
-        $pdo->prepare("UPDATE lager_brands SET description=?,sort_order=?,parent_id=? WHERE name=?")->execute([$b[1],$b[2],$parentId,$b[0]]);
+        $pdo->prepare("UPDATE lager_brands SET sort_order=?,parent_id=?,description=COALESCE(NULLIF(description,''),?) WHERE name=?")->execute([$b[2],$parentId,$b[1],$b[0]]);
     }
     $pdo->exec("UPDATE lager_products p JOIN lager_brands b ON b.name='Woodrow''s of Edinburgh' SET p.brand_id=b.id WHERE p.brand_id IS NULL AND p.sku LIKE '17-%'");
     $pdo->exec("UPDATE lager_products p JOIN lager_brands b ON b.name='Fragrant Drops' SET p.brand_id=b.id WHERE p.brand_id IS NULL AND p.sku LIKE '18-%'");

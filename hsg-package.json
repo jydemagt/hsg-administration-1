@@ -1,7 +1,7 @@
 {
     "product": "HSG Administration",
     "package_type": "update",
-    "version": "3.1.0",
+    "version": "3.2.0",
     "generated_at": "2026-08-26T11:27:06+00:00",
     "min_php": "8.1.0",
     "required_files": [
@@ -21,7 +21,7 @@
         "admin-login.php": "04b061728bcf753ba6dbeb535bc69fae7a3fff3d1ed5605ef9b8a85339691cfe",
         "admin-setup.php": "323ecd555ca2f7b4e920c482736e53829c14e7ef0ef400e7421872f2b954e8d2",
         "admin.php": "e0ab785ffc6f69eea80462fd663709c43c88fe3b7b95ce4318107163aaed7dbc",
-        "app_version.php": "a113b11c4eb4abd6afbd67114a7357b8ee8641b75f2e8bea4fb88031d2b4c84e",
+        "app_version.php": "928c0a8d83369a0e395a691a82f5625be74ecef997d368b38bea7f084d8994b9",
         "assets/bottle-placeholder.svg": "bb77203924ece9b630dce344f4d700e017028398787a1bdb1612b9a70b9599f4",
         "assets/style.css": "4c0244c6d8eb921108125cdd12ff34e1a0fcfd5e2a795f93c6a5449a199926ae",
         "auth.php": "a34d291e367c49c6163dd3220624d8202c57b028bd6fa5d1db95e29cac66c556",
@@ -72,7 +72,7 @@
         "install.php": "6b1d46bdf3f8ed080393e4fe7a43c6aeb24a206b27928560d5882b1c180bac2b",
         "locations.php": "d62cdfdc6e1f60e70630365dd38a1452733bc6ab3fdbe6cf2ecdd215b8fb6602",
         "logout.php": "b316e0f65b89c9b7ee92095cf1bf66882841ff4fa6592f28cdf7d50be3dc17f3",
-        "migrations.php": "0fa68b7c65605321c844046fdf2461e6d62e2ac0485335e27c614f03f55e1079",
+        "migrations.php": "3c243f6e372b5cd37b48ff8f24f106a6edd57acef8130bdd06b94b5e6fb7d6fc",
         "modules/access/module.php": "da2317012631e4570ddb4a9c36d7ef108db5d8e76246bf26a217d1aa6a48bf02",
         "modules/backup/module.php": "4261384f521c7756d28d17774828269789ad49d3d24f9dee9c27137c0af446a4",
         "modules/brands/module.php": "376eee232c1cb30ec95370c12cb2d373166d73fe753fb458c1551942366b7b2f",
