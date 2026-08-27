@@ -76,7 +76,14 @@ body.modal-open{overflow:hidden}
 @media(max-width:700px){.catalog-document-preview{margin:12px 0;gap:16px}.catalog-cover-preview,.catalog-brand-page,.catalog-product-page{min-height:0;padding:22px 16px;border-radius:14px}.catalog-cover-preview{min-height:540px}.catalog-cover-preview h1{font-size:34px}.catalog-cover-preview h2{font-size:24px}.catalog-doc-header h2{font-size:21px}.catalog-doc-header img{width:86px}.catalog-brand-main-logo{max-width:90%;max-height:210px;margin:30px auto}.catalog-brand-description{font-size:15px}.catalog-doc-product,.catalog-doc-product.reverse{grid-template-columns:1fr;gap:12px}.catalog-doc-product.reverse .catalog-doc-info,.catalog-doc-product.reverse .catalog-doc-image-wrap{order:initial}.catalog-doc-image-wrap{min-height:220px;order:1!important}.catalog-doc-info{order:2!important}.catalog-doc-bottle{max-height:240px}.catalog-doc-info h3{font-size:18px}.catalog-doc-info th,.catalog-doc-info td{font-size:13px;padding:7px}.catalog-new-sticker{width:54px;height:54px}}
 /* v1.5.2 catalog fidelity hotfix */
 .catalog-document-preview{max-width:900px}
-.catalog-cover-preview,.catalog-brand-page,.catalog-product-page{width:100%;aspect-ratio:210/297;min-height:0;padding:44px 36px;overflow:hidden}
+.catalog-cover-preview,.catalog-brand-page,.catalog-product-page,.catalog-toc-page{width:100%;aspect-ratio:210/297;min-height:0;padding:44px 36px;overflow:hidden;position:relative;background:#fff;border:1px solid #e4e7ec;box-shadow:0 6px 24px rgba(16,24,40,.06)}
+.catalog-toc-list{margin-top:20px;display:flex;flex-direction:column;gap:5px}
+.catalog-toc-item{display:flex;align-items:baseline;gap:8px;font-size:14px}
+.catalog-toc-item.family{font-weight:700;font-size:15.5px;margin-top:14px}
+.catalog-toc-item.product{padding-left:22px;font-size:13px;color:#344054}
+.catalog-toc-dots{flex:1;border-bottom:1px dotted #98a2b3;margin:0 4px;position:relative;top:-3px}
+.catalog-toc-page-no{font-weight:600;min-width:24px;text-align:right}
+.catalog-page-number{position:absolute;right:36px;bottom:24px;font-size:13px;color:#475467;font-weight:600}
 .catalog-doc-header{margin-bottom:12px}.catalog-doc-header h2{font-size:27px}.catalog-doc-header img{width:132px}
 .catalog-product-page hr{margin:22px 0}
 .catalog-doc-product{grid-template-columns:minmax(0,1.02fr) minmax(210px,.98fr);gap:34px;align-items:center;min-height:485px}
