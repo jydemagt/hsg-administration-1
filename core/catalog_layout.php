@@ -7,7 +7,10 @@ function hsg_catalog_normalize_name(string $name): string {
     return trim(preg_replace('/\s+/',' ',$name)??$name);
 }
 
-function hsg_catalog_family(string $brand): string {
+function hsg_catalog_family(string $brand, ?string $parentBrand = null): string {
+    if($parentBrand !== null && trim($parentBrand) !== '') {
+        return trim($parentBrand);
+    }
     $n=hsg_catalog_normalize_name($brand);
     if(str_contains($n,'samhain')||str_contains($n,'dalgety')||str_contains($n,'bridget')) return "Lady of the Glen";
     if(str_contains($n,'jane street')) return "Woodrow's of Edinburgh";
@@ -146,12 +149,38 @@ function hsg_catalog_product_title(array $p): string {
 
 function hsg_catalog_price_meta(string $price): array {
     if($price==='retail') return ['field'=>'retail_price','label'=>'Vejl. pris (inkl. moms)','short'=>'Vejl. pris'];
-    return ['field'=>'wholesale_price','label'=>'Engros pris (ekskl. moms)','short'=>'Engros pris'];
+    return ['field'=>'wholesale_price','label'=>'Engrospris (ekskl. moms)','short'=>'Engrospris'];
 }
 
 function hsg_catalog_abv($v): string {
     if($v===null||$v==='')return 'N/A';
     return rtrim(rtrim(number_format((float)$v,2,',',''),'0'),',').' %';
+}
+
+function hsg_catalog_get_family_desc(string $family, array $familyData, array $brandMeta): string {
+    if(!empty($brandMeta[$family]['description'])) {
+        return trim((string)$brandMeta[$family]['description']);
+    }
+    $norm = strtolower(trim($family));
+    foreach ($brandMeta as $bName => $bData) {
+        if (strtolower(trim((string)$bName)) === $norm && !empty($bData['description'])) {
+            return trim((string)$bData['description']);
+        }
+    }
+    foreach ((array)($familyData['sections'] ?? []) as $section => $products) {
+        if (!empty($brandMeta[$section]['description'])) {
+            return trim((string)$brandMeta[$section]['description']);
+        }
+        foreach ($products as $p) {
+            if (!empty($p['brand_description'])) {
+                return trim((string)$p['brand_description']);
+            }
+            if (!empty($p['parent_brand_description'])) {
+                return trim((string)$p['parent_brand_description']);
+            }
+        }
+    }
+    return '';
 }
 
 function hsg_catalog_product_rows(array $p,string $priceField,string $priceLabel): array {
