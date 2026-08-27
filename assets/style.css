@@ -78,9 +78,12 @@ body.modal-open{overflow:hidden}
 .catalog-document-preview{max-width:900px}
 .catalog-cover-preview,.catalog-brand-page,.catalog-product-page,.catalog-toc-page{width:100%;aspect-ratio:210/297;min-height:0;padding:44px 36px;overflow:hidden;position:relative;background:#fff;border:1px solid #e4e7ec;box-shadow:0 6px 24px rgba(16,24,40,.06)}
 .catalog-toc-list{margin-top:20px;display:flex;flex-direction:column;gap:5px}
-.catalog-toc-item{display:flex;align-items:baseline;gap:8px;font-size:14px}
-.catalog-toc-item.family{font-weight:700;font-size:15.5px;margin-top:14px}
-.catalog-toc-item.product{padding-left:22px;font-size:13px;color:#344054}
+html{scroll-behavior:smooth}
+a.catalog-toc-item{display:flex;align-items:baseline;gap:8px;font-size:13.5px;text-decoration:none;color:inherit;margin-top:2px;transition:color .12s}
+a.catalog-toc-item:hover{color:#155eef}
+a.catalog-toc-item.family{font-weight:700;font-size:15.5px;margin-top:18px;margin-bottom:2px}
+a.catalog-toc-item.product{padding-left:22px;font-size:13px;color:#344054}
+a.catalog-toc-item:hover .catalog-toc-dots{border-bottom-color:#155eef}
 .catalog-toc-dots{flex:1;border-bottom:1px dotted #98a2b3;margin:0 4px;position:relative;top:-3px}
 .catalog-toc-page-no{font-weight:600;min-width:24px;text-align:right}
 .catalog-page-number{position:absolute;right:36px;bottom:24px;font-size:13px;color:#475467;font-weight:600}

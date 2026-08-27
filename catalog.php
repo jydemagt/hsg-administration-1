@@ -26,11 +26,15 @@ foreach($rows as $p){
 uasort($families,static fn($a,$b)=>$a['sort']<=>$b['sort']);
 
 function catalog_toc_page_count(array $families): int {
-    if(!$families)return 1;$pages=1;$y=738;
+    if(!$families)return 1;$pages=1;$y=708;
     foreach($families as $family=>$f){
-        $need=30;if($y-$need<55){$pages++;$y=738;}$y-=$need;
-        foreach($f['sections'] as $products){foreach($products as $_){if($y-14<55){$pages++;$y=738;}$y-=14;}}
-        $y-=6;
+        $topGap=($y<690)?16:0;
+        if($y-$topGap-18<52){$pages++;$y=748-$topGap;}$y-=$topGap+18;
+        foreach($f['sections'] as $products){
+            foreach($products as $_){
+                if($y-14<52){$pages++;$y=748;}$y-=14;
+            }
+        }
     }
     return $pages;
 }
@@ -59,8 +63,10 @@ for($tocPage = 0; $tocPage < $tocPages; $tocPage++) {
     while($entryIndex < count($entries)) {
         $e = $entries[$entryIndex];
         $isFamily = $e['type'] === 'family';
-        $step = $isFamily ? 28 : 14;
-        if($y - $step < 52) break;
+        $topGap = ($isFamily && $y < 690) ? 16 : 0;
+        $step = $isFamily ? 18 : 14;
+        if($y - $topGap - $step < 52) break;
+        $y -= $topGap;
         $pageEntries[] = $e;
         $y -= $step;
         $entryIndex++;
@@ -79,18 +85,18 @@ page_header('Produktkatalog');
   </section>
 
 <?php foreach($tocPagePlans as $tocPlan):?>
-  <section class="catalog-toc-page">
+  <section class="catalog-toc-page" id="page-<?=$tocPlan['page']?>">
     <div class="catalog-doc-header">
       <h2><?=$tocPlan['is_first'] ? 'Indhold' : ''?></h2>
       <img src="<?=h(hsg_catalog_hsg_logo_url())?>" alt="HSG Whisky">
     </div>
     <div class="catalog-toc-list">
       <?php foreach($tocPlan['entries'] as $e): $isFamily = $e['type'] === 'family'; ?>
-        <div class="catalog-toc-item <?=$isFamily?'family':'product'?>">
+        <a href="#page-<?=$e['page']?>" class="catalog-toc-item <?=$isFamily?'family':'product'?>">
           <span class="catalog-toc-text"><?=h($e['text'])?></span>
           <span class="catalog-toc-dots"></span>
           <span class="catalog-toc-page-no"><?=$e['page']?></span>
-        </div>
+        </a>
       <?php endforeach;?>
     </div>
     <div class="catalog-page-number"><?=$tocPlan['page']?></div>
@@ -103,14 +109,14 @@ page_header('Produktkatalog');
     $logo=hsg_catalog_logo_url($family,(string)($plan['logo']??''));
     $desc=trim((string)$plan['desc']);
   ?>
-    <section class="catalog-brand-page">
+    <section class="catalog-brand-page" id="page-<?=$plan['page']?>">
       <div class="catalog-doc-header"><h2><?=h($plan['display'])?></h2><img src="<?=h(hsg_catalog_hsg_logo_url())?>" alt="HSG Whisky"></div>
       <?php if($logo):?><img class="catalog-brand-main-logo" src="<?=h($logo)?>" alt="<?=h($plan['display'])?>"><?php endif;?>
       <?php if($desc!==''):?><p class="catalog-brand-description"><?=nl2br(h($desc))?></p><?php endif;?>
       <div class="catalog-page-number"><?=$plan['page']?></div>
     </section>
   <?php else:?>
-    <section class="catalog-product-page">
+    <section class="catalog-product-page" id="page-<?=$plan['page']?>">
       <div class="catalog-doc-header"><h2><?=h($plan['section'])?></h2><img src="<?=h(hsg_catalog_hsg_logo_url())?>" alt="HSG Whisky"></div>
       <?php foreach($plan['products'] as $i=>$p): $dataRows=hsg_catalog_product_rows($p,$field,$label); ?>
         <?php if($i===1):?><hr><?php endif;?>

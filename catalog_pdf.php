@@ -30,11 +30,15 @@ foreach($rows as $p){
 uasort($families,static fn($a,$b)=>$a['sort']<=>$b['sort']);
 
 function catalog_toc_page_count(array $families): int {
-    if(!$families)return 1;$pages=1;$y=738;
+    if(!$families)return 1;$pages=1;$y=708;
     foreach($families as $family=>$f){
-        $need=30;if($y-$need<55){$pages++;$y=738;}$y-=$need;
-        foreach($f['sections'] as $products){foreach($products as $_){if($y-14<55){$pages++;$y=738;}$y-=14;}}
-        $y-=6;
+        $topGap=($y<690)?16:0;
+        if($y-$topGap-18<52){$pages++;$y=748-$topGap;}$y-=$topGap+18;
+        foreach($f['sections'] as $products){
+            foreach($products as $_){
+                if($y-14<52){$pages++;$y=748;}$y-=14;
+            }
+        }
     }
     return $pages;
 }
@@ -125,10 +129,15 @@ for($tocPage=0;$tocPage<$tocPages;$tocPage++){
     $pageNo=2+$tocPage;$ops=[];$images=[];add_hsg_logo($pdf,$ops,$images,$hsgLogo);$y=748;
     if($tocPage===0){$ops[]=$pdf->textFont(36,$y,17,'Indhold','helvetica-bold');$ops[]=$pdf->line(36,$y-3,90,$y-3,.8);$y-=40;}
     while($entryIndex<count($entries)){
-        $e=$entries[$entryIndex];$isFamily=$e['type']==='family';$step=$isFamily?28:14;if($y-$step<52)break;
+        $e=$entries[$entryIndex];$isFamily=$e['type']==='family';
+        $topGap=($isFamily && $y<690)?16:0;
+        $step=$isFamily?18:14;
+        if($y-$topGap-$step<52)break;
+        $y-=$topGap;
         $size=$isFamily?12.5:8.8;$x=$isFamily?36:58;$font=$isFamily?'helvetica-bold':'helvetica';$text=(string)$e['text'];$page=(int)$e['page'];
         $ops[]=$pdf->textFont($x,$y,$size,$text,$font);
         $approx=min(430,$x+(function_exists('mb_strlen')?mb_strlen($text,'UTF-8'):strlen($text))*$size*.47+8);$ops[]=$pdf->dottedLine($approx,$y+2,539,.45);$ops[]=$pdf->textFont(543,$y,$size,(string)$page,$font);
+        $pdf->addLink($pageNo,36.0,$y-3.0,558.0,$y+11.0,$page);
         $y-=$step;$entryIndex++;
     }
     add_page_no($pdf,$ops,$pageNo);$pdf->addPage($ops,$images);
