@@ -135,13 +135,19 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     }catch(Throwable $e){if(isset($pdo)&&$pdo->inTransaction())$pdo->rollBack();flash('error','Kunne ikke gemme: '.$e->getMessage());}
 }
 
-$q=trim((string)($_GET['q']??''));$missingCaskFilter=!empty($_GET['missing_cask']);$negativeStockFilter=!empty($_GET['negative_stock']);$edit=null;
+// Auto-deactivate products with total available stock <= 0
+$pdo->exec("UPDATE lager_products p SET status='inactive' WHERE p.status='active' AND COALESCE((SELECT SUM(s.quantity) FROM lager_stock s WHERE s.product_id=p.id),0) - COALESCE((SELECT SUM(r.quantity) FROM lager_reservations r WHERE r.product_id=p.id AND r.status='reserved'),0) <= 0");
+
+$q=trim((string)($_GET['q']??''));$missingCaskFilter=!empty($_GET['missing_cask']);$negativeStockFilter=!empty($_GET['negative_stock']);$showStatus=trim((string)($_GET['status']??'active'));$edit=null;
 if(is_admin()&&isset($_GET['edit'])){$st=$pdo->prepare('SELECT * FROM lager_products WHERE id=?');$st->execute([(int)$_GET['edit']]);$edit=$st->fetch();}
 $brands=$pdo->query('SELECT b.id,b.name,b.parent_id,pb.name parent_name FROM lager_brands b LEFT JOIN lager_brands pb ON pb.id=b.parent_id WHERE b.active=1 ORDER BY COALESCE(pb.sort_order,b.sort_order),COALESCE(pb.name,b.name),b.parent_id IS NOT NULL,b.sort_order,b.name')->fetchAll();
 $params=[];$conditions=[];
 if($q!==''){$conditions[]='(p.sku LIKE ? OR p.name LIKE ? OR b.name LIKE ? OR p.cask_number LIKE ?)';$params=array_fill(0,4,'%'.$q.'%');}
 if($missingCaskFilter)$conditions[]="(p.status<>'discontinued' AND (p.cask_number IS NULL OR p.cask_number=''))";
 if($negativeStockFilter)$conditions[]="(COALESCE(st.physical_total,0)<0 OR COALESCE(st.negative_locations,0)>0)";
+if(!$missingCaskFilter && !$negativeStockFilter && in_array($showStatus,['active','inactive','discontinued'],true)){
+    $conditions[]="p.status=?"; $params[]=$showStatus;
+}
 $where=$conditions?'WHERE '.implode(' AND ',$conditions):'';
 $st=$pdo->prepare("SELECT p.*,b.name brand_name,COALESCE(st.physical_total,0) physical_total,COALESCE(st.negative_locations,0) negative_locations,COALESCE(rr.active_reservations,0) active_reservations FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id LEFT JOIN (SELECT product_id,SUM(quantity) physical_total,SUM(CASE WHEN quantity<0 THEN 1 ELSE 0 END) negative_locations FROM lager_stock GROUP BY product_id) st ON st.product_id=p.id LEFT JOIN (SELECT product_id,COUNT(*) active_reservations FROM lager_reservations WHERE status='reserved' GROUP BY product_id) rr ON rr.product_id=p.id $where ORDER BY p.name");$st->execute($params);$products=$st->fetchAll();
 $missingIds=$pdo->query("SELECT id FROM lager_products WHERE status<>'discontinued' AND (distillery IS NULL OR distillery='' OR abv IS NULL OR age_text IS NULL OR age_text='' OR category IS NULL OR category='') ORDER BY id")->fetchAll(PDO::FETCH_COLUMN);
@@ -152,7 +158,33 @@ $negativeStockCount=(int)$pdo->query("SELECT COUNT(*) FROM lager_products p LEFT
 page_header('Produkter');
 ?>
 <form class="searchbar" method="get"><input name="q" value="<?=h($q)?>" placeholder="Søg produkt, SKU, fadnummer eller brand"><button>Søg</button></form>
-<div class="card"><div class="actions"><a class="button <?=$missingCaskFilter?'':'secondary'?>" href="products.php?missing_cask=1">Fadnummer mangler (<?=$missingCaskCount?>)</a><a class="button <?=$negativeStockFilter?'danger':'secondary'?>" href="products.php?negative_stock=1">Negativt lager (<?=$negativeStockCount?>)</a><?php if($missingCaskFilter||$negativeStockFilter):?><a class="button secondary" href="products.php">Vis alle produkter</a><?php endif;?></div><p class="muted">Fadnummer aflæses kun automatisk, når det står eksplicit som fx <strong>#300805</strong>, <strong>Cask No. 620P</strong> eller <strong>Fad nr. 892-4</strong>. Batchnumre gættes ikke som fadnumre. Produkter med negativt fysisk lager kan slettes fra listen <strong>Negativt lager</strong>; aktive reservationer skal først håndteres.</p></div>
+<div class="card"><div class="actions"><a class="button <?=$showStatus==='active'&&!$missingCaskFilter&&!$negativeStockFilter?'':'secondary'?>" href="products.php?status=active">Aktive</a><a class="button <?=$showStatus==='inactive'&&!$missingCaskFilter&&!$negativeStockFilter?'':'secondary'?>" href="products.php?status=inactive">Inaktive</a><a class="button <?=$showStatus==='discontinued'&&!$missingCaskFilter&&!$negativeStockFilter?'':'secondary'?>" href="products.php?status=discontinued">Udgåede</a><a class="button <?=$showStatus==='all'&&!$missingCaskFilter&&!$negativeStockFilter?'':'secondary'?>" href="products.php?status=all">Alle produkter</a><a class="button <?=$missingCaskFilter?'':'secondary'?>" href="products.php?missing_cask=1">Fadnummer mangler (<?=$missingCaskCount?>)</a><a class="button <?=$negativeStockFilter?'danger':'secondary'?>" href="products.php?negative_stock=1">Negativt lager (<?=$negativeStockCount?>)</a></div><p class="muted">Produkter med 0 eller mindre på disponibelt lager deaktiveres automatisk. Liste-visningen filtreres som standard til <strong>Aktive</strong> produkter.</p></div>
+
+<?php if(is_admin()):?>
+<div class="card">
+  <details>
+    <summary style="cursor:pointer;font-weight:600;font-size:1.1rem;">🔀 Flet to varenumre / produkter</summary>
+    <p class="muted" style="margin-top:8px">Vælg et kildeprodukt, der skal flettes ind i et målprodukt. Kildeproduktets lagerbeholdning overføres til målproduktet, reservationer flyttes, og manglende felter udfyldes automatisk. Kildeproduktet slettes derefter.</p>
+    <form method="post" onsubmit="return confirm('Er du sikker på, at du vil flette disse to produkter? Kildeproduktet vil blive slettet og lageret lagt sammen med målproduktet.');"><?=csrf_field()?><input type="hidden" name="action" value="merge_products">
+      <div class="split">
+        <label>Kildeprodukt (Slettes efter fletning)
+          <select name="source_id" required>
+            <option value="">– Vælg kildeprodukt –</option>
+            <?php foreach($products as $p):?><option value="<?=$p['id']?>"><?=h($p['sku'].' · '.$p['name'].(!empty($p['cask_number'])?' · #'.$p['cask_number']:''))?></option><?php endforeach;?>
+          </select>
+        </label>
+        <label>Målprodukt (Beholdes og opdateres)
+          <select name="target_id" required>
+            <option value="">– Vælg målprodukt –</option>
+            <?php foreach($products as $p):?><option value="<?=$p['id']?>"><?=h($p['sku'].' · '.$p['name'].(!empty($p['cask_number'])?' · #'.$p['cask_number']:''))?></option><?php endforeach;?>
+          </select>
+        </label>
+      </div>
+      <button class="button">Flet varenumre og saml lager</button>
+    </form>
+  </details>
+</div>
+<?php endif;?>
 
 <?php if(is_admin()):?>
 <div class="card">
