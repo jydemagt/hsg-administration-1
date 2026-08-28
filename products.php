@@ -188,32 +188,6 @@ page_header('Produkter');
 
 <?php if(is_admin()):?>
 <div class="card">
-  <details>
-    <summary style="cursor:pointer;font-weight:600;font-size:1.1rem;">🔀 Flet to varenumre / produkter</summary>
-    <p class="muted" style="margin-top:8px">Vælg et kildeprodukt, der skal flettes ind i et målprodukt. Kildeproduktets lagerbeholdning overføres til målproduktet, reservationer flyttes, og manglende felter udfyldes automatisk. Kildeproduktet slettes derefter.</p>
-    <form method="post" onsubmit="return confirm('Er du sikker på, at du vil flette disse to produkter? Kildeproduktet vil blive slettet og lageret lagt sammen med målproduktet.');"><?=csrf_field()?><input type="hidden" name="action" value="merge_products">
-      <div class="split">
-        <label>Kildeprodukt (Slettes efter fletning)
-          <select name="source_id" required>
-            <option value="">– Vælg kildeprodukt –</option>
-            <?php foreach($products as $p):?><option value="<?=$p['id']?>"><?=h($p['sku'].' · '.$p['name'].(!empty($p['cask_number'])?' · #'.$p['cask_number']:''))?></option><?php endforeach;?>
-          </select>
-        </label>
-        <label>Målprodukt (Beholdes og opdateres)
-          <select name="target_id" required>
-            <option value="">– Vælg målprodukt –</option>
-            <?php foreach($products as $p):?><option value="<?=$p['id']?>"><?=h($p['sku'].' · '.$p['name'].(!empty($p['cask_number'])?' · #'.$p['cask_number']:''))?></option><?php endforeach;?>
-          </select>
-        </label>
-      </div>
-      <button class="button">Flet varenumre og saml lager</button>
-    </form>
-  </details>
-</div>
-<?php endif;?>
-
-<?php if(is_admin()):?>
-<div class="card">
   <div class="page-title" style="margin-bottom:8px"><div><h2 style="margin:0">Produktdata-assistent</h2><p class="muted" style="margin:5px 0 0">Aflæser vareteksten og udfylder manglende ABV, alder, årgang, destilleri, kategori, flaskestørrelse, fadtype og eksplicit fadnummer. Sikre mønstre læses lokalt; Groq bruges kun som ekstra hjælp, hvis en API-nøgle er sat op.</p></div></div>
   <div class="actions"><button type="button" class="secondary" id="enrichAllBtn">Udfyld manglende data på alle (<?=count($missingIds)?>)</button></div>
   <div id="enrichAllStatus" class="muted" style="margin-top:8px"></div>
