@@ -4,33 +4,48 @@ require_module_enabled('catalog');require_capability('catalog.view');
 require_once __DIR__.'/pdf_simple.php';require_once __DIR__.'/core/catalog_layout.php';
 
 $price=(($_GET['price']??'retail')==='wholesale')?'wholesale':'retail';
+$newOnly=!empty($_GET['news']) || !empty($_GET['new_only']);
 $priceMeta=hsg_catalog_price_meta($price);$priceField=$priceMeta['field'];$priceLabel=$priceMeta['label'];
+$catalogTitle=$newOnly?'Nyhedskatalog':'Whisky Katalog';
 
-$brandRows=$pdo->query("SELECT id,name,description,logo_path,sort_order FROM lager_brands ORDER BY sort_order,name")->fetchAll();
+$brandRows=$pdo->query("SELECT b.id,b.name,b.description,b.logo_path,b.sort_order,pb.name parent_name FROM lager_brands b LEFT JOIN lager_brands pb ON pb.id=b.parent_id ORDER BY COALESCE(pb.sort_order,b.sort_order),COALESCE(pb.name,b.name),b.parent_id IS NOT NULL,b.sort_order,b.name")->fetchAll();
 $brandMeta=[];foreach($brandRows as $b)$brandMeta[(string)$b['name']]=$b;
-$rows=$pdo->query("SELECT p.*,b.name brand_name,b.description brand_description,b.logo_path brand_logo_path,b.sort_order,
+
+$whereClause="WHERE p.status='active' AND p.show_in_catalog=1 AND COALESCE(b.show_in_catalog,1)=1 AND COALESCE(pb.show_in_catalog,1)=1 AND COALESCE(st.physical,0)-COALESCE(rs.reserved,0)>0";
+if($newOnly){
+    $whereClause.=" AND p.is_new=1";
+}
+
+$rows=$pdo->query("SELECT p.*,b.name brand_name,b.description brand_description,b.logo_path brand_logo_path,b.sort_order brand_sort_order,pb.name parent_brand_name,pb.description parent_brand_description,pb.sort_order parent_sort_order,
  COALESCE(st.physical,0)-COALESCE(rs.reserved,0) available
- FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id
+ FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id LEFT JOIN lager_brands pb ON pb.id=b.parent_id
  LEFT JOIN (SELECT product_id,SUM(quantity) physical FROM lager_stock GROUP BY product_id) st ON st.product_id=p.id
  LEFT JOIN (SELECT product_id,SUM(quantity) reserved FROM lager_reservations WHERE status='reserved' GROUP BY product_id) rs ON rs.product_id=p.id
- WHERE p.status='active' AND p.show_in_catalog=1 AND COALESCE(st.physical,0)-COALESCE(rs.reserved,0)>0
- ORDER BY COALESCE(b.sort_order,999),COALESCE(b.name,'Uden brand'),p.name")->fetchAll();
+ {$whereClause}
+ ORDER BY COALESCE(pb.sort_order,b.sort_order,999),COALESCE(pb.name,b.name,'Uden brand'),b.sort_order,b.name,p.name")->fetchAll();
 
 $families=[];
 foreach($rows as $p){
-    $brand=(string)($p['brand_name']?:'Uden brand');$family=hsg_catalog_family($brand);
-    if(!isset($families[$family]))$families[$family]=['sort'=>(int)($p['sort_order']??999),'sections'=>[]];
-    $families[$family]['sort']=min($families[$family]['sort'],(int)($p['sort_order']??999));
+    $brand=(string)($p['brand_name']?:'Uden brand');
+    $parentBrand=$p['parent_brand_name']?(string)$p['parent_brand_name']:null;
+    $family=hsg_catalog_family($brand,$parentBrand);
+    $familySort=(int)($p['parent_sort_order']??$p['brand_sort_order']??999);
+    if(!isset($families[$family]))$families[$family]=['sort'=>$familySort,'sections'=>[]];
+    $families[$family]['sort']=min($families[$family]['sort'],$familySort);
     $families[$family]['sections'][$brand][]=$p;
 }
 uasort($families,static fn($a,$b)=>$a['sort']<=>$b['sort']);
 
 function catalog_toc_page_count(array $families): int {
-    if(!$families)return 1;$pages=1;$y=738;
+    if(!$families)return 1;$pages=1;$y=708;
     foreach($families as $family=>$f){
-        $need=30;if($y-$need<55){$pages++;$y=738;}$y-=$need;
-        foreach($f['sections'] as $products){foreach($products as $_){if($y-14<55){$pages++;$y=738;}$y-=14;}}
-        $y-=6;
+        $topGap=($y<690)?16:0;
+        if($y-$topGap-18<52){$pages++;$y=748-$topGap;}$y-=$topGap+18;
+        foreach($f['sections'] as $products){
+            foreach($products as $_){
+                if($y-14<52){$pages++;$y=748;}$y-=14;
+            }
+        }
     }
     return $pages;
 }
@@ -38,8 +53,7 @@ $tocPages=catalog_toc_page_count($families);
 $currentPage=2+$tocPages;$tocEntries=[];$pagePlan=[];
 foreach($families as $family=>$f){
     $introPage=$currentPage++;$tocEntries[]=['type'=>'family','text'=>hsg_catalog_family_display($family),'page'=>$introPage];
-    $familyMeta=$brandMeta[$family]??null;$familyDesc=(string)($familyMeta['description']??'');$familyLogo=(string)($familyMeta['logo_path']??'');
-    if($familyDesc==='')foreach($f['sections'] as $section=>$ps){if(!empty($brandMeta[$section]['description'])){$familyDesc=(string)$brandMeta[$section]['description'];break;}}
+    $familyMeta=$brandMeta[$family]??null;$familyDesc=hsg_catalog_get_family_desc($family,$f,$brandMeta);$familyLogo=(string)($familyMeta['logo_path']??'');
     $pagePlan[]=['type'=>'intro','family'=>$family,'display'=>hsg_catalog_family_display($family),'desc'=>$familyDesc,'logo'=>$familyLogo,'page'=>$introPage];
     foreach($f['sections'] as $section=>$products){
         foreach(array_chunk($products,2) as $chunk){
@@ -61,9 +75,9 @@ function add_hsg_logo(SimplePdf $pdf,array &$ops,array &$images,?string $path): 
 }
 function add_page_no(SimplePdf $pdf,array &$ops,int $page): void {$ops[]=$pdf->textFont(548,22,8,(string)$page,'helvetica');}
 function add_product_table(SimplePdf $pdf,array &$ops,array $rows,float $x,float $top,float $w=250): void {
-    $labelW=130;$metrics=[];$totalH=0;
+    $labelW=145;$metrics=[];$totalH=0;
     foreach($rows as [$label,$value]){
-        $valueLines=$pdf->wrap((string)$value,30);$labelLines=$pdf->wrap((string)$label,24);$lines=max(1,count($valueLines),count($labelLines));$rh=max(24,8+$lines*12);
+        $valueLines=$pdf->wrap((string)$value,22);$labelLines=$pdf->wrap((string)$label,32);$lines=max(1,count($valueLines),count($labelLines));$rh=max(24,8+$lines*12);
         $metrics[]=['label'=>$labelLines,'value'=>$valueLines,'height'=>$rh];$totalH+=$rh;
     }
     if($totalH<=0)return;$bottom=$top-$totalH;$cursor=$top;
@@ -73,7 +87,7 @@ function add_product_table(SimplePdf $pdf,array &$ops,array $rows,float $x,float
     foreach($metrics as $idx=>$m){
         $rowBottom=$cursor-$m['height'];
         if($idx<count($metrics)-1)$ops[]=$pdf->line($x,$rowBottom,$x+$w,$rowBottom,.55);
-        foreach(array_slice($m['label'],0,3) as $i=>$line)$ops[]=$pdf->textFont($x+7,$cursor-15-($i*11),9.2,$line,'helvetica-bold');
+        foreach(array_slice($m['label'],0,3) as $i=>$line)$ops[]=$pdf->textFont($x+7,$cursor-15-($i*11),8.6,$line,'helvetica-bold');
         foreach(array_slice($m['value'],0,3) as $i=>$line)$ops[]=$pdf->textFont($x+$labelW+7,$cursor-15-($i*11),9.2,$line,'helvetica');
         $cursor=$rowBottom;
     }
@@ -86,22 +100,35 @@ function add_product_slot(SimplePdf $pdf,array &$ops,array &$images,array $p,int
     $title=hsg_catalog_product_title($p);$titleLines=$pdf->wrap($title,44);foreach(array_slice($titleLines,0,2) as $ti=>$tl)$ops[]=$pdf->textFont($tableX,$titleY-($ti*15),13.3,$tl,'times');$tableTop-=max(0,count($titleLines)-1)*15;
     $rows=hsg_catalog_product_rows($p,$priceField,$priceLabel);add_product_table($pdf,$ops,$rows,$tableX,$tableTop,250);
     $path=hsg_catalog_image_path((string)($p['image_path']??''));
-    if(($p['image_approval_status']??'')==='approved'&&$path&&is_file($path)&&(@getimagesize($path)[2]??0)===IMAGETYPE_JPEG){
+    $imgType=@getimagesize($path)[2]??0;
+    if(($p['image_approval_status']??'')==='approved'&&$path&&is_file($path)&&in_array($imgType,[IMAGETYPE_JPEG,IMAGETYPE_PNG],true)){
         $name='P'.(int)$p['id'].'_'.$slot;$images[$name]=$path;$op=pdf_image_fit($name,$path,$imgX,$imgY,$imgW,$imgH);if($op)$ops[]=$op;
-        if(!empty($p['is_new'])&&$newBadge){$b='NB'.(int)$p['id'].'_'.$slot;$images[$b]=$newBadge;$bo=pdf_image_fit($b,$newBadge,$imgX-6,$imgY+$imgH-54,58,58);if($bo)$ops[]=$bo;}
+        if(!empty($p['is_new'])&&$newBadge){$b='NB'.(int)$p['id'].'_'.$slot;$images[$b]=$newBadge;$bo=pdf_image_fit($b,$newBadge,$imgX-24,$imgY+$imgH-95,116,116);if($bo)$ops[]=$bo;}
     }else{
         $ops[]=$pdf->setRgb(.95,.95,.95,true);$ops[]=$pdf->rect($imgX+30,$imgY+40,$imgW-60,$imgH-80,true);$ops[]=$pdf->setRgb(.45,.45,.45,true);$ops[]=$pdf->textFont($imgX+52,$imgY+($imgH/2),10,'Intet godkendt billede','helvetica');$ops[]=$pdf->setRgb(0,0,0,true);
     }
 }
 
+function pdf_text_centered(SimplePdf $pdf, float $y, float $size, string $text, string $font = 'helvetica', float $pageWidth = 595): string {
+    $len = function_exists('mb_strlen') ? mb_strlen($text, 'UTF-8') : strlen($text);
+    $factor = match(strtolower($font)) {
+        'times-bold', 'helvetica-bold' => 0.56,
+        'times' => 0.50,
+        default => 0.52,
+    };
+    $w = $len * $size * $factor;
+    $x = max(10.0, ($pageWidth - $w) / 2);
+    return $pdf->textFont($x, $y, $size, $text, $font);
+}
+
 // Cover page
 $ops=[];$images=[];
 if($hsgLogo){$images['CoverLogo']=$hsgLogo;$op=pdf_image_fit('CoverLogo',$hsgLogo,180,535,235,150);if($op)$ops[]=$op;}
-$ops[]=$pdf->textFont(145,418,34,'Whisky Katalog','helvetica');
-$ops[]=$pdf->textFont(267,365,15,'Fra','helvetica');
-$ops[]=$pdf->textFont(182,321,22,'HSG Whisky Aps','helvetica');
-$ops[]=$pdf->textFont(248,139,9,'Opdateret','helvetica');
-$ops[]=$pdf->textFont(229,115,10,date('d. m. Y'),'helvetica');
+$ops[]=pdf_text_centered($pdf,418,34,$catalogTitle,'helvetica');
+$ops[]=pdf_text_centered($pdf,365,15,'Fra','helvetica');
+$ops[]=pdf_text_centered($pdf,321,22,'HSG Whisky Aps','helvetica');
+$ops[]=pdf_text_centered($pdf,139,9,'Opdateret','helvetica');
+$ops[]=pdf_text_centered($pdf,115,10,date('d. m. Y'),'helvetica');
 $pdf->addPage($ops,$images);
 
 // TOC pages
@@ -110,10 +137,15 @@ for($tocPage=0;$tocPage<$tocPages;$tocPage++){
     $pageNo=2+$tocPage;$ops=[];$images=[];add_hsg_logo($pdf,$ops,$images,$hsgLogo);$y=748;
     if($tocPage===0){$ops[]=$pdf->textFont(36,$y,17,'Indhold','helvetica-bold');$ops[]=$pdf->line(36,$y-3,90,$y-3,.8);$y-=40;}
     while($entryIndex<count($entries)){
-        $e=$entries[$entryIndex];$isFamily=$e['type']==='family';$step=$isFamily?28:14;if($y-$step<52)break;
+        $e=$entries[$entryIndex];$isFamily=$e['type']==='family';
+        $topGap=($isFamily && $y<690)?16:0;
+        $step=$isFamily?18:14;
+        if($y-$topGap-$step<52)break;
+        $y-=$topGap;
         $size=$isFamily?12.5:8.8;$x=$isFamily?36:58;$font=$isFamily?'helvetica-bold':'helvetica';$text=(string)$e['text'];$page=(int)$e['page'];
         $ops[]=$pdf->textFont($x,$y,$size,$text,$font);
         $approx=min(430,$x+(function_exists('mb_strlen')?mb_strlen($text,'UTF-8'):strlen($text))*$size*.47+8);$ops[]=$pdf->dottedLine($approx,$y+2,539,.45);$ops[]=$pdf->textFont(543,$y,$size,(string)$page,$font);
+        $pdf->addLink($pageNo,36.0,$y-3.0,558.0,$y+11.0,$page);
         $y-=$step;$entryIndex++;
     }
     add_page_no($pdf,$ops,$pageNo);$pdf->addPage($ops,$images);
@@ -137,4 +169,5 @@ foreach($pagePlan as $plan){
 }
 
 if(!$rows){$pdf->addPage([$pdf->textFont(40,790,20,'HSG Whisky produktkatalog','helvetica-bold'),$pdf->textFont(40,755,11,'Ingen produkter med disponibelt lager er tilgængelige i kataloget.','helvetica')]);}
-$pdf->output('HSG-Whisky-Katalog-'.($price==='retail'?'vejl-priser':'engrospriser').'-'.date('Y-m-d').'.pdf');
+$pdfFilename=$newOnly?('HSG-Nyhedskatalog-'.($price==='retail'?'vejl-priser':'engrospriser').'-'.date('Y-m-d').'.pdf'):('HSG-Whisky-Katalog-'.($price==='retail'?'vejl-priser':'engrospriser').'-'.date('Y-m-d').'.pdf');
+$pdf->output($pdfFilename);
