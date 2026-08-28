@@ -103,7 +103,7 @@ function add_product_slot(SimplePdf $pdf,array &$ops,array &$images,array $p,int
     $imgType=@getimagesize($path)[2]??0;
     if(($p['image_approval_status']??'')==='approved'&&$path&&is_file($path)&&in_array($imgType,[IMAGETYPE_JPEG,IMAGETYPE_PNG],true)){
         $name='P'.(int)$p['id'].'_'.$slot;$images[$name]=$path;$op=pdf_image_fit($name,$path,$imgX,$imgY,$imgW,$imgH);if($op)$ops[]=$op;
-        if(!empty($p['is_new'])&&$newBadge){$b='NB'.(int)$p['id'].'_'.$slot;$images[$b]=$newBadge;$bo=pdf_image_fit($b,$newBadge,$imgX-6,$imgY+$imgH-54,58,58);if($bo)$ops[]=$bo;}
+        if(!empty($p['is_new'])&&$newBadge){$b='NB'.(int)$p['id'].'_'.$slot;$images[$b]=$newBadge;$bo=pdf_image_fit($b,$newBadge,$imgX-24,$imgY+$imgH-95,116,116);if($bo)$ops[]=$bo;}
     }else{
         $ops[]=$pdf->setRgb(.95,.95,.95,true);$ops[]=$pdf->rect($imgX+30,$imgY+40,$imgW-60,$imgH-80,true);$ops[]=$pdf->setRgb(.45,.45,.45,true);$ops[]=$pdf->textFont($imgX+52,$imgY+($imgH/2),10,'Intet godkendt billede','helvetica');$ops[]=$pdf->setRgb(0,0,0,true);
     }
