@@ -207,7 +207,9 @@ function save_product_image_from_url(PDO $pdo,int $productId,string $url,string 
     }else throw new RuntimeException('URL skal pege på en produktside eller et billede.');
     $path=crop_and_store_image($bytes,(string)$p['sku']);
     $method=in_array($method,['manual','supplier','ai'],true)?$method:'manual';$confidence=$confidence===null?null:max(0,min(100,$confidence));$note=$note===null?null:substr(trim($note),0,500);
-    $pdo->prepare("UPDATE lager_products SET image_path=?,image_source_url=?,supplier_domain=?,image_checked_at=NOW(),image_method=?,image_confidence=?,image_ai_note=?,image_validation_score=NULL,image_validation_status=NULL,image_validation_note=NULL,image_validated_at=NULL,image_validation_model=NULL,image_approval_status='pending',image_approved_at=NULL,image_approved_by_admin=NULL WHERE id=?")->execute([$path,$sourcePage,$supplierHost,$method,$confidence,$note,$productId]);
+    $approvalStatus = ($method==='manual') ? 'approved' : 'pending';
+    $approvedAt = ($method==='manual') ? date('Y-m-d H:i:s') : null;
+    $pdo->prepare("UPDATE lager_products SET image_path=?,image_source_url=?,supplier_domain=?,image_checked_at=NOW(),image_method=?,image_confidence=?,image_ai_note=?,image_validation_score=NULL,image_validation_status=NULL,image_validation_note=NULL,image_validated_at=NULL,image_validation_model=NULL,image_approval_status=?,image_approved_at=?,image_approved_by_admin=NULL WHERE id=?")->execute([$path,$sourcePage,$supplierHost,$method,$confidence,$note,$approvalStatus,$approvedAt,$productId]);
     return ['path'=>$path,'source'=>$sourcePage,'source_url'=>$sourcePage,'image_url'=>$imageUrl,'domain'=>$supplierHost,'method'=>$method,'confidence'=>$confidence,'note'=>$note];
 }
 function supplier_host(string $url): string {
