@@ -82,34 +82,26 @@ page_header('Opgradering');
 </div>
 
 <div class="card">
-  <h2>Automatisk opdatering via GitHub</h2>
-  <p class="muted">HSG Administration kan direkte søge efter og hente den seneste godkendte version fra GitHub-repositoryet (<code>jydemagt/hsg-administration-1</code>).</p>
-  <form method="post">
-    <?=csrf_field()?>
-    <input type="hidden" name="action" value="check_github">
-    <button type="submit">Søg efter nye opdateringer på GitHub</button>
-  </form>
-
-  <?php if(is_array($githubRelease)): ?>
-    <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-card, #f8f9fa); border: 1px solid var(--border-color, #e0e0e0); border-radius: 6px;">
-      <h3>Seneste kode på GitHub: <?=h($githubRelease['version'])?> (<?=h($githubRelease['name'])?>)</h3>
-      <p><strong>Status:</strong> <?= $githubRelease['has_update'] ? '<span style="color: green; font-weight: bold;">Ny version tilgængelig!</span>' : '<span style="color: #155eef; font-weight: bold;">Klar til opdatering / gen-installation fra GitHub main-branch</span>' ?></p>
-      <?php if(!empty($githubRelease['published_at'])): ?><p class="muted">Opdateret: <?=h(date('d-m-Y H:i', strtotime($githubRelease['published_at'])))?></p><?php endif; ?>
-      <?php if(trim($githubRelease['notes']) !== ''): ?>
-        <p><strong>Release notes / ændringer:</strong></p>
-        <p><?=nl2br(h($githubRelease['notes']))?></p>
-      <?php endif; ?>
-
-      <?php if($githubRelease['download_url'] !== ''): ?>
-        <form method="post" style="margin-top: 1rem;">
-          <?=csrf_field()?>
-          <input type="hidden" name="action" value="stage_github">
-          <input type="hidden" name="version" value="<?=h($githubRelease['version'])?>">
-          <input type="hidden" name="download_url" value="<?=h($githubRelease['download_url'])?>">
-          <button type="submit"><?= $githubRelease['has_update'] ? 'Hent og kontrollér opdatering fra GitHub' : 'Hent og opdatér fra GitHub main-branch' ?></button>
-        </form>
-      <?php endif; ?>
+  <h2>Automatisk 1-klik opdatering via GitHub</h2>
+  <p class="muted">HSG Administration henter og installerer direkte den seneste godkendte version fra GitHub (<code>jydemagt/hsg-administration-1</code>).</p>
+  <?php if(is_array($githubRelease) && !empty($githubRelease['download_url'])): ?>
+    <div style="padding: 1rem; background: var(--bg-card, #f8f9fa); border: 1px solid var(--border-color, #e0e0e0); border-radius: 6px;">
+      <h3>GitHub version: <?=h($githubRelease['version'])?></h3>
+      <p><strong>Status:</strong> <?= $githubRelease['has_update'] ? '<span style="color: green; font-weight: bold;">Ny version tilgængelig!</span>' : '<span style="color: #155eef; font-weight: bold;">Installeret version matcher GitHub main-branch</span>' ?></p>
+      <form method="post" style="margin-top: 1rem;">
+        <?=csrf_field()?>
+        <input type="hidden" name="action" value="stage_github">
+        <input type="hidden" name="version" value="<?=h($githubRelease['version'])?>">
+        <input type="hidden" name="download_url" value="<?=h($githubRelease['download_url'])?>">
+        <button type="submit">Opdatér HSG Administration fra GitHub</button>
+      </form>
     </div>
+  <?php else: ?>
+    <form method="post">
+      <?=csrf_field()?>
+      <input type="hidden" name="action" value="check_github">
+      <button type="submit">Søg og hent seneste version fra GitHub</button>
+    </form>
   <?php endif; ?>
 </div>
 
