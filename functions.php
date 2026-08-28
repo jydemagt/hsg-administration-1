@@ -83,3 +83,13 @@ function canonical_location_name(string $name): string { $n=trim($name);$key=str
 function get_locations(PDO $pdo,bool $activeOnly=true): array { return $pdo->query('SELECT * FROM lager_locations '.($activeOnly?'WHERE active=1 ':'').'ORDER BY sort_order,name')->fetchAll(); }
 function available_for(PDO $pdo,int $pid,int $lid): int { $st=$pdo->prepare("SELECT COALESCE(s.quantity,0)-COALESCE(r.qty,0) FROM lager_stock s LEFT JOIN (SELECT product_id,location_id,SUM(quantity) qty FROM lager_reservations WHERE status='reserved' GROUP BY product_id,location_id) r ON r.product_id=s.product_id AND r.location_id=s.location_id WHERE s.product_id=? AND s.location_id=?");$st->execute([$pid,$lid]);$v=$st->fetchColumn();return $v===false?0:(int)$v; }
 function total_available_for(PDO $pdo,int $pid): int { $st=$pdo->prepare("SELECT COALESCE((SELECT SUM(quantity) FROM lager_stock WHERE product_id=?),0)-COALESCE((SELECT SUM(quantity) FROM lager_reservations WHERE product_id=? AND status='reserved'),0)");$st->execute([$pid,$pid]);return (int)$st->fetchColumn(); }
+
+function hsg_sync_product_stock_status(PDO $pdo, int $productId): void {
+    if($productId <= 0) return;
+    $avail = total_available_for($pdo, $productId);
+    if($avail <= 0) {
+        $pdo->prepare("UPDATE lager_products SET status='inactive' WHERE id=? AND status='active'")->execute([$productId]);
+    } else {
+        $pdo->prepare("UPDATE lager_products SET status='active' WHERE id=? AND status='inactive'")->execute([$productId]);
+    }
+}
