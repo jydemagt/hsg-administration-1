@@ -30,10 +30,10 @@ function hsg_admin_can_view_module(string $moduleId): bool {
 function hsg_capabilities(): array {
     if (is_admin()) {
         if (is_superadmin()) return ['*'];
-        $caps = [];
+        $caps = []; // Almindelige login-brugere har IKKE adgang til brugestyring (users.manage)
         $modules = function_exists('hsg_module_manifests') ? hsg_module_manifests() : [];
         foreach ($modules as $modId => $m) {
-            if ($modId === 'access') continue; // Kun superadmin har adgang til brugestyring/oprettelse
+            if ($modId === 'access') continue; // Oprettelse og brugestyring er forbeholdt superadmin
             if (hsg_admin_can_view_module((string)$modId)) {
                 $cap = (string)($m['capability'] ?? '');
                 if ($cap !== '') $caps[] = $cap;

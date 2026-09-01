@@ -40,10 +40,10 @@ function page_header(string $title): void {
   if($admin){
     $allNav=[
       'dashboard'=>['index.php','⌂','Overblik'],
-      'inventory'=>['status.php','▦','Lager'],
+      'stock'=>['status.php','▦','Lager'],
       'products'=>['products.php','◇','Produkter'],
       'catalog'=>['catalog.php','▤','Katalog'],
-      'import_export'=>['import_center.php','⇅','Import / Upload'],
+      'supplier_upload'=>['import_center.php','⇅','Import / Upload'],
       'system'=>['admin.php','⚙','Administration']
     ];
     $current=basename($_SERVER['SCRIPT_NAME']??'');

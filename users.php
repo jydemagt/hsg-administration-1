@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
-require __DIR__.'/auth.php';require_module_enabled('access');require_capability('users.manage');require_once __DIR__.'/core/access_links.php';
+require __DIR__.'/auth.php';require_module_enabled('access');
+if(!is_superadmin()){ http_response_code(403); exit('Oprettelse og brugestyring er forbeholdt hoved-administrator.'); }
+require_capability('users.manage');require_once __DIR__.'/core/access_links.php';
 $tab=(string)($_GET['tab']??'links'); if(!in_array($tab,['links','admins'],true))$tab='links';
 $status=(string)($_GET['status']??'active');if(!in_array($status,['active','inactive','all'],true))$status='active';
 $assignableModules = array_filter(hsg_module_manifests(), static fn(array $m): bool => $m['id'] !== 'access' && hsg_module_is_enabled((string)$m['id']));

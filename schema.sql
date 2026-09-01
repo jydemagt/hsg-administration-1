@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS lager_admins (
   username VARCHAR(120) NOT NULL UNIQUE,
   display_name VARCHAR(120) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
-  is_superadmin TINYINT(1) NOT NULL DEFAULT 0,
+  is_superadmin TINYINT(1) NOT NULL DEFAULT 1,
   active TINYINT(1) NOT NULL DEFAULT 1,
   last_login_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

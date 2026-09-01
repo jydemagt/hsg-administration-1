@@ -163,8 +163,8 @@ function ensure_schema_updates(PDO $pdo): void {
     if(!db_column_exists($pdo,'lager_reservations','created_by_admin'))$pdo->exec('ALTER TABLE lager_reservations ADD created_by_admin INT UNSIGNED NULL AFTER created_by');
     if(!db_column_exists($pdo,'lager_stock_movements','created_by_admin'))$pdo->exec('ALTER TABLE lager_stock_movements ADD created_by_admin INT UNSIGNED NULL AFTER created_by');
     if(db_table_exists($pdo,'lager_admins')){
-        if(!db_column_exists($pdo,'lager_admins','is_superadmin')) $pdo->exec('ALTER TABLE lager_admins ADD is_superadmin TINYINT(1) NOT NULL DEFAULT 0 AFTER password_hash');
-        $pdo->exec('UPDATE lager_admins SET is_superadmin=1 WHERE id=1');
+        if(!db_column_exists($pdo,'lager_admins','is_superadmin')) $pdo->exec('ALTER TABLE lager_admins ADD is_superadmin TINYINT(1) NOT NULL DEFAULT 1 AFTER password_hash');
+        $pdo->exec('UPDATE lager_admins SET is_superadmin=1');
         if((int)$pdo->query('SELECT COUNT(*) FROM lager_admins')->fetchColumn()>0) $pdo->exec("UPDATE lager_users SET role='user' WHERE role='admin'");
     }
     if(!db_table_exists($pdo,'hsg_admin_module_access')){
