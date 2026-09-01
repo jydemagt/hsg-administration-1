@@ -2,7 +2,7 @@
     "name": "hsg-administration",
     "product": "HSG Administration",
     "package_type": "distribution",
-    "version": "4.1.1",
+    "version": "4.1.2",
     "generated_at": "2026-08-28T05:49:17+00:00",
     "files": {
         ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",
@@ -15,14 +15,14 @@
         "admin-login.php": "0e7124cd854664f1bf5868d4654d740438a78212261debb9b5f5ff5b672af00b",
         "admin-setup.php": "323ecd555ca2f7b4e920c482736e53829c14e7ef0ef400e7421872f2b954e8d2",
         "admin.php": "e0ab785ffc6f69eea80462fd663709c43c88fe3b7b95ce4318107163aaed7dbc",
-        "app_version.php": "f1ca2292df72770e553885c6aaf37dac7310f17aed962bde8bba9c58bc645021",
+        "app_version.php": "df41419b1aa20359770f7454f7f159c4c06dbd948e549b2e0b12a0b1715dd67b",
         "assets/bottle-placeholder.svg": "bb77203924ece9b630dce344f4d700e017028398787a1bdb1612b9a70b9599f4",
         "assets/style.css": "91b352a79d190744728134fccacebdf0ddcb703ec3780180f1b77a0e4e9e9094",
         "auth.php": "a34d291e367c49c6163dd3220624d8202c57b028bd6fa5d1db95e29cac66c556",
         "backup.php": "09c86b582e0b3e42e6f00e05a68492219811a763f1f8bd52647c197c57c20a4a",
         "brands.php": "acbe3009add9e72e69cff2b9b787e0402889cb6aa640f1df4c58c4c132720dbe",
         "catalog.php": "98c1a48958b6449d5fadefeb1e1dbf0a769ac4403ffa36f938de6b6f709d7eac",
-        "catalog_pdf.php": "17a067ab6f89a2d4cc6295525f91f577cb99c97264cede698421b6249ddf961a",
+        "catalog_pdf.php": "a2c6df920f49b51dbc58713a8e3ff74503b1b30bbe3c723fd91b57e693046e19",
         "core/access_links.php": "622ae0e81c3e238013773cf1ef2b64efbde45afe1c28fc6c00568f2ce3be582c",
         "core/ai.php": "2dc25882570d3a70a989adc261968620554180b36a98a72b880cb1a9f5668906",
         "core/audit.php": "eb27cb5e80e33e8e390efd8a39e76852af65b92457dff33cb73ad9ed7672ac97",
@@ -84,7 +84,7 @@
         "modules/system/migrations.php": "b5fb878e849d10bcbd1b734143e36cf7e7e42481b6d3a56f4c67dc4c287ce653",
         "modules/system/module.php": "e6b72bdf784b07b97cfef3a5d9a2e64a752811dfb71ee241990d344673b538a8",
         "modules/updater/module.php": "eb4248a21df1b68155dc822acad2f1481e8c2adf5e769ba9eacb2a1bf54b1246",
-        "pdf_simple.php": "bfacb061bbfee0c915dd43453061b31253861e61ece65b33f35513cd50d0833d",
+        "pdf_simple.php": "8c92865fb4330ff970a90f23ffe24292a79de734008f085795eb2a864b7bd4ff",
         "product_enrich.php": "b103ed127f61bfeb0523dcd9c2427829befc068868da150f011a825ff36db153",
         "products.php": "bac1732fc50fdc1f92f80ef636506e00af104e07e4f39a93ac51cbee7791826d",
         "quality.php": "769fb82e1d7ccdbf9c06a648540a8c963208d5b0c6539a8a5f9a2e39bf83aa07",
@@ -166,7 +166,7 @@
         "seed/catalog-layout/hsg-logo.jpg": "2c1c5d271382383cd5bb4c78c0d1f55ed4489adbca889fe0cc2b92b2f4dcf3c0",
         "seed/catalog-layout/lady-of-the-glen.jpg": "3eecd318414709ae18a813b4f78460fd8eb17a68c4b28e48a9acdd6047908739",
         "seed/catalog-layout/nyhed.jpg": "e345b6338a0005d75947aed020fbee0b2dae42e4c7fe2f3acd39f5ea957ca72a",
-        "seed/catalog-layout/nyhed.png": "3716bf5b1d616d6d4e54ce289774b8481a4f07c443e0a5b41c7992e49fecb64a",
+        "seed/catalog-layout/nyhed.png": "dda99455498bedc50544a548a95127983fe8713a6c65d567f842af10ed5304fb",
         "seed/catalog-layout/uncharted-whisky.jpg": "2cb195d7fd12917512f5a4374a0850f41f87bb2dbf17f0e40737fb1f5e28755c",
         "seed/catalog-layout/woodrows.jpg": "ad221881e2441bdd415067f5cd24bbfbfe4311969978220aebe78ad043274857",
         "seed/catalog-product-data.json": "ef7b6d9d99b5884411050e27984d889b09d5109a85675d1b4794efda41926ca6",
@@ -181,5 +181,5 @@
         "users.php": "8d8cb5b56f6386abd8febacfd030e749e64254f19918935e5e26cd384f942f4a",
         "xlsx_tools.php": "b27a362c4be18b98e19e0640a6dca060290f25a2373987d9d7c224b052027751"
     },
-    "release_notes": "v4.1.1: Restrict user management to superadmin and support multiple login admin users with individual module permissions."
+    "release_notes": "v4.1.2: Ensure transparent background around green news badge and match PDF brand description typography to web preview."
 }

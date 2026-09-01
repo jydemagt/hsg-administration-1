@@ -161,7 +161,7 @@ foreach($pagePlan as $plan){
         $logo=hsg_catalog_logo_path($family,(string)($plan['logo']??''));
         if($logo){$images['Brand']=$logo;$op=pdf_image_fit('Brand',$logo,75,410,445,280);if($op)$ops[]=$op;}
         else{$ops[]=$pdf->textFont(82,555,34,(string)$plan['display'],'times-bold');}
-        $desc=trim((string)$plan['desc']);$y=365;if($desc!=='')foreach(array_slice($pdf->wrap($desc,84),0,9) as $line){$ops[]=$pdf->textFont(36,$y,11,$line,'helvetica');$y-=18;}
+        $desc=trim((string)$plan['desc']);$y=365;if($desc!=='')foreach(array_slice($pdf->wrap($desc,82),0,10) as $line){$ops[]=$pdf->textFont(36,$y,11.5,$line,'helvetica');$y-=18;}
     }else{
         $ops[]=$pdf->textFont(36,785,18,(string)$plan['section'],'helvetica');
         $products=$plan['products'];add_product_slot($pdf,$ops,$images,$products[0],0,$priceField,$priceLabel,$newBadge);

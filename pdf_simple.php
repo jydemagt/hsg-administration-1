@@ -22,7 +22,7 @@ final class SimplePdf {
     if($src){
      $w=imagesx($src);$h=imagesy($src);
      $bg=imagecreatetruecolor($w,$h);$white=imagecolorallocate($bg,255,255,255);imagefill($bg,0,0,$white);
-     imagecopy($bg,$src,0,0,0,0,$w,$h);imagejpeg($bg,$cachedJpeg,92);
+     imagecopyresampled($bg,$src,0,0,0,0,$w,$h,$w,$h);imagejpeg($bg,$cachedJpeg,95);
      imagedestroy($bg);imagedestroy($src);
     }
    }
