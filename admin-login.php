@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ((int)$lim->fetchColumn() >= 5) {
         $error = 'For mange loginforsøg. Prøv igen senere.';
     } else {
-        $st = $pdo->prepare('SELECT id,username,display_name,password_hash FROM lager_admins WHERE username=? AND active=1 LIMIT 1');
+        $st = $pdo->prepare('SELECT id,username,display_name,password_hash,is_superadmin FROM lager_admins WHERE username=? AND active=1 LIMIT 1');
         $st->execute([$username]);
         $admin = $st->fetch();
         $ok = $admin && password_verify($password, (string)$admin['password_hash']);
@@ -35,6 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['auth_mode'] = 'admin';
             $_SESSION['admin_id'] = (int)$admin['id'];
             $_SESSION['admin_name'] = (string)$admin['display_name'];
+            $_SESSION['is_superadmin'] = !empty($admin['is_superadmin']);
             $_SESSION['admin_last_activity'] = time();
             unset($_SESSION['user_id'], $_SESSION['user_name'], $_SESSION['link_legacy_role']);
             redirect('index.php');
