@@ -11,6 +11,7 @@ function flash(string $type,string $message): void { $_SESSION['flash'][]=[$type
 function render_flash(): void { foreach($_SESSION['flash']??[] as [$t,$m])echo '<div class="flash '.h($t).'">'.h($m).'</div>';unset($_SESSION['flash']); }
 function is_authenticated(): bool { return in_array($_SESSION['auth_mode']??'', ['link','admin'], true); }
 function is_admin(): bool { return ($_SESSION['auth_mode']??'')==='admin' && !empty($_SESSION['admin_id']); }
+function is_superadmin(): bool { return is_admin() && !empty($_SESSION['is_superadmin']); }
 function is_link_user(): bool { return ($_SESSION['auth_mode']??'')==='link' && !empty($_SESSION['user_id']); }
 function current_link_user_id(): ?int { return is_link_user()?(int)$_SESSION['user_id']:null; }
 function current_admin_id(): ?int { return is_admin()?(int)$_SESSION['admin_id']:null; }
@@ -37,14 +38,19 @@ function page_header(string $title): void {
   echo '</div></header>';
   echo '<aside class="sidebar"><nav>';
   if($admin){
-    $main=[
-      ['index.php','⌂','Overblik'],['status.php','▦','Lager'],['products.php','◇','Produkter'],
-      ['catalog.php','▤','Katalog'],['import_center.php','⇅','Import / Upload'],['admin.php','⚙','Administration']
+    $allNav=[
+      'dashboard'=>['index.php','⌂','Overblik'],
+      'inventory'=>['status.php','▦','Lager'],
+      'products'=>['products.php','◇','Produkter'],
+      'catalog'=>['catalog.php','▤','Katalog'],
+      'import_export'=>['import_center.php','⇅','Import / Upload'],
+      'system'=>['admin.php','⚙','Administration']
     ];
     $current=basename($_SERVER['SCRIPT_NAME']??'');
     $adminFiles=['admin.php','brands.php','locations.php','image_check.php','quality.php','users.php','user_permissions.php','backup.php','update.php','system.php','admin-account.php','stock.php'];
     $importFiles=['import_center.php','import.php','supplier_upload.php','export.php'];
-    foreach($main as [$href,$icon,$name]){
+    foreach($allNav as $mId=>[$href,$icon,$name]){
+      if(!is_superadmin() && function_exists('hsg_admin_can_view_module') && !hsg_admin_can_view_module($mId)) continue;
       $active=($current===basename($href)) || ($href==='status.php' && $current==='reservations.php') || ($href==='admin.php' && in_array($current,$adminFiles,true)) || ($href==='import_center.php' && in_array($current,$importFiles,true));
       echo '<a class="'.($active?'active':'').'" href="'.h($href).'">'.h($icon).' <span>'.h($name).'</span></a>';
     }

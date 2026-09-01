@@ -21,10 +21,21 @@ CREATE TABLE IF NOT EXISTS lager_admins (
   username VARCHAR(120) NOT NULL UNIQUE,
   display_name VARCHAR(120) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
+  is_superadmin TINYINT(1) NOT NULL DEFAULT 0,
   active TINYINT(1) NOT NULL DEFAULT 1,
   last_login_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS hsg_admin_module_access (
+  admin_id INT UNSIGNED NOT NULL,
+  module_id VARCHAR(100) NOT NULL,
+  can_view TINYINT(1) NOT NULL DEFAULT 1,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY(admin_id,module_id),
+  CONSTRAINT fk_hsg_admin_module_admin FOREIGN KEY(admin_id) REFERENCES lager_admins(id) ON DELETE CASCADE,
+  INDEX idx_hsg_admin_module(module_id,can_view)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS lager_login_attempts (

@@ -162,7 +162,22 @@ function ensure_schema_updates(PDO $pdo): void {
     if(!db_column_exists($pdo,'lager_reservations','customer_name'))$pdo->exec('ALTER TABLE lager_reservations ADD customer_name VARCHAR(180) NULL AFTER quantity');
     if(!db_column_exists($pdo,'lager_reservations','created_by_admin'))$pdo->exec('ALTER TABLE lager_reservations ADD created_by_admin INT UNSIGNED NULL AFTER created_by');
     if(!db_column_exists($pdo,'lager_stock_movements','created_by_admin'))$pdo->exec('ALTER TABLE lager_stock_movements ADD created_by_admin INT UNSIGNED NULL AFTER created_by');
-    if(db_table_exists($pdo,'lager_admins') && (int)$pdo->query('SELECT COUNT(*) FROM lager_admins')->fetchColumn()>0)$pdo->exec("UPDATE lager_users SET role='user' WHERE role='admin'");
+    if(db_table_exists($pdo,'lager_admins')){
+        if(!db_column_exists($pdo,'lager_admins','is_superadmin')) $pdo->exec('ALTER TABLE lager_admins ADD is_superadmin TINYINT(1) NOT NULL DEFAULT 0 AFTER password_hash');
+        $pdo->exec('UPDATE lager_admins SET is_superadmin=1 WHERE id=1');
+        if((int)$pdo->query('SELECT COUNT(*) FROM lager_admins')->fetchColumn()>0) $pdo->exec("UPDATE lager_users SET role='user' WHERE role='admin'");
+    }
+    if(!db_table_exists($pdo,'hsg_admin_module_access')){
+        $pdo->exec("CREATE TABLE hsg_admin_module_access (
+          admin_id INT UNSIGNED NOT NULL,
+          module_id VARCHAR(100) NOT NULL,
+          can_view TINYINT(1) NOT NULL DEFAULT 1,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY(admin_id,module_id),
+          CONSTRAINT fk_hsg_admin_module_admin FOREIGN KEY(admin_id) REFERENCES lager_admins(id) ON DELETE CASCADE,
+          INDEX idx_hsg_admin_module(module_id,can_view)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    }
     if(db_table_exists($pdo,'lager_login_attempts'))$pdo->exec("DELETE FROM lager_login_attempts WHERE attempted_at < (NOW() - INTERVAL 30 DAY)");
     $pdo->exec("UPDATE lager_products p SET status='inactive' WHERE p.status='active' AND COALESCE((SELECT SUM(s.quantity) FROM lager_stock s WHERE s.product_id=p.id),0) - COALESCE((SELECT SUM(r.quantity) FROM lager_reservations r WHERE r.product_id=p.id AND r.status='reserved'),0) <= 0");
     $old=$pdo->query("SELECT id FROM lager_locations WHERE name='Lager Gert' LIMIT 1")->fetchColumn();$new=$pdo->query("SELECT id FROM lager_locations WHERE name='Gert Lager' LIMIT 1")->fetchColumn();if($old && !$new)$pdo->prepare('UPDATE lager_locations SET name=? WHERE id=?')->execute(['Gert Lager',(int)$old]);
