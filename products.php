@@ -55,7 +55,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $pdo->prepare('UPDATE lager_reservations SET product_id=? WHERE product_id=?')->execute([$targetId, $sourceId]);
 
             // 3. Fill missing attributes on Target from Source
-            $fillable=['brand_id','category','distillery','country','age_text','vintage_year','abv','bottle_size_cl','cask_type','cask_number','bottle_count','wholesale_price','retail_price','supplier_name','supplier_domain','supplier_url','notes','image_path'];
+            $fillable=['call_name','brand_id','category','distillery','country','age_text','vintage_year','abv','bottle_size_cl','cask_type','cask_number','bottle_count','wholesale_price','retail_price','supplier_name','supplier_domain','supplier_url','notes','image_path'];
             $sets=[];$params=[];
             foreach($fillable as $f){
                 $tgtVal=$tgt[$f]??null;$srcVal=$src[$f]??null;
@@ -105,6 +105,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         $id=(int)($_POST['id']??0);
         $sku=trim((string)($_POST['sku']??''));
         $name=trim((string)($_POST['name']??''));
+        $callName=trim((string)($_POST['call_name']??''));
         if($sku===''||$name==='') throw new RuntimeException('SKU og navn skal udfyldes.');
         $brand=(int)($_POST['brand_id']??0)?:null;
         $status=in_array($_POST['status']??'active',['active','inactive','discontinued'],true)?$_POST['status']:'active';
@@ -112,7 +113,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         $vintage=$vintage!==''?(int)$vintage:null;
         if($vintage!==null && ($vintage<1900 || $vintage>(int)date('Y'))) throw new RuntimeException('Årgang skal være et gyldigt årstal.');
         $vals=[
-            $sku,$name,$brand,trim((string)($_POST['category']??'')),trim((string)($_POST['distillery']??'')),
+            $sku,$name,$callName?:null,$brand,trim((string)($_POST['category']??'')),trim((string)($_POST['distillery']??'')),
             trim((string)($_POST['country']??'')),trim((string)($_POST['age_text']??'')),$vintage,
             parse_decimal($_POST['abv']??''),parse_decimal($_POST['bottle_size_cl']??''),trim((string)($_POST['cask_type']??'')),trim((string)($_POST['cask_number']??'')),
             trim((string)($_POST['bottle_count']??'')),parse_decimal($_POST['wholesale_price']??''),parse_decimal($_POST['retail_price']??''),
@@ -120,11 +121,11 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             trim((string)($_POST['supplier_domain']??'')),trim((string)($_POST['supplier_url']??'')),trim((string)($_POST['notes']??''))
         ];
         if($id){
-            $sql='UPDATE lager_products SET sku=?,name=?,brand_id=?,category=?,distillery=?,country=?,age_text=?,vintage_year=?,abv=?,bottle_size_cl=?,cask_type=?,cask_number=?,bottle_count=?,wholesale_price=?,retail_price=?,is_new=?,show_in_catalog=?,status=?,supplier_name=?,supplier_domain=?,supplier_url=?,notes=? WHERE id=?';
+            $sql='UPDATE lager_products SET sku=?,name=?,call_name=?,brand_id=?,category=?,distillery=?,country=?,age_text=?,vintage_year=?,abv=?,bottle_size_cl=?,cask_type=?,cask_number=?,bottle_count=?,wholesale_price=?,retail_price=?,is_new=?,show_in_catalog=?,status=?,supplier_name=?,supplier_domain=?,supplier_url=?,notes=? WHERE id=?';
             $vals[]=$id;$pdo->prepare($sql)->execute($vals);
             hsg_sync_product_stock_status($pdo,$id);
         }else{
-            $sql='INSERT INTO lager_products(sku,name,brand_id,category,distillery,country,age_text,vintage_year,abv,bottle_size_cl,cask_type,cask_number,bottle_count,wholesale_price,retail_price,is_new,show_in_catalog,status,supplier_name,supplier_domain,supplier_url,notes) VALUES('.implode(',',array_fill(0,22,'?')).')';
+            $sql='INSERT INTO lager_products(sku,name,call_name,brand_id,category,distillery,country,age_text,vintage_year,abv,bottle_size_cl,cask_type,cask_number,bottle_count,wholesale_price,retail_price,is_new,show_in_catalog,status,supplier_name,supplier_domain,supplier_url,notes) VALUES('.implode(',',array_fill(0,23,'?')).')';
             $pdo->prepare($sql)->execute($vals);$id=(int)$pdo->lastInsertId();
             hsg_sync_product_stock_status($pdo,$id);
         }
@@ -142,7 +143,7 @@ $q=trim((string)($_GET['q']??''));$missingCaskFilter=!empty($_GET['missing_cask'
 if(is_admin()&&isset($_GET['edit'])){$st=$pdo->prepare('SELECT * FROM lager_products WHERE id=?');$st->execute([(int)$_GET['edit']]);$edit=$st->fetch();}
 $brands=$pdo->query('SELECT b.id,b.name,b.parent_id,pb.name parent_name FROM lager_brands b LEFT JOIN lager_brands pb ON pb.id=b.parent_id WHERE b.active=1 ORDER BY COALESCE(pb.sort_order,b.sort_order),COALESCE(pb.name,b.name),b.parent_id IS NOT NULL,b.sort_order,b.name')->fetchAll();
 $params=[];$conditions=[];
-if($q!==''){$conditions[]='(p.sku LIKE ? OR p.name LIKE ? OR b.name LIKE ? OR p.cask_number LIKE ?)';$params=array_fill(0,4,'%'.$q.'%');}
+if($q!==''){$conditions[]='(p.sku LIKE ? OR p.name LIKE ? OR p.call_name LIKE ? OR b.name LIKE ? OR p.cask_number LIKE ?)';$params=array_fill(0,5,'%'.$q.'%');}
 if($missingCaskFilter)$conditions[]="(p.status<>'discontinued' AND (p.cask_number IS NULL OR p.cask_number=''))";
 if($negativeStockFilter)$conditions[]="(COALESCE(st.physical_total,0)<0 OR COALESCE(st.negative_locations,0)>0)";
 if(!$missingCaskFilter && !$negativeStockFilter && in_array($showStatus,['active','inactive','discontinued'],true)){
@@ -195,7 +196,7 @@ page_header('Produkter');
 
 <div class="card"><h2><?=$edit?'Rediger produkt':'Nyt produkt'?></h2>
 <form method="post" id="productForm"><?=csrf_field()?><input type="hidden" name="id" value="<?=$edit['id']??0?>">
-<div class="split"><label>SKU / nummer *<input name="sku" required value="<?=h($edit['sku']??'')?>"></label><label>Produktnavn / varetekst *<input name="name" required value="<?=h($edit['name']??'')?>"></label></div>
+<div class="three"><label>SKU / nummer *<input name="sku" required value="<?=h($edit['sku']??'')?>"></label><label>Produktnavn / varetekst *<input name="name" required value="<?=h($edit['name']??'')?>"></label><label>Kaldenavn (Valgfri underoverskrift)<input name="call_name" value="<?=h($edit['call_name']??'')?>" placeholder="fx The Chain - Chapter 2"></label></div>
 <div class="product-assistant-box">
   <div class="actions"><button type="button" id="enrichProductBtn">✨ Udfyld fra varetekst</button><label class="check" style="margin:0"><input type="checkbox" id="enrichUseAi" checked> Brug AI til usikre/manglende felter</label></div>
   <div id="enrichProductStatus" class="muted" style="margin-top:8px">Eksisterende værdier overskrives ikke automatisk.</div>
@@ -215,7 +216,7 @@ page_header('Produkter');
 <?php endif;?>
 
 <div class="table-wrap"><table><thead><tr><th>SKU</th><th>Produkt</th><th>Brand</th><th>Fysisk lager</th><th>Priser</th><th>Nyhed</th><th>Katalog</th><th>Status</th><?php if(is_admin()):?><th></th><?php endif;?></tr></thead><tbody>
-<?php foreach($products as $p): $isNegative=((int)$p['physical_total']<0||(int)$p['negative_locations']>0);?><tr class="<?=$isNegative?'validation-flagged-row':''?>"><td><?=h($p['sku'])?></td><td><div class="product-row"><img class="product-thumb" src="<?=h(product_image_url($p['image_path']))?>"><div><div class="product-title"><?=h($p['name'])?></div><span class="product-meta"><?=h($p['distillery'])?><?=!empty($p['vintage_year'])?' · '.intval($p['vintage_year']):''?><?=!empty($p['age_text'])?' · '.h($p['age_text']):''?><?=($p['abv']!==null?' · '.h(rtrim(rtrim(number_format((float)$p['abv'],2,',',''),'0'),',')).'%':'')?><?=!empty($p['cask_number'])?' · Fad #'.h($p['cask_number']):' · Fadnr. mangler'?></span></div></div></td><td><?=h($p['brand_name']??'–')?></td><td><span class="badge <?=$isNegative?'red':'green'?>"><?=intval($p['physical_total'])?> stk.</span><?php if((int)$p['negative_locations']>0):?><br><small class="muted"><?=intval($p['negative_locations'])?> lokation(er) under 0</small><?php endif;?></td><td><span class="muted">Engros:</span> <?=money_dkk($p['wholesale_price'])?><br><span class="muted">Udsalg:</span> <?=money_dkk($p['retail_price'])?></td><td><form method="post" style="margin:0;display:inline;"><?=csrf_field()?><input type="hidden" name="action" value="toggle_flag"><input type="hidden" name="id" value="<?=$p['id']?>"><input type="hidden" name="field" value="is_new"><input type="checkbox" name="value" value="1" <?=$p['is_new']?'checked':''?> onchange="toggleProductFlag(this)" <?=is_admin()?'':'disabled'?>></form></td><td><form method="post" style="margin:0;display:inline;"><?=csrf_field()?><input type="hidden" name="action" value="toggle_flag"><input type="hidden" name="id" value="<?=$p['id']?>"><input type="hidden" name="field" value="show_in_catalog"><input type="checkbox" name="value" value="1" <?=$p['show_in_catalog']?'checked':''?> onchange="toggleProductFlag(this)" <?=is_admin()?'':'disabled'?>></form></td><td><span class="badge"><?=h(product_status_label($p['status']))?></span></td><?php if(is_admin()):?><td><div class="actions"><a class="button secondary" href="?edit=<?=$p['id']?>">Rediger</a><?php if($isNegative):?><form method="post" onsubmit="return confirm('Slet <?=h(addslashes($p['name']))?> permanent? Historiske lagerbevægelser og afsluttede reservationer for produktet slettes også.');"><?=csrf_field()?><input type="hidden" name="action" value="delete_negative"><input type="hidden" name="id" value="<?=$p['id']?>"><button type="submit" class="danger" <?=((int)$p['active_reservations']>0)?'disabled title="Produktet har aktive reservationer"':''?>>Slet produkt</button></form><?php endif;?></div></td><?php endif;?></tr><?php endforeach;?>
+<?php foreach($products as $p): $isNegative=((int)$p['physical_total']<0||(int)$p['negative_locations']>0);?><tr class="<?=$isNegative?'validation-flagged-row':''?>"><td><?=h($p['sku'])?></td><td><div class="product-row"><img class="product-thumb" src="<?=h(product_image_url($p['image_path']))?>"><div><div class="product-title"><?=h($p['name'])?><?php if(!empty($p['call_name'])):?> <small class="muted">(<?=h($p['call_name'])?>)</small><?php endif;?></div><span class="product-meta"><?=h($p['distillery'])?><?=!empty($p['vintage_year'])?' · '.intval($p['vintage_year']):''?><?=!empty($p['age_text'])?' · '.h($p['age_text']):''?><?=($p['abv']!==null?' · '.h(rtrim(rtrim(number_format((float)$p['abv'],2,',',''),'0'),',')).'%':'')?><?=!empty($p['cask_number'])?' · Fad #'.h($p['cask_number']):' · Fadnr. mangler'?></span></div></div></td><td><?=h($p['brand_name']??'–')?></td><td><span class="badge <?=$isNegative?'red':'green'?>"><?=intval($p['physical_total'])?> stk.</span><?php if((int)$p['negative_locations']>0):?><br><small class="muted"><?=intval($p['negative_locations'])?> lokation(er) under 0</small><?php endif;?></td><td><span class="muted">Engros:</span> <?=money_dkk($p['wholesale_price'])?><br><span class="muted">Udsalg:</span> <?=money_dkk($p['retail_price'])?></td><td><form method="post" style="margin:0;display:inline;"><?=csrf_field()?><input type="hidden" name="action" value="toggle_flag"><input type="hidden" name="id" value="<?=$p['id']?>"><input type="hidden" name="field" value="is_new"><input type="checkbox" name="value" value="1" <?=$p['is_new']?'checked':''?> onchange="toggleProductFlag(this)" <?=is_admin()?'':'disabled'?>></form></td><td><form method="post" style="margin:0;display:inline;"><?=csrf_field()?><input type="hidden" name="action" value="toggle_flag"><input type="hidden" name="id" value="<?=$p['id']?>"><input type="hidden" name="field" value="show_in_catalog"><input type="checkbox" name="value" value="1" <?=$p['show_in_catalog']?'checked':''?> onchange="toggleProductFlag(this)" <?=is_admin()?'':'disabled'?>></form></td><td><span class="badge"><?=h(product_status_label($p['status']))?></span></td><?php if(is_admin()):?><td><div class="actions"><a class="button secondary" href="?edit=<?=$p['id']?>">Rediger</a><?php if($isNegative):?><form method="post" onsubmit="return confirm('Slet <?=h(addslashes($p['name']))?> permanent? Historiske lagerbevægelser og afsluttede reservationer for produktet slettes også.');"><?=csrf_field()?><input type="hidden" name="action" value="delete_negative"><input type="hidden" name="id" value="<?=$p['id']?>"><button type="submit" class="danger" <?=((int)$p['active_reservations']>0)?'disabled title="Produktet har aktive reservationer"':''?>>Slet produkt</button></form><?php endif;?></div></td><?php endif;?></tr><?php endforeach;?>
 </tbody></table></div>
 
 <?php if(is_admin()):?>

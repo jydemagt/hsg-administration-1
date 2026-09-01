@@ -98,6 +98,8 @@ function add_product_table(SimplePdf $pdf,array &$ops,array $rows,float $x,float
 function add_product_slot(SimplePdf $pdf,array &$ops,array &$images,array $p,int $slot,string $priceField,string $priceLabel,?string $newBadge): void {
     $topSlot=$slot===0;$titleY=$topSlot?742:360;$imgX=$topSlot?328:48;$imgY=$topSlot?438:44;$imgW=214;$imgH=300;$tableX=$topSlot?42:300;$tableTop=$topSlot?706:322;
     $title=hsg_catalog_product_title($p);$titleLines=$pdf->wrap($title,44);foreach(array_slice($titleLines,0,2) as $ti=>$tl)$ops[]=$pdf->textFont($tableX,$titleY-($ti*15),13.3,$tl,'times');$tableTop-=max(0,count($titleLines)-1)*15;
+    $subtitle=hsg_catalog_product_subtitle($p);
+    if($subtitle!==''){$subLines=$pdf->wrap($subtitle,48);foreach(array_slice($subLines,0,1) as $stl)$ops[]=$pdf->textFont($tableX,$tableTop-5,10.5,$stl,'helvetica');$tableTop-=15;}
     $rows=hsg_catalog_product_rows($p,$priceField,$priceLabel);add_product_table($pdf,$ops,$rows,$tableX,$tableTop,250);
     $path=hsg_catalog_image_path((string)($p['image_path']??''));
     $imgType=@getimagesize($path)[2]??0;

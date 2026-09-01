@@ -155,6 +155,9 @@ page_header('Produktkatalog');
         <article class="catalog-doc-product <?=$i===1?'reverse':''?>">
           <div class="catalog-doc-info">
             <h3><?=h(hsg_catalog_product_title($p))?></h3>
+            <?php $subtitle=hsg_catalog_product_subtitle($p); if($subtitle!==''):?>
+              <div class="catalog-doc-subtitle" style="font-size:16px;font-style:italic;margin:-12px 0 14px 0;color:#333;"><?=h($subtitle)?></div>
+            <?php endif;?>
             <table><?php foreach($dataRows as [$k,$v]):?><tr><th><?=h($k)?></th><td><?=h($v)?></td></tr><?php endforeach;?></table>
           </div>
           <div class="catalog-doc-image-wrap">

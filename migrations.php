@@ -42,6 +42,7 @@ function ensure_schema_updates(PDO $pdo): void {
     }
 
     $productChanges=[
+      'call_name'=>'ALTER TABLE lager_products ADD call_name VARCHAR(180) NULL AFTER name',
       'brand_id'=>'ALTER TABLE lager_products ADD brand_id INT UNSIGNED NULL AFTER name',
       'category'=>'ALTER TABLE lager_products ADD category VARCHAR(140) NULL AFTER brand_id',
       'distillery'=>'ALTER TABLE lager_products ADD distillery VARCHAR(160) NULL AFTER category',

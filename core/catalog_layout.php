@@ -144,12 +144,38 @@ function hsg_catalog_product_effective(array $p): array {
     $p['_catalog_seed_title']=trim((string)($seed['title']??''));return $p;
 }
 function hsg_catalog_product_title(array $p): string {
-    $p=hsg_catalog_product_effective($p);$seed=trim((string)($p['_catalog_seed_title']??''));$title=$seed!==''?$seed:(string)($p['name']??'');
-    $title=preg_replace('/\s+([,;%])/u','$1',$title)??$title;
-    $title=preg_replace('/([,(])\s+/u','$1',$title)??$title;
-    $title=preg_replace('/\s+([)])/u','$1',$title)??$title;
-    $title=preg_replace('/(?<=\d),\s+(?=\d)/u',',',$title)??$title;
+    $p=hsg_catalog_product_effective($p);
+    $distillery=trim((string)($p['distillery']??''));
+    if($distillery==='') {
+        $distillery=trim((string)($p['name']??''));
+    }
+    $vintage=$p['vintage_year']?intval($p['vintage_year']):null;
+    $age=trim((string)($p['age_text']??''));
+    $abv=$p['abv']!==null?hsg_catalog_abv($p['abv']):'';
+
+    $parts=[];
+    $distPart=$distillery;
+    if($vintage){
+        $distPart.=' ('.$vintage.')';
+    }
+    $parts[]=$distPart;
+    if($age!=='' && $age!=='N/A'){
+        if(preg_match('/\b(?:år|years?|yr|yrs)\b/i',$age)){
+            $parts[]=$age;
+        } else {
+            $parts[]=$age.' år';
+        }
+    }
+    if($abv!=='' && $abv!=='N/A'){
+        $parts[]=$abv;
+    }
+
+    $title=implode(' – ',$parts);
     return trim(preg_replace('/\s+/u',' ',$title)??$title);
+}
+
+function hsg_catalog_product_subtitle(array $p): string {
+    return trim((string)($p['call_name']??''));
 }
 
 function hsg_catalog_price_meta(string $price): array {
