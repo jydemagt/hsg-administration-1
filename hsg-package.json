@@ -2,7 +2,7 @@
     "name": "hsg-administration",
     "product": "HSG Administration",
     "package_type": "distribution",
-    "version": "4.1.2",
+    "version": "4.1.3",
     "generated_at": "2026-08-28T05:49:17+00:00",
     "files": {
         ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",
@@ -15,7 +15,7 @@
         "admin-login.php": "0e7124cd854664f1bf5868d4654d740438a78212261debb9b5f5ff5b672af00b",
         "admin-setup.php": "323ecd555ca2f7b4e920c482736e53829c14e7ef0ef400e7421872f2b954e8d2",
         "admin.php": "e0ab785ffc6f69eea80462fd663709c43c88fe3b7b95ce4318107163aaed7dbc",
-        "app_version.php": "df41419b1aa20359770f7454f7f159c4c06dbd948e549b2e0b12a0b1715dd67b",
+        "app_version.php": "f72ebcc2890c36fd5d23ae5bce2c205fc1a53f365dffbc66b018605663482307",
         "assets/bottle-placeholder.svg": "bb77203924ece9b630dce344f4d700e017028398787a1bdb1612b9a70b9599f4",
         "assets/style.css": "91b352a79d190744728134fccacebdf0ddcb703ec3780180f1b77a0e4e9e9094",
         "auth.php": "a34d291e367c49c6163dd3220624d8202c57b028bd6fa5d1db95e29cac66c556",
@@ -55,7 +55,7 @@
         "docs/SUPPLIER-UPLOAD.md": "d9d63afa02479c3455caecfb106f3869552b6037290949af1ce68a1b7d5be014",
         "eksempel-lager.csv": "a4f2d723f6b0909d893e536768043a2114e640fc5d222d730abd1f7356a51f3d",
         "export.php": "416ae8e4bc204a41e5d4b46815ac800e7b1eb4f5667df33ca4076ef72536acfd",
-        "functions.php": "277edbf6dc801fec19011d46918ce7fd1856e93da32e79975a14d0894943c57c",
+        "functions.php": "37243cc60cdfa92bb8cda66f18fe4f8fe3eeda60333f97a6b4bec0dae7763eb6",
         "image_action.php": "342f9eb395e1464d9a0049676483f3bfae6e28db22ed5c81088f792336cc7f93",
         "image_check.php": "5acb1111163826eec9ee78b7b848c9d4308c2e28ab34da20ac0d5b4a25167694",
         "image_tools.php": "2cdeda63001a6341f367edcaaa9cb320b76eccdf1aaed7a7def7af9743d68fca",
@@ -166,7 +166,7 @@
         "seed/catalog-layout/hsg-logo.jpg": "2c1c5d271382383cd5bb4c78c0d1f55ed4489adbca889fe0cc2b92b2f4dcf3c0",
         "seed/catalog-layout/lady-of-the-glen.jpg": "3eecd318414709ae18a813b4f78460fd8eb17a68c4b28e48a9acdd6047908739",
         "seed/catalog-layout/nyhed.jpg": "e345b6338a0005d75947aed020fbee0b2dae42e4c7fe2f3acd39f5ea957ca72a",
-        "seed/catalog-layout/nyhed.png": "dda99455498bedc50544a548a95127983fe8713a6c65d567f842af10ed5304fb",
+        "seed/catalog-layout/nyhed.png": "7556b0dddf536a0ff9a51e76867d7dab268d2d865910ee9b16607ceb68ea02f1",
         "seed/catalog-layout/uncharted-whisky.jpg": "2cb195d7fd12917512f5a4374a0850f41f87bb2dbf17f0e40737fb1f5e28755c",
         "seed/catalog-layout/woodrows.jpg": "ad221881e2441bdd415067f5cd24bbfbfe4311969978220aebe78ad043274857",
         "seed/catalog-product-data.json": "ef7b6d9d99b5884411050e27984d889b09d5109a85675d1b4794efda41926ca6",
@@ -181,5 +181,5 @@
         "users.php": "8d8cb5b56f6386abd8febacfd030e749e64254f19918935e5e26cd384f942f4a",
         "xlsx_tools.php": "b27a362c4be18b98e19e0640a6dca060290f25a2373987d9d7c224b052027751"
     },
-    "release_notes": "v4.1.2: Ensure transparent background around green news badge and match PDF brand description typography to web preview."
+    "release_notes": "v4.1.3: Lazy-load is_superadmin for active admin sessions and refine catalog news badge badge background opacity."
 }

@@ -11,7 +11,18 @@ function flash(string $type,string $message): void { $_SESSION['flash'][]=[$type
 function render_flash(): void { foreach($_SESSION['flash']??[] as [$t,$m])echo '<div class="flash '.h($t).'">'.h($m).'</div>';unset($_SESSION['flash']); }
 function is_authenticated(): bool { return in_array($_SESSION['auth_mode']??'', ['link','admin'], true); }
 function is_admin(): bool { return ($_SESSION['auth_mode']??'')==='admin' && !empty($_SESSION['admin_id']); }
-function is_superadmin(): bool { return is_admin() && !empty($_SESSION['is_superadmin']); }
+function is_superadmin(): bool {
+    if(!is_admin()) return false;
+    if(isset($_SESSION['is_superadmin'])) return (bool)$_SESSION['is_superadmin'];
+    if(isset($GLOBALS['pdo']) && ($GLOBALS['pdo'] instanceof PDO)){
+        $st=$GLOBALS['pdo']->prepare('SELECT is_superadmin FROM lager_admins WHERE id=?');
+        $st->execute([current_admin_id()]);
+        $val=$st->fetchColumn();
+        $_SESSION['is_superadmin'] = ($val===false) ? true : (bool)$val;
+        return $_SESSION['is_superadmin'];
+    }
+    return true;
+}
 function is_link_user(): bool { return ($_SESSION['auth_mode']??'')==='link' && !empty($_SESSION['user_id']); }
 function current_link_user_id(): ?int { return is_link_user()?(int)$_SESSION['user_id']:null; }
 function current_admin_id(): ?int { return is_admin()?(int)$_SESSION['admin_id']:null; }
