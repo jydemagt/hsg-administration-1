@@ -50,6 +50,22 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
    }
    redirect('users.php?tab=admins');
  }
+ if($action==='change_admin_password'){
+   $adminId=(int)($_POST['admin_id']??0);
+   $newPassword=(string)($_POST['new_password']??'');
+   if($adminId<=0 || $newPassword===''){
+     flash('error','Indtast en ny adgangskode.');
+   } else {
+     try{
+       $hash=password_hash($newPassword,PASSWORD_DEFAULT);
+       $st=$pdo->prepare('UPDATE lager_admins SET password_hash=? WHERE id=?');
+       $st->execute([$hash,$adminId]);
+       audit_log($pdo,'admin_user.change_password','admin_user',(string)$adminId);
+       flash('success','Adgangskoden for login-brugeren er opdateret.');
+     }catch(Throwable $e){flash('error','Kunne ikke ændre adgangskode: '.$e->getMessage());}
+   }
+   redirect('users.php?tab=admins');
+ }
  if($action==='toggle_admin'){
    $adminId=(int)($_POST['admin_id']??0);
    $st=$pdo->prepare('SELECT id,is_superadmin FROM lager_admins WHERE id=?');$st->execute([$adminId]);$target=$st->fetch();
@@ -155,10 +171,14 @@ page_header('Brugere & adgang');
           <?php endif; ?>
         </td>
         <td>
+          <form method="post" style="margin-bottom:8px; display:block;"><?=csrf_field()?><input type="hidden" name="action" value="change_admin_password"><input type="hidden" name="admin_id" value="<?=$a['id']?>">
+            <div style="display:flex; gap:6px;">
+              <input type="password" name="new_password" required placeholder="Ny kode" style="width:110px; padding:4px 6px; font-size:0.85rem;">
+              <button class="button secondary small">Skift kode</button>
+            </div>
+          </form>
           <?php if(!$isSuper): ?>
             <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="toggle_admin"><input type="hidden" name="admin_id" value="<?=$a['id']?>"><button class="<?=$a['active']?'danger':'secondary'?> small"><?=$a['active']?'Deaktivér':'Aktivér'?></button></form>
-          <?php else: ?>
-            <span class="muted">-</span>
           <?php endif; ?>
         </td>
       </tr>
