@@ -32,6 +32,40 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     hsg_sync_product_stock_status($pdo,$pid);
     $pdo->commit();audit_log($pdo,'stock.transfer','stock',(string)$pid,['from_location'=>$from,'to_location'=>$to,'quantity'=>$qty,'reference'=>$ref]);hsg_do_action('stock.transferred',['product_id'=>$pid,'from_location'=>$from,'to_location'=>$to,'quantity'=>$qty]);flash('success','Varerne er flyttet mellem lokationerne.');redirect('stock.php');
   }
+  if($action==='batch_inline_update'){
+    $batch=(array)($_POST['stock']??[]);
+    $ref=trim((string)($_POST['batch_reference']??'Hurtig lagerrettelse'));
+    $pdo->beginTransaction();
+    $updatedCount=0;$affectedProducts=[];
+    $stOld=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=? FOR UPDATE');
+    $stUp=$pdo->prepare('INSERT INTO lager_stock(product_id,location_id,quantity) VALUES(?,?,?) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity)');
+    $stMv=$pdo->prepare('INSERT INTO lager_stock_movements(product_id,location_id,change_qty,balance_after,movement_type,reference,created_by,created_by_admin) VALUES(?,?,?,?,?,?,?,?)');
+
+    foreach($batch as $pidRaw=>$locsData){
+        $pid=(int)$pidRaw; if($pid<=0) continue;
+        foreach((array)$locsData as $lidRaw=>$qtyRaw){
+            $lid=(int)$lidRaw; if($lid<=0) continue;
+            if(trim((string)$qtyRaw)==='') continue;
+            $newQty=max(0,(int)$qtyRaw);
+            $stOld->execute([$pid,$lid]);
+            $oldQty=(int)($stOld->fetchColumn()?:0);
+            if($oldQty!==$newQty){
+                $changeQty=$newQty-$oldQty;
+                $stUp->execute([$pid,$lid,$newQty]);
+                $stMv->execute([$pid,$lid,$changeQty,$newQty,'set',$ref,null,current_admin_id()]);
+                $updatedCount++;
+                $affectedProducts[$pid]=true;
+            }
+        }
+    }
+    foreach(array_keys($affectedProducts) as $pid){
+        hsg_sync_product_stock_status($pdo,(int)$pid);
+    }
+    $pdo->commit();
+    audit_log($pdo,'stock.batch_inline_update','stock','batch',['updated_records'=>$updatedCount,'reference'=>$ref]);
+    flash('success', $updatedCount > 0 ? "Lagerbeholdning opdateret for $updatedCount lokation(er)." : "Ingen lagerændringer registreret.");
+    redirect('stock.php');
+  }
  }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();flash('error',$e->getMessage());}
 }
 $products=$pdo->query("SELECT id,sku,name FROM lager_products WHERE status='active' ORDER BY name")->fetchAll();
@@ -48,5 +82,60 @@ page_header('Lager');
 <div class="card"><h2>Sæt eller regulér lager</h2><form method="post"><?=csrf_field()?><input type="hidden" name="action" id="stock_action" value="set"><label>Produkt<select name="product_id" required><?php foreach($products as $p):?><option value="<?=$p['id']?>"><?=h($p['sku'].' – '.$p['name'])?></option><?php endforeach;?></select></label><label>Lokation<select name="location_id" required><?php foreach($locations as $l):?><option value="<?=$l['id']?>"><?=h($l['name'])?></option><?php endforeach;?></select></label><label>Antal<input type="number" name="quantity" required value="0"></label><label>Reference / note<input name="reference"></label><div class="actions"><button type="submit" onclick="document.getElementById('stock_action').value='set'">Sæt beholdning</button><button class="secondary" type="submit" onclick="document.getElementById('stock_action').value='adjust'">Regulér +/-</button></div></form></div>
 <div class="card"><h2>Flyt mellem lokationer</h2><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="transfer"><label>Produkt<select name="product_id" required><?php foreach($products as $p):?><option value="<?=$p['id']?>"><?=h($p['sku'].' – '.$p['name'])?></option><?php endforeach;?></select></label><div class="split"><label>Fra<select name="from_location" required><?php foreach($locations as $l):?><option value="<?=$l['id']?>"><?=h($l['name'])?></option><?php endforeach;?></select></label><label>Til<select name="to_location" required><?php foreach($locations as $l):?><option value="<?=$l['id']?>"><?=h($l['name'])?></option><?php endforeach;?></select></label></div><label>Antal<input type="number" min="1" name="quantity" required></label><label>Reference<input name="reference" value="Intern flytning"></label><button>Flyt lager</button></form></div>
 </div><?php endif; ?>
+<?php if(is_admin()):
+$pQuery="SELECT p.id product_id,p.sku,p.name FROM lager_products p WHERE p.status='active' ORDER BY p.name";
+$gridProducts=$pdo->query($pQuery)->fetchAll(PDO::FETCH_ASSOC);
+$stStockGrid=$pdo->prepare('SELECT location_id,quantity FROM lager_stock WHERE product_id=?');
+?>
+<div class="card">
+  <h2>Hurtig inline lagerredigering</h2>
+  <p class="muted">Skriv og ret fysiske lagerantal direkte for hver lokation. Alle ændringer gemmes i loggen.</p>
+  <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="batch_inline_update">
+    <div style="margin-bottom:12px; max-width:320px;">
+      <label>Reference / Note<input name="batch_reference" value="Hurtig lagerrettelse"></label>
+    </div>
+    <div class="table-wrap" style="max-height:500px; overflow-y:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>Produkt</th>
+            <?php foreach($locations as $l): ?>
+              <th><?=h($l['name'])?></th>
+            <?php endforeach; ?>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach($gridProducts as $gp):
+            $pid=(int)$gp['product_id'];
+            $stStockGrid->execute([$pid]);
+            $pLocStock=[];
+            foreach($stStockGrid->fetchAll(PDO::FETCH_ASSOC) as $sRow) {
+                $pLocStock[(int)$sRow['location_id']] = (int)$sRow['quantity'];
+            }
+          ?>
+            <tr>
+              <td><strong><?=h($gp['sku'])?></strong></td>
+              <td><?=h($gp['name'])?></td>
+              <?php foreach($locations as $l):
+                $lid=(int)$l['id'];
+                $curQty=$pLocStock[$lid] ?? 0;
+              ?>
+                <td style="width:110px;">
+                  <input type="number" min="0" name="stock[<?=$pid?>][<?=$lid?>]" value="<?=$curQty?>" style="width:80px; padding:4px 6px; text-align:center;">
+                </td>
+              <?php endforeach; ?>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:12px;">
+      <button class="button">Gem alle lagerrettelser</button>
+    </div>
+  </form>
+</div>
+<?php endif; ?>
+
 <div class="table-wrap"><table><thead><tr><th>SKU</th><th>Produkt</th><th>Lokation</th><th>Fysisk</th><th>Reserveret</th><th>Disponibelt</th></tr></thead><tbody><?php foreach($rows as $r):?><tr><td><?=h($r['sku'])?></td><td><?=h($r['name'])?></td><td><?=h($r['location'])?></td><td><?=$r['physical']?></td><td><?=$r['reserved']?></td><td class="available <?=$r['available']<0?'negative':''?>"><?=$r['available']?></td></tr><?php endforeach;?><?php if(!$rows):?><tr><td colspan="6">Intet lager endnu.</td></tr><?php endif;?></tbody></table></div>
 <?php page_footer();

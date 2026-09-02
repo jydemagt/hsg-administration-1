@@ -110,6 +110,15 @@ function hsg_supplier_source_fields(array $row,array $map): array {
         $sqNum=hsg_supplier_parse_decimal($sq);
         if($sqNum!==null)$fields['stock_quantity']=(int)max(0,round($sqNum));
     }
+    foreach($map as $fieldKey=>$colIdx){
+        if(str_starts_with($fieldKey,'stock_loc_')){
+            $sv=hsg_supplier_row_value($row,$map,$fieldKey);
+            if($sv!==''){
+                $svNum=hsg_supplier_parse_decimal($sv);
+                if($svNum!==null)$fields[$fieldKey]=(int)max(0,round($svNum));
+            }
+        }
+    }
     if($name!==''){
         $parsed=hsg_product_parse_text($name);foreach((array)($parsed['fields']??[]) as $f=>$v)if(!isset($fields[$f])&&$v!==null&&trim((string)$v)!=='')$fields[$f]=$v;
         if(empty($fields['cask_number'])){$c=hsg_extract_cask_number($name);if($c)$fields['cask_number']=$c;}
@@ -229,6 +238,10 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
 
             foreach ($src as $k => $v) {
                 if ($k === 'stock_quantity') continue;
+                if (str_starts_with($k, 'stock_loc_')) {
+                    $existingSrc[$k] = (int)($existingSrc[$k] ?? 0) + (int)$v;
+                    continue;
+                }
                 if ($v !== null && trim((string)$v) !== '') {
                     $existingSrc[$k] = $v;
                 }
@@ -269,6 +282,15 @@ function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?i
     foreach($sheets as $sheet=>$rows){try{$h=hsg_supplier_detect_header($rows);if($bestHeader===null||$h['score']>$bestHeader['score']){$bestSheet=$sheet;$bestHeader=$h;}}catch(Throwable $e){}}
     if($bestHeader===null||$bestSheet===null)throw new RuntimeException('Kunne ikke finde en tabel med produkter/priser i nogen af arkene.');
     $products=$pdo->query('SELECT p.*,b.name brand_name, COALESCE((SELECT SUM(s.quantity) FROM lager_stock s JOIN lager_locations l ON l.id=s.location_id WHERE s.product_id=p.id AND l.active=1), 0) stock_quantity FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id ORDER BY p.name')->fetchAll(PDO::FETCH_ASSOC);
+    $locs=$pdo->query('SELECT id FROM lager_locations WHERE active=1')->fetchAll(PDO::FETCH_COLUMN);
+    $stLoc=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=?');
+    foreach($products as &$p){
+        foreach($locs as $lid){
+            $stLoc->execute([(int)$p['id'],(int)$lid]);
+            $p['stock_loc_'.$lid] = (int)($stLoc->fetchColumn()?:0);
+        }
+    }
+    unset($p);
     $rows=$sheets[$bestSheet];$start=$bestHeader['row']+1;
     $headers=(array)$bestHeader['headers'];
     $savedRaw=trim((string)setting_get($pdo,'supplier_import_last_col_map',''));
@@ -314,6 +336,15 @@ function hsg_supplier_recalculate_preview(PDO $pdo, array $preview, array $custo
     }
     ksort($colMap);
     $products = $pdo->query('SELECT p.*,b.name brand_name, COALESCE((SELECT SUM(s.quantity) FROM lager_stock s JOIN lager_locations l ON l.id=s.location_id WHERE s.product_id=p.id AND l.active=1), 0) stock_quantity FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id ORDER BY p.name')->fetchAll(PDO::FETCH_ASSOC);
+    $locs=$pdo->query('SELECT id FROM lager_locations WHERE active=1')->fetchAll(PDO::FETCH_COLUMN);
+    $stLoc=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=?');
+    foreach($products as &$p){
+        foreach($locs as $lid){
+            $stLoc->execute([(int)$p['id'],(int)$lid]);
+            $p['stock_loc_'.$lid] = (int)($stLoc->fetchColumn()?:0);
+        }
+    }
+    unset($p);
 
     $brandId = !empty($preview['brand_id']) ? (int)$preview['brand_id'] : null;
     $rawRows = (array)($preview['raw_rows'] ?? []);
@@ -337,16 +368,30 @@ function hsg_supplier_preview_load(string $token): array {if(!preg_match('/^[a-f
 function hsg_supplier_preview_delete(string $token): void {if(preg_match('/^[a-f0-9]{40}$/',$token))@unlink(hsg_supplier_preview_dir().'/'.$token.'.json');}
 
 function hsg_supplier_update_fields(): array {
-    return ['cask_number','cask_type','wholesale_price','retail_price','abv','distillery','age_text','vintage_year','category','country','bottle_size_cl','bottle_count','stock_quantity'];
+    $fields = ['cask_number','cask_type','wholesale_price','retail_price','abv','distillery','age_text','vintage_year','category','country','bottle_size_cl','bottle_count','stock_quantity'];
+    if(isset($GLOBALS['pdo']) && ($GLOBALS['pdo'] instanceof PDO)){
+        $locs = $GLOBALS['pdo']->query('SELECT id FROM lager_locations WHERE active=1')->fetchAll(PDO::FETCH_COLUMN);
+        foreach($locs as $lid) {
+            $fields[] = 'stock_loc_'.$lid;
+        }
+    }
+    return $fields;
 }
 
 function hsg_supplier_changes_for_product(array $src,array $product): array {
     $changes=[];
-    foreach(hsg_supplier_update_fields() as $field){
+    $updateFields = hsg_supplier_update_fields();
+    foreach($src as $k=>$v){
+        if(str_starts_with($k,'stock_loc_') && !in_array($k,$updateFields,true)){
+            $updateFields[]=$k;
+        }
+    }
+    foreach($updateFields as $field){
         if(!array_key_exists($field,$src))continue;$new=$src[$field];if($new===null||trim((string)$new)==='')continue;$old=$product[$field]??null;
+        $isStockLoc = str_starts_with($field,'stock_loc_');
         $same=in_array($field,['wholesale_price','retail_price','abv','bottle_size_cl'],true)
             ?($old!==null&&trim((string)$old)!==''&&abs((float)$old-(float)$new)<0.001)
-            :($field==='stock_quantity'
+            :($field==='stock_quantity' || $isStockLoc
                 ?($old!==null&&trim((string)$old)!==''&&(int)$old===(int)$new)
                 :hsg_supplier_norm((string)$old)===hsg_supplier_norm((string)$new));
         if(!$same)$changes[$field]=['old'=>$old,'new'=>$new];
@@ -358,28 +403,57 @@ function hsg_supplier_apply_product(PDO $pdo,int $productId,array $src): array {
     $st=$pdo->prepare('SELECT p.*, COALESCE((SELECT SUM(s.quantity) FROM lager_stock s JOIN lager_locations l ON l.id=s.location_id WHERE s.product_id=p.id AND l.active=1), 0) stock_quantity FROM lager_products p WHERE p.id=?');
     $st->execute([$productId]);$product=$st->fetch(PDO::FETCH_ASSOC);
     if(!$product)throw new RuntimeException('Det valgte HSG-produkt findes ikke.');
+    $locs=$pdo->query('SELECT id FROM lager_locations WHERE active=1')->fetchAll(PDO::FETCH_COLUMN);
+    $stLoc=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=?');
+    foreach($locs as $lid){
+        $stLoc->execute([$productId,(int)$lid]);
+        $product['stock_loc_'.$lid] = (int)($stLoc->fetchColumn()?:0);
+    }
     $changes=hsg_supplier_changes_for_product($src,$product);if(!$changes)return [];
     $sets=[];$params=[];
     foreach($changes as $field=>$change){
-        if($field==='stock_quantity') continue;
+        if($field==='stock_quantity' || str_starts_with($field,'stock_loc_')) continue;
         $sets[]="$field=?";$params[]=$change['new'];
     }
     if($sets){
         $params[]=$productId;
         $pdo->prepare('UPDATE lager_products SET '.implode(',',$sets).' WHERE id=?')->execute($params);
     }
+    // Per-location stock updates
+    foreach($changes as $field=>$change){
+        if(str_starts_with($field,'stock_loc_')){
+            $locationId=(int)substr($field,10);
+            if($locationId>0){
+                $newQty=(int)$change['new'];
+                $stLocForUpdate=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=? FOR UPDATE');
+                $stLocForUpdate->execute([$productId,$locationId]);
+                $oldQty=(int)($stLocForUpdate->fetchColumn()?:0);
+                $changeQty=$newQty-$oldQty;
+                $pdo->prepare('INSERT INTO lager_stock(product_id,location_id,quantity) VALUES(?,?,?) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity)')->execute([$productId,$locationId,$newQty]);
+                $pdo->prepare('INSERT INTO lager_stock_movements(product_id,location_id,change_qty,balance_after,movement_type,reference,created_by,created_by_admin) VALUES(?,?,?,?,?,?,?,?)')
+                    ->execute([$productId,$locationId,$changeQty,$newQty,'import','Kims masterfil opdatering',null,current_admin_id()]);
+            }
+        }
+    }
+    // Default stock_quantity field (if generic stock_quantity mapped and no location-specific mapped)
     if(isset($changes['stock_quantity'])){
-        $newQty=(int)$changes['stock_quantity']['new'];
-        $locSt=$pdo->query('SELECT id FROM lager_locations WHERE active=1 ORDER BY sort_order ASC, id ASC LIMIT 1');
-        $locationId=(int)($locSt->fetchColumn()?:0);
-        if($locationId>0){
-            $stLoc=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=? FOR UPDATE');
-            $stLoc->execute([$productId,$locationId]);
-            $oldQty=(int)($stLoc->fetchColumn()?:0);
-            $changeQty=$newQty-$oldQty;
-            $pdo->prepare('INSERT INTO lager_stock(product_id,location_id,quantity) VALUES(?,?,?) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity)')->execute([$productId,$locationId,$newQty]);
-            $pdo->prepare('INSERT INTO lager_stock_movements(product_id,location_id,change_qty,balance_after,movement_type,reference,created_by,created_by_admin) VALUES(?,?,?,?,?,?,?,?)')
-                ->execute([$productId,$locationId,$changeQty,$newQty,'import','Leverandørupload opdatering',null,current_admin_id()]);
+        $hasLocMapped = false;
+        foreach(array_keys($changes) as $ck){
+            if(str_starts_with($ck,'stock_loc_')){$hasLocMapped=true;break;}
+        }
+        if(!$hasLocMapped){
+            $newQty=(int)$changes['stock_quantity']['new'];
+            $locSt=$pdo->query('SELECT id FROM lager_locations WHERE active=1 ORDER BY sort_order ASC, id ASC LIMIT 1');
+            $locationId=(int)($locSt->fetchColumn()?:0);
+            if($locationId>0){
+                $stLocForUpdate=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=? FOR UPDATE');
+                $stLocForUpdate->execute([$productId,$locationId]);
+                $oldQty=(int)($stLocForUpdate->fetchColumn()?:0);
+                $changeQty=$newQty-$oldQty;
+                $pdo->prepare('INSERT INTO lager_stock(product_id,location_id,quantity) VALUES(?,?,?) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity)')->execute([$productId,$locationId,$newQty]);
+                $pdo->prepare('INSERT INTO lager_stock_movements(product_id,location_id,change_qty,balance_after,movement_type,reference,created_by,created_by_admin) VALUES(?,?,?,?,?,?,?,?)')
+                    ->execute([$productId,$locationId,$changeQty,$newQty,'import','Kims masterfil opdatering',null,current_admin_id()]);
+            }
         }
     }
     hsg_sync_product_stock_status($pdo,$productId);

@@ -2,7 +2,7 @@
     "name": "hsg-administration",
     "product": "HSG Administration",
     "package_type": "distribution",
-    "version": "4.1.5",
+    "version": "4.2.0",
     "generated_at": "2026-08-28T05:49:17+00:00",
     "files": {
         ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",
@@ -15,7 +15,7 @@
         "admin-login.php": "0e7124cd854664f1bf5868d4654d740438a78212261debb9b5f5ff5b672af00b",
         "admin-setup.php": "323ecd555ca2f7b4e920c482736e53829c14e7ef0ef400e7421872f2b954e8d2",
         "admin.php": "e0ab785ffc6f69eea80462fd663709c43c88fe3b7b95ce4318107163aaed7dbc",
-        "app_version.php": "c3f36b3837df9069a1f870a5b31bd9abf5718427df8145efd21318e1d9b27bed",
+        "app_version.php": "24ed85888a9362a8b56258ba080e8153ffa496e254b74c8c7ba54a5eeb94c363",
         "assets/bottle-placeholder.svg": "bb77203924ece9b630dce344f4d700e017028398787a1bdb1612b9a70b9599f4",
         "assets/style.css": "91b352a79d190744728134fccacebdf0ddcb703ec3780180f1b77a0e4e9e9094",
         "auth.php": "a34d291e367c49c6163dd3220624d8202c57b028bd6fa5d1db95e29cac66c556",
@@ -39,7 +39,7 @@
         "core/product_enrichment.php": "f0b906fe51a522da790523f75a5f7168870b3acbfbc9263bcbb73add3efc5cf7",
         "core/quality.php": "c03c9d65d27ead354d2f1daa6424df0c2a8f9c7f53942c91c1f3df41f46aec96",
         "core/settings.php": "c7235f51743933d467fdfeba89213b97edcaafb3fe5784a611fdf4c6b08bf8d7",
-        "core/supplier_import.php": "1a8236f36fc424c6db06d2bc456a24d7690defe3b5325e2f23fe1949827daacc",
+        "core/supplier_import.php": "bf4941eb61994409be20d93d3aead2bd4a9d785dd2f5f666ffd9a7fb75192e69",
         "core/updater.php": "29e00f4f2aa7e52bde3098e9fcf371d455b43b7cc03f4ab1d9d2fef0119c3f00",
         "cron/backup.php": "3908e23adbb3eb539305521d1d0c1986af535fd6953fb7059e1de623fddc5be1",
         "db.php": "e4613d2c99a3fdfb315f4d510242f06d4761d938da8262e9d967e4c7d2ad4d7e",
@@ -172,8 +172,8 @@
         "seed/catalog-product-data.json": "ef7b6d9d99b5884411050e27984d889b09d5109a85675d1b4794efda41926ca6",
         "session.php": "43778cd1deac64c7bfe6dab945622f00ea3d966e7e841f7745af7a1094c1cf88",
         "status.php": "590dc709de2d683aee9fa3e66e47049d4a8979bc225d5a371e03d01007337c52",
-        "stock.php": "362facc575b6138f50256c41fac8cb52ea9cc1433ae2aee2e0769326d96fe18b",
-        "supplier_upload.php": "afa0537a8d3a54f948a50a7de206941c7415fb2de5e589c2defedecf5236677b",
+        "stock.php": "1ca83da25fb01bf5ac2640c3c347e57f401a7b24b47cb5c03620782f54c1a49a",
+        "supplier_upload.php": "1e2d7bfa201f666c89558c9726cd9ca087be6364ad33fda6c390028302595564",
         "system.php": "aff882ede35a17219bc5d610de7953904e345628e869247313213c74069dd487",
         "tools/restore-standalone.php": "00ab77e3320c1e81e841c2ce3a9a671aef4c4094633a3d9dffb2f1febf8aa328",
         "update.php": "01faa864127edfc4ba17274e5c0ff007b8e602ae617d5b7e6ff2c9354351d107",
@@ -181,5 +181,5 @@
         "users.php": "8d8cb5b56f6386abd8febacfd030e749e64254f19918935e5e26cd384f942f4a",
         "xlsx_tools.php": "b27a362c4be18b98e19e0640a6dca060290f25a2373987d9d7c224b052027751"
     },
-    "release_notes": "v4.1.5: Update nyhed.png with exact user-provided news badge graphic asset (Billede1.png)."
+    "release_notes": "v4.2.0: Enable per-location stock column mapping in Kims master upload and add inline multi-location stock editing table on stock management page."
 }

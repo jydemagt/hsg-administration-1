@@ -1,12 +1,18 @@
 <?php
 require __DIR__.'/auth.php';require_module_enabled('supplier_upload');require_capability('imports.manage');require_once __DIR__.'/core/supplier_import.php';
 
+$activeLocations = $pdo->query('SELECT id, name FROM lager_locations WHERE active=1 ORDER BY sort_order, name')->fetchAll(PDO::FETCH_ASSOC);
+
 $fieldLabels=[
  'sku'=>'SKU / Varenummer','name'=>'Produktnavn','brand_name'=>'Brand / Mærke','cask_number'=>'Fadnummer','cask_type'=>'Fadtype',
  'wholesale_price'=>'Engrospris','retail_price'=>'Udsalgspris','abv'=>'ABV','distillery'=>'Destilleri',
  'age_text'=>'Alder','vintage_year'=>'Årgang','category'=>'Kategori','country'=>'Land','bottle_size_cl'=>'Flaskestørrelse','bottle_count'=>'Antal flasker',
- 'stock_quantity'=>'Lagerantal'
+ 'stock_quantity'=>'Lagerantal (Hovedlager / Første lokation)'
 ];
+foreach($activeLocations as $al) {
+    $fieldLabels['stock_loc_'.$al['id']] = 'Lagerantal: '.$al['name'];
+}
+
 $assignableFields=[
  ''=>'– Ignorer kolonne –',
  'sku'=>'SKU / Varenummer',
@@ -24,8 +30,11 @@ $assignableFields=[
  'country'=>'Land',
  'bottle_size_cl'=>'Flaskestørrelse (cl)',
  'bottle_count'=>'Antal flasker (Outturn)',
- 'stock_quantity'=>'Lagerantal / Beholdning'
+ 'stock_quantity'=>'Lagerantal (Standard / Første lokation)'
 ];
+foreach($activeLocations as $al) {
+    $assignableFields['stock_loc_'.$al['id']] = 'Lagerantal for '.$al['name'];
+}
 $token=trim((string)($_GET['preview']??$_POST['preview_token']??''));
 
 if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='upload'){
