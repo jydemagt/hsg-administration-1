@@ -171,9 +171,9 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
             if($contents===false) throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
             $hash = hash('sha256', $contents);
             if(!hash_equals($expected, $hash)) {
-                // If CRLF line endings from Windows/Git caused a hash difference on text/doc files, test LF-normalized content
-                $normalized = str_replace("\r\n", "\n", $contents);
-                if(!hash_equals($expected, hash('sha256', $normalized))) {
+                $lfNormalized = str_replace(["\r\n", "\r"], "\n", $contents);
+                $crlfNormalized = str_replace("\n", "\r\n", $lfNormalized);
+                if(!hash_equals($expected, hash('sha256', $lfNormalized)) && !hash_equals($expected, hash('sha256', $crlfNormalized))) {
                     throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
                 }
             }
@@ -438,30 +438,31 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
         // Fallthrough to main branch check if releases call fails
     }
 
-    // Direct GitHub main branch check (checks raw hsg-package.json on main)
-    try {
-        $rawManifestUrl = "https://raw.githubusercontent.com/{$repo}/main/hsg-package.json";
-        $manifestStatus = 0;
-        $manifestJson = hsg_github_http_get($rawManifestUrl, $manifestStatus);
-        if($manifestStatus === 200 && trim($manifestJson) !== '') {
-            $manifest = json_decode($manifestJson, true, 32, JSON_THROW_ON_ERROR);
-            $mainVersion = (string)($manifest['version'] ?? app_version());
-            if(version_compare($mainVersion, $releaseVersion, '>=')) {
-                return [
-                    'tag' => 'main',
-                    'version' => $mainVersion,
-                    'current_version' => app_version(),
-                    'has_update' => version_compare($mainVersion, app_version(), '>'),
-                    'name' => 'GitHub main branch (v'.$mainVersion.')',
-                    'notes' => (string)($manifest['release_notes'] ?? 'Ny opdatering fra GitHub main branch.'),
-                    'download_url' => "https://github.com/{$repo}/archive/refs/heads/main.zip",
-                    'published_at' => date('Y-m-d H:i:s'),
-                ];
+    // Direct GitHub branch checks (checks main branch and active feature/release branch)
+    $branchesToCheck = ['fix/github-update-zip-wrapper-detection-17303479115700064262', 'main'];
+    foreach($branchesToCheck as $branchName) {
+        try {
+            $rawManifestUrl = "https://raw.githubusercontent.com/{$repo}/{$branchName}/hsg-package.json";
+            $manifestStatus = 0;
+            $manifestJson = hsg_github_http_get($rawManifestUrl, $manifestStatus);
+            if($manifestStatus === 200 && trim($manifestJson) !== '') {
+                $manifest = json_decode($manifestJson, true, 32, JSON_THROW_ON_ERROR);
+                $branchVersion = (string)($manifest['version'] ?? app_version());
+                if(version_compare($branchVersion, $releaseVersion, '>=')) {
+                    return [
+                        'tag' => $branchName,
+                        'version' => $branchVersion,
+                        'current_version' => app_version(),
+                        'has_update' => version_compare($branchVersion, app_version(), '>'),
+                        'name' => 'GitHub '.$branchName.' (v'.$branchVersion.')',
+                        'notes' => (string)($manifest['release_notes'] ?? 'Ny opdatering fra GitHub.'),
+                        'download_url' => "https://github.com/{$repo}/archive/refs/heads/{$branchName}.zip",
+                        'published_at' => date('Y-m-d H:i:s'),
+                    ];
+                }
             }
-        }
-    } catch(Throwable $e) {
-        if(!$releaseData) {
-            throw new RuntimeException('Kunne ikke hente oplysninger fra GitHub: '.$e->getMessage(), 0, $e);
+        } catch(Throwable $e) {
+            // Check next branch
         }
     }
 
