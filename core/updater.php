@@ -438,8 +438,8 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
         // Fallthrough to main branch check if releases call fails
     }
 
-    // Direct GitHub branch checks (checks main branch and active feature/release branch)
-    $branchesToCheck = ['fix/github-update-zip-wrapper-detection-17303479115700064262', 'main'];
+    // Direct GitHub branch checks
+    $branchesToCheck = ['main', 'master'];
     foreach($branchesToCheck as $branchName) {
         try {
             $rawManifestUrl = "https://raw.githubusercontent.com/{$repo}/{$branchName}/hsg-package.json";
