@@ -2,7 +2,7 @@
     "name": "hsg-administration",
     "product": "HSG Administration",
     "package_type": "distribution",
-    "version": "4.2.0",
+    "version": "4.2.1",
     "generated_at": "2026-08-28T05:49:17+00:00",
     "files": {
         ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",
@@ -15,7 +15,7 @@
         "admin-login.php": "0e7124cd854664f1bf5868d4654d740438a78212261debb9b5f5ff5b672af00b",
         "admin-setup.php": "323ecd555ca2f7b4e920c482736e53829c14e7ef0ef400e7421872f2b954e8d2",
         "admin.php": "e0ab785ffc6f69eea80462fd663709c43c88fe3b7b95ce4318107163aaed7dbc",
-        "app_version.php": "24ed85888a9362a8b56258ba080e8153ffa496e254b74c8c7ba54a5eeb94c363",
+        "app_version.php": "37064a52c86473a8532db75a57d7ed227c3df8860e662490dff4b913c9d90d35",
         "assets/bottle-placeholder.svg": "bb77203924ece9b630dce344f4d700e017028398787a1bdb1612b9a70b9599f4",
         "assets/style.css": "91b352a79d190744728134fccacebdf0ddcb703ec3780180f1b77a0e4e9e9094",
         "auth.php": "a34d291e367c49c6163dd3220624d8202c57b028bd6fa5d1db95e29cac66c556",
@@ -172,7 +172,7 @@
         "seed/catalog-product-data.json": "ef7b6d9d99b5884411050e27984d889b09d5109a85675d1b4794efda41926ca6",
         "session.php": "43778cd1deac64c7bfe6dab945622f00ea3d966e7e841f7745af7a1094c1cf88",
         "status.php": "590dc709de2d683aee9fa3e66e47049d4a8979bc225d5a371e03d01007337c52",
-        "stock.php": "1ca83da25fb01bf5ac2640c3c347e57f401a7b24b47cb5c03620782f54c1a49a",
+        "stock.php": "32d8b9c835c5b85d63070ce01b1187748d79dd1a5376a7a08b08ef1044c3b7b6",
         "supplier_upload.php": "1e2d7bfa201f666c89558c9726cd9ca087be6364ad33fda6c390028302595564",
         "system.php": "aff882ede35a17219bc5d610de7953904e345628e869247313213c74069dd487",
         "tools/restore-standalone.php": "00ab77e3320c1e81e841c2ce3a9a671aef4c4094633a3d9dffb2f1febf8aa328",
@@ -181,5 +181,5 @@
         "users.php": "8d8cb5b56f6386abd8febacfd030e749e64254f19918935e5e26cd384f942f4a",
         "xlsx_tools.php": "b27a362c4be18b98e19e0640a6dca060290f25a2373987d9d7c224b052027751"
     },
-    "release_notes": "v4.2.0: Enable per-location stock column mapping in Kims master upload and add inline multi-location stock editing table on stock management page."
+    "release_notes": "v4.2.1: Render stock table with 1 product per row and inline editable text fields for physical stock across all locations."
 }
