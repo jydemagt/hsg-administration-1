@@ -1,13 +1,13 @@
 <?php
 return [
     'id'=>'supplier_upload',
-    'name'=>'Leverandør-upload',
+    'name'=>'Kims uploadfil',
     'version'=>'1.0.0',
     'nav'=>true,
     'href'=>'supplier_upload.php',
     'icon'=>'⇧',
     'capability'=>'imports.manage',
-    'description'=>'Intelligent upload af forskellige leverandørfiler med preview og sikker produktopdatering.',
+    'description'=>'Masterfil upload med produktopdatering, kolonnemapping og automatisk fletning af lagerantal.',
     'core'=>false,
     'sort'=>145,
 ];
