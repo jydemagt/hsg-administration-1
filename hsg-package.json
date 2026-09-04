@@ -3,7 +3,7 @@
     "product": "HSG Administration",
     "package_type": "distribution",
     "version": "4.3.0",
-    "generated_at": "2026-09-03T05:28:25+00:00",
+    "generated_at": "2026-09-03T05:53:50+00:00",
     "files": {
         ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",
         ".gitignore": "63d01d02bfadc4d1eb02fa4d985fe4b6ac0d304cf3dba9ecb55faa89d3458ed0",
@@ -172,7 +172,7 @@
         "seed/catalog-product-data.json": "ef7b6d9d99b5884411050e27984d889b09d5109a85675d1b4794efda41926ca6",
         "session.php": "43778cd1deac64c7bfe6dab945622f00ea3d966e7e841f7745af7a1094c1cf88",
         "status.php": "590dc709de2d683aee9fa3e66e47049d4a8979bc225d5a371e03d01007337c52",
-        "stock.php": "32d8b9c835c5b85d63070ce01b1187748d79dd1a5376a7a08b08ef1044c3b7b6",
+        "stock.php": "8f00afe367fe9a68468860e58816ed4dae00617ad1cc7252a56de4084300314b",
         "storage/.htaccess": "dbdf47f62a27badc00789cd9369768de4d210117e6b04d534677154701c19435",
         "supplier_upload.php": "1e2d7bfa201f666c89558c9726cd9ca087be6364ad33fda6c390028302595564",
         "system.php": "aff882ede35a17219bc5d610de7953904e345628e869247313213c74069dd487",
