@@ -33,36 +33,41 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
      redirect('users.php?tab=admins');
    }
  }
- if($action==='update_admin_modules'){
+ if($action==='update_admin_user'){
    $adminId=(int)($_POST['admin_id']??0);
+   $username=trim((string)($_POST['username']??''));
+   $displayName=trim((string)($_POST['display_name']??''));
+   $newPassword=(string)($_POST['password']??'');
    $selectedMods=(array)($_POST['modules']??[]);
-   $st=$pdo->prepare('SELECT id,is_superadmin FROM lager_admins WHERE id=?');$st->execute([$adminId]);$target=$st->fetch();
-   if($target && empty($target['is_superadmin'])){
-     try{
-       $delPerm=$pdo->prepare('DELETE FROM hsg_admin_module_access WHERE admin_id=?');$delPerm->execute([$adminId]);
-       $insPerm=$pdo->prepare('INSERT INTO hsg_admin_module_access(admin_id,module_id,can_view) VALUES(?,?,?)');
-       foreach($assignableModules as $mId=>$m){
-         $canView=in_array($mId,$selectedMods,true)?1:0;
-         $insPerm->execute([$adminId,$mId,$canView]);
-       }
-       flash('success','Modulrettigheder for login-bruger er opdateret.');
-     }catch(Throwable $e){flash('error','Kunne ikke opdatere modulrettigheder: '.$e->getMessage());}
-   }
-   redirect('users.php?tab=admins');
- }
- if($action==='change_admin_password'){
-   $adminId=(int)($_POST['admin_id']??0);
-   $newPassword=(string)($_POST['new_password']??'');
-   if($adminId<=0 || $newPassword===''){
-     flash('error','Indtast en ny adgangskode.');
+
+   if($adminId<=0 || $username==='' || $displayName===''){
+     flash('error','Brugernavn og visningsnavn skal udfyldes.');
    } else {
      try{
-       $hash=password_hash($newPassword,PASSWORD_DEFAULT);
-       $st=$pdo->prepare('UPDATE lager_admins SET password_hash=? WHERE id=?');
-       $st->execute([$hash,$adminId]);
-       audit_log($pdo,'admin_user.change_password','admin_user',(string)$adminId);
-       flash('success','Adgangskoden for login-brugeren er opdateret.');
-     }catch(Throwable $e){flash('error','Kunne ikke ændre adgangskode: '.$e->getMessage());}
+       $stCheck=$pdo->prepare('SELECT id, is_superadmin FROM lager_admins WHERE id=?');
+       $stCheck->execute([$adminId]);
+       $target=$stCheck->fetch();
+       if($target){
+         $isSuper=!empty($target['is_superadmin']);
+         if($newPassword!==''){
+           $hash=password_hash($newPassword, PASSWORD_DEFAULT);
+           $pdo->prepare('UPDATE lager_admins SET username=?, display_name=?, password_hash=? WHERE id=?')->execute([$username,$displayName,$hash,$adminId]);
+         } else {
+           $pdo->prepare('UPDATE lager_admins SET username=?, display_name=? WHERE id=?')->execute([$username,$displayName,$adminId]);
+         }
+         if(!$isSuper){
+           $delPerm=$pdo->prepare('DELETE FROM hsg_admin_module_access WHERE admin_id=?');
+           $delPerm->execute([$adminId]);
+           $insPerm=$pdo->prepare('INSERT INTO hsg_admin_module_access(admin_id,module_id,can_view) VALUES(?,?,?)');
+           foreach($assignableModules as $mId=>$m){
+             $canView=in_array($mId,$selectedMods,true)?1:0;
+             $insPerm->execute([$adminId,$mId,$canView]);
+           }
+         }
+         audit_log($pdo,'admin_user.update','admin_user',(string)$adminId,['username'=>$username,'display_name'=>$displayName]);
+         flash('success','Brugeroplysninger og moduladgange er opdateret.');
+       }
+     }catch(Throwable $e){flash('error','Kunne ikke opdatere bruger: '.$e->getMessage());}
    }
    redirect('users.php?tab=admins');
  }
@@ -158,27 +163,52 @@ page_header('Brugere & adgang');
           <?php if($isSuper): ?>
             <em>Fuld adgang til alt (herunder brugestyring)</em>
           <?php else: ?>
-            <form method="post" style="margin:0; display:block;"><?=csrf_field()?><input type="hidden" name="action" value="update_admin_modules"><input type="hidden" name="admin_id" value="<?=$a['id']?>">
-              <div style="display:flex; flex-wrap:wrap; gap:8px 12px; margin-bottom:6px;">
-                <?php foreach($assignableModules as $mId=>$m):
-                  $checked=in_array($mId,$userMods,true);
-                ?>
-                  <label class="check" style="font-size:0.85rem;"><input type="checkbox" name="modules[]" value="<?=h($mId)?>" <?=$checked?'checked':''?>> <?=h($m['name'])?></label>
-                <?php endforeach; ?>
-              </div>
-              <button class="secondary small">Gem moduler</button>
-            </form>
+            <div style="font-size:0.85rem; color:#444;">
+              <?php
+                $activeModNames = [];
+                foreach($assignableModules as $mId=>$m){
+                  if(in_array($mId, $userMods, true)) $activeModNames[] = $m['name'];
+                }
+                echo h(implode(', ', $activeModNames) ?: 'Ingen moduler valgt');
+              ?>
+            </div>
           <?php endif; ?>
         </td>
         <td>
-          <form method="post" style="margin-bottom:8px; display:block;"><?=csrf_field()?><input type="hidden" name="action" value="change_admin_password"><input type="hidden" name="admin_id" value="<?=$a['id']?>">
-            <div style="display:flex; gap:6px;">
-              <input type="password" name="new_password" required placeholder="Ny kode" style="width:110px; padding:4px 6px; font-size:0.85rem;">
-              <button class="button secondary small">Skift kode</button>
-            </div>
-          </form>
+          <details>
+            <summary class="button secondary small">Redigér bruger & adgange</summary>
+            <form method="post" style="margin-top:10px; padding:12px; background:var(--bg-card,#f9f9f9); border:1px solid #ddd; border-radius:6px; min-width:280px; text-align:left; color:var(--text-color,#222);">
+              <?=csrf_field()?>
+              <input type="hidden" name="action" value="update_admin_user">
+              <input type="hidden" name="admin_id" value="<?=$a['id']?>">
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <label style="font-size:0.85rem;">Brugernavn<input name="username" value="<?=h($a['username'])?>" required style="padding:4px 6px; font-size:0.85rem;"></label>
+                <label style="font-size:0.85rem;">Visningsnavn<input name="display_name" value="<?=h($a['display_name'])?>" required style="padding:4px 6px; font-size:0.85rem;"></label>
+                <label style="font-size:0.85rem;">Ny adgangskode (valgfri)<input type="password" name="password" placeholder="Lad stå tom for uændret" style="padding:4px 6px; font-size:0.85rem;"></label>
+              </div>
+              <?php if(!$isSuper): ?>
+                <div style="margin:10px 0 6px 0;">
+                  <strong style="font-size:0.85rem;">Moduladgang:</strong>
+                  <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px;">
+                    <?php foreach($assignableModules as $mId=>$m):
+                      $checked=in_array($mId,$userMods,true);
+                    ?>
+                      <label class="check" style="font-size:0.85rem;">
+                        <input type="checkbox" name="modules[]" value="<?=h($mId)?>" <?=$checked?'checked':''?>> <?=h($m['name'])?>
+                      </label>
+                    <?php endforeach; ?>
+                  </div>
+                </div>
+              <?php else: ?>
+                <p class="muted" style="margin:8px 0; font-size:0.8rem;">Hoved-administrator har automatisk fuld adgang til alle moduler.</p>
+              <?php endif; ?>
+              <div style="margin-top:8px;">
+                <button class="button small">Gem ændringer</button>
+              </div>
+            </form>
+          </details>
           <?php if(!$isSuper): ?>
-            <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="toggle_admin"><input type="hidden" name="admin_id" value="<?=$a['id']?>"><button class="<?=$a['active']?'danger':'secondary'?> small"><?=$a['active']?'Deaktivér':'Aktivér'?></button></form>
+            <form method="post" style="margin-top:6px; display:inline-block;"><?=csrf_field()?><input type="hidden" name="action" value="toggle_admin"><input type="hidden" name="admin_id" value="<?=$a['id']?>"><button class="<?=$a['active']?'danger':'secondary'?> small"><?=$a['active']?'Deaktivér':'Aktivér'?></button></form>
           <?php endif; ?>
         </td>
       </tr>

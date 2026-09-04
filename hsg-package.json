@@ -2,8 +2,8 @@
     "name": "hsg-administration",
     "product": "HSG Administration",
     "package_type": "distribution",
-    "version": "4.3.2",
-    "generated_at": "2026-09-04T06:29:02+00:00",
+    "version": "4.3.3",
+    "generated_at": "2026-09-04T14:25:55+00:00",
     "files": {
         ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",
         ".gitignore": "63d01d02bfadc4d1eb02fa4d985fe4b6ac0d304cf3dba9ecb55faa89d3458ed0",
@@ -15,7 +15,7 @@
         "admin-login.php": "0e7124cd854664f1bf5868d4654d740438a78212261debb9b5f5ff5b672af00b",
         "admin-setup.php": "323ecd555ca2f7b4e920c482736e53829c14e7ef0ef400e7421872f2b954e8d2",
         "admin.php": "e0ab785ffc6f69eea80462fd663709c43c88fe3b7b95ce4318107163aaed7dbc",
-        "app_version.php": "34d3d2d0d32483a03baa35bae3296ebbf0d785bfd8293051d5e8146bc5885cc8",
+        "app_version.php": "152406d3ab56dc8670266f67925168a921df84e66f46e8da611681a6a09f608e",
         "assets/bottle-placeholder.svg": "bb77203924ece9b630dce344f4d700e017028398787a1bdb1612b9a70b9599f4",
         "assets/style.css": "91b352a79d190744728134fccacebdf0ddcb703ec3780180f1b77a0e4e9e9094",
         "auth.php": "a34d291e367c49c6163dd3220624d8202c57b028bd6fa5d1db95e29cac66c556",
@@ -179,7 +179,7 @@
         "tools/restore-standalone.php": "00ab77e3320c1e81e841c2ce3a9a671aef4c4094633a3d9dffb2f1febf8aa328",
         "update.php": "01faa864127edfc4ba17274e5c0ff007b8e602ae617d5b7e6ff2c9354351d107",
         "user_permissions.php": "494b4d17cce138249baf2cbef73ddbc39cf49b8367cca8c9eb6c9a4bcdf1bfe9",
-        "users.php": "aa61c9b898394ece693ad0a4b9de0fd19a30eddb6ac850eb152f800ea6882cca",
+        "users.php": "2ffa078ddd5b7c40ae4d259b50205dd0788da1b5ae752317db14d787668b1160",
         "xlsx_tools.php": "b27a362c4be18b98e19e0640a6dca060290f25a2373987d9d7c224b052027751"
     },
     "release_notes": "v4.2.3: Support bidirectional CRLF/LF line ending normalization in updater package validator and add feature branch check."
