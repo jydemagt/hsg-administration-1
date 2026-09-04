@@ -3,7 +3,7 @@
     "product": "HSG Administration",
     "package_type": "distribution",
     "version": "4.3.0",
-    "generated_at": "2026-09-03T05:53:50+00:00",
+    "generated_at": "2026-09-04T05:52:26+00:00",
     "files": {
         ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",
         ".gitignore": "63d01d02bfadc4d1eb02fa4d985fe4b6ac0d304cf3dba9ecb55faa89d3458ed0",
@@ -60,7 +60,7 @@
         "image_check.php": "5acb1111163826eec9ee78b7b848c9d4308c2e28ab34da20ac0d5b4a25167694",
         "image_tools.php": "2cdeda63001a6341f367edcaaa9cb320b76eccdf1aaed7a7def7af9743d68fca",
         "import.php": "6b4faec625193958903bb6d44e4361462e8620389e3f5005d3429f3706a330c9",
-        "import_center.php": "cac01c6ca6de9d35ac5bf3ad6bdf281588f5445e9d8fee978f24d8c5ed143930",
+        "import_center.php": "c518b6208980815473cb13be551a6b99039853c2b52fd70c41c4fdc46166ccc8",
         "index.php": "f003d465de9a20e4a80d969a627f09318bd2ad64769b5e1c028cb40b824bfcfd",
         "initial-stock.json": "ed37826ef22a1fd9544829adb5893cca3a10a9372016ca0092ecd5f42e3586ea",
         "install.php": "6b1d46bdf3f8ed080393e4fe7a43c6aeb24a206b27928560d5882b1c180bac2b",
