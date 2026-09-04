@@ -159,9 +159,7 @@ page_header('Lager');
         <th>SKU</th>
         <th>Produkt</th>
         <?php foreach($locations as $l): if($locFilter && (int)$l['id'] !== $locFilter) continue; ?>
-          <th style="text-align:center;"><?=h($l['name'])?> (Fysisk)</th>
-          <th style="text-align:center;"><?=h($l['name'])?> (Reserveret)</th>
-          <th style="text-align:center;"><?=h($l['name'])?> (Disponibelt)</th>
+          <th style="text-align:center;"><?=h($l['name'])?></th>
         <?php endforeach; ?>
         <th style="text-align:center;">Totalt disponibelt</th>
       </tr>
@@ -187,11 +185,12 @@ page_header('Lager');
             $curAvail = $curPhys - $curRes;
             $totalAvailable += $curAvail;
           ?>
-            <td style="text-align:center; width:100px; background:var(--bg-card,#fdfdfd);">
-              <input type="number" min="0" name="stock[<?=$pid?>][<?=$lid?>]" value="<?=$curPhys?>" style="width:70px; padding:4px 6px; text-align:center; font-weight:600;">
+            <td style="text-align:center; width:110px; background:var(--bg-card,#fdfdfd);">
+              <input type="number" min="0" name="stock[<?=$pid?>][<?=$lid?>]" value="<?=$curPhys?>" style="width:75px; padding:6px 8px; text-align:center; font-weight:600; font-size:1rem; border:1px solid #ccc; border-radius:4px;">
+              <?php if($curRes > 0): ?>
+                <div style="font-size:0.75rem; color:#d97706; margin-top:3px; font-weight:600;">Res: <?=$curRes?></div>
+              <?php endif; ?>
             </td>
-            <td style="text-align:center; color:#666; font-size:0.9rem;"><?=$curRes?></td>
-            <td style="text-align:center; font-weight:bold;" class="available <?=$curAvail<0?'negative':''?>"><?=$curAvail?></td>
           <?php endforeach; ?>
           <td style="text-align:center; font-size:1.1rem; font-weight:bold;" class="available <?=$totalAvailable<0?'negative':''?>"><?=$totalAvailable?></td>
         </tr>
