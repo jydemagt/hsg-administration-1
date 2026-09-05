@@ -16,8 +16,38 @@ function hsg_link_module_access(string $moduleId): array {
 function hsg_link_can_view_module(string $moduleId): bool { return hsg_link_module_access($moduleId)['view']; }
 function hsg_link_can_operate_module(string $moduleId): bool { return hsg_link_module_access($moduleId)['operate']; }
 
+function hsg_admin_can_view_module(string $moduleId): bool {
+    if(!is_admin()) return false;
+    if(is_superadmin()) return true;
+    if(!isset($GLOBALS['pdo']) || !($GLOBALS['pdo'] instanceof PDO)) return true;
+    $pdo=$GLOBALS['pdo']; $aid=current_admin_id(); if(!$aid) return false;
+    if(!function_exists('db_table_exists') || !db_table_exists($pdo,'hsg_admin_module_access')) return true;
+    $st=$pdo->prepare('SELECT can_view FROM hsg_admin_module_access WHERE admin_id=? AND module_id=?');
+    $st->execute([$aid,$moduleId]); $r=$st->fetch();
+    return $r ? (bool)$r['can_view'] : true;
+}
+
 function hsg_capabilities(): array {
-    if (is_admin()) return ['*'];
+    if (is_admin()) {
+        if (is_superadmin()) return ['*'];
+        $caps = []; // Almindelige login-brugere har IKKE adgang til brugestyring (users.manage)
+        $modules = function_exists('hsg_module_manifests') ? hsg_module_manifests() : [];
+        foreach ($modules as $modId => $m) {
+            if ($modId === 'access') continue; // Oprettelse og brugestyring er forbeholdt superadmin
+            if (hsg_admin_can_view_module((string)$modId)) {
+                $cap = (string)($m['capability'] ?? '');
+                if ($cap !== '') $caps[] = $cap;
+                $caps[] = $modId . '.view';
+                $caps[] = $modId . '.operate';
+            }
+        }
+        $caps[] = 'dashboard.view';
+        $caps[] = 'inventory.view';
+        $caps[] = 'reservations.view';
+        $caps[] = 'reservations.create';
+        $caps[] = 'catalog.view';
+        return array_values(array_unique($caps));
+    }
     if (!is_link_user()) return [];
     $caps=[];
     if(hsg_link_can_view_module('dashboard')) $caps[]='dashboard.view';
