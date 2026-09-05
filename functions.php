@@ -64,6 +64,7 @@ function page_header(string $title): void {
       'stock'=>['status.php','▦','Lager'],
       'products'=>['products.php','◇','Produkter'],
       'catalog'=>['catalog.php','▤','Katalog'],
+      'reports'=>['reports.php','📊','Rapporter'],
       'supplier_upload'=>['import_center.php','⇅','Import / Upload'],
       'system'=>['admin.php','⚙','Administration']
     ];

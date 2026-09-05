@@ -69,16 +69,35 @@ if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='appl
     try{
         $preview=hsg_supplier_preview_load($token);$selected=array_map('intval',(array)($_POST['apply_rows']??[]));if(!$selected)throw new RuntimeException('Vælg mindst én række, der skal opdateres.');
         $products=$pdo->query('SELECT * FROM lager_products ORDER BY name')->fetchAll(PDO::FETCH_ASSOC);$byId=[];foreach($products as $p)$byId[(int)$p['id']]=$p;
-        $pdo->beginTransaction();$updated=0;$changedFields=0;$details=[];
-        foreach($selected as $idx){if(!isset($preview['items'][$idx]))continue;$item=$preview['items'][$idx];$pid=(int)($_POST['product_'.$idx]??($item['match']['id']??0));if(!$pid||!isset($byId[$pid]))continue;
-            $changes=hsg_supplier_apply_product($pdo,$pid,(array)$item['source']);if(!$changes)continue;$updated++;$changedFields+=count($changes);$details[]=['product_id'=>$pid,'fields'=>array_keys($changes),'source_row'=>$item['row']];
+        $pdo->beginTransaction();$updated=0;$created=0;$changedFields=0;$details=[];
+        foreach($selected as $idx){
+            if(!isset($preview['items'][$idx]))continue;
+            $item=$preview['items'][$idx];
+            $postedVal=trim((string)($_POST['product_'.$idx]??''));
+            if($postedVal==='create_new' || ($postedVal==='' && empty($item['match']['id']) && !empty($item['is_create_new']))){
+                $newPid=hsg_supplier_create_product($pdo,(array)$item['source']);
+                $created++;
+                $details[]=['product_id'=>$newPid,'action'=>'created','source_row'=>$item['row']];
+            } else {
+                $pid=(int)($postedVal ?: ($item['match']['id']??0));
+                if(!$pid||!isset($byId[$pid]))continue;
+                $changes=hsg_supplier_apply_product($pdo,$pid,(array)$item['source']);
+                if(!$changes)continue;
+                $updated++;$changedFields+=count($changes);
+                $details[]=['product_id'=>$pid,'fields'=>array_keys($changes),'source_row'=>$item['row']];
+            }
         }
         $pdo->prepare('INSERT INTO hsg_supplier_import_runs(filename,sheet_name,rows_detected,rows_updated,created_by_admin) VALUES(?,?,?,?,?)')->execute([
-            substr((string)$preview['filename'],0,255),substr((string)$preview['sheet'],0,180),count($preview['items']),$updated,(int)current_admin_id()
+            substr((string)$preview['filename'],0,255),substr((string)$preview['sheet'],0,180),count($preview['items']),$updated+$created,(int)current_admin_id()
         ]);
         $runId=(int)$pdo->lastInsertId();
-        audit_log($pdo,'supplier_import.apply','import',(string)$runId,['filename'=>$preview['filename'],'products_updated'=>$updated,'fields_changed'=>$changedFields,'details'=>$details]);
-        $pdo->commit();hsg_supplier_preview_delete($token);flash('success',"$updated produkter blev opdateret med i alt $changedFields feltændringer.");redirect('supplier_upload.php');
+        audit_log($pdo,'supplier_import.apply','import',(string)$runId,['filename'=>$preview['filename'],'products_updated'=>$updated,'products_created'=>$created,'fields_changed'=>$changedFields,'details'=>$details]);
+        $pdo->commit();hsg_supplier_preview_delete($token);
+        $msg = "$updated produkter blev opdateret";
+        if($created > 0) $msg .= " og $created nye produkter blev oprettet i HSG Administration";
+        $msg .= " med i alt $changedFields feltændringer.";
+        flash('success',$msg);
+        redirect('supplier_upload.php');
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();flash('error','Kunne ikke anvende ændringer: '.$e->getMessage());redirect('supplier_upload.php'.($token?'?preview='.$token:''));}
 }
 
@@ -156,8 +175,22 @@ $detected=array_keys((array)$preview['mapping']);$detectedLabels=[];foreach($det
   <td><?=h($item['row_label'] ?? ('#'.intval($item['row'])))?></td>
   <td><strong><?=h($src['name']??'(uden navn)')?></strong><br><small class="muted"><?php if(!empty($src['sku'])):?>SKU <?=h($src['sku'])?> · <?php endif;?><?php if(!empty($src['cask_number'])):?>Fad #<?=h($src['cask_number'])?><?php endif;?></small></td>
   <td>
-    <span class="badge <?=$score>=90?'green':($score>=70?'':'red')?>"><?=$score?> %</span> <small class="muted"><?=h($item['match']['reason']??'')?></small>
-    <select name="product_<?=$i?>" style="margin-top:6px"><option value="">– Intet match –</option><?php foreach($products as $p):?><option value="<?=$p['id']?>" <?=$mid===(int)$p['id']?'selected':''?>><?=h($p['sku'].' · '.$p['name'].(!empty($p['cask_number'])?' · #'.$p['cask_number']:''))?></option><?php endforeach;?></select>
+    <?php if(!empty($item['is_create_new'])): ?>
+      <span class="badge blue">Nyt produkt oprettes (Lager: <?=intval($item['total_stock']??0)?>)</span>
+    <?php else: ?>
+      <span class="badge <?=$score>=90?'green':($score>=70?'':'red')?>"><?=$score?> %</span> <small class="muted"><?=h($item['match']['reason']??'')?></small>
+    <?php endif; ?>
+    <select name="product_<?=$i?>" style="margin-top:6px">
+      <?php if(!empty($item['is_create_new'])): ?>
+        <option value="create_new" selected>✨ Opret som nyt produkt i HSG (Lager: <?=intval($item['total_stock']??0)?> stf)</option>
+      <?php else: ?>
+        <option value="">– Intet match –</option>
+        <option value="create_new">✨ Opret som nyt produkt i HSG</option>
+      <?php endif; ?>
+      <?php foreach($products as $p):?>
+        <option value="<?=$p['id']?>" <?=$mid===(int)$p['id']?'selected':''?>><?=h($p['sku'].' · '.$p['name'].(!empty($p['cask_number'])?' · #'.$p['cask_number']:''))?></option>
+      <?php endforeach;?>
+    </select>
   </td>
   <td><?php if(!$changes):?><span class="muted">Ingen ændringer fundet</span><?php else:?><ul style="margin:0;padding-left:18px"><?php foreach($changes as $field=>$c):?><li><strong><?=h($fieldLabels[$field]??$field)?>:</strong> <?=h(supfmt($c['old'],$field))?> → <strong><?=h(supfmt($c['new'],$field))?></strong></li><?php endforeach;?></ul><?php endif;?></td>
 </tr>

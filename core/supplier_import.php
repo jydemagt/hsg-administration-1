@@ -265,13 +265,24 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
             $changes = hsg_supplier_changes_for_product($src, $byId[$pid]);
         }
         $rowLabel = count($g['rows']) > 1 ? '#' . implode(', #', $g['rows']) . ' (Flettet)' : '#' . $g['rows'][0];
+
+        $totalStock = (int)($src['stock_quantity'] ?? 0);
+        foreach ($src as $k => $v) {
+            if (str_starts_with($k, 'stock_loc_')) {
+                $totalStock += (int)$v;
+            }
+        }
+        $isCreateNew = ($pid === 0 && $totalStock > 0);
+
         $items[] = [
             'row' => $g['rows'][0],
             'row_label' => $rowLabel,
             'source' => $src,
             'match' => $match,
             'changes' => $changes,
-            'selected' => $pid > 0 && $match['score'] >= 90 && count($changes) > 0
+            'total_stock' => $totalStock,
+            'is_create_new' => $isCreateNew,
+            'selected' => ($pid > 0 && $match['score'] >= 90 && count($changes) > 0) || $isCreateNew
         ];
     }
     return $items;
@@ -458,4 +469,93 @@ function hsg_supplier_apply_product(PDO $pdo,int $productId,array $src): array {
     }
     hsg_sync_product_stock_status($pdo,$productId);
     return $changes;
+}
+
+function hsg_supplier_create_product(PDO $pdo, array $src): int {
+    $sku = trim((string)($src['sku'] ?? ''));
+    if ($sku === '') {
+        $caskStr = preg_replace('/[^0-9A-Z]/i', '', (string)($src['cask_number'] ?? ''));
+        $sku = 'KIM-' . ($caskStr !== '' ? $caskStr : date('ymd') . '-' . substr(bin2hex(random_bytes(3)), 0, 5));
+    }
+
+    $name = trim((string)($src['name'] ?? ''));
+    if ($name === '') {
+        $name = 'Nyt produkt ' . (!empty($src['cask_number']) ? 'Fad #' . $src['cask_number'] : $sku);
+    }
+
+    $brandId = null;
+    $brandName = trim((string)($src['brand_name'] ?? ''));
+    if ($brandName !== '') {
+        $stB = $pdo->prepare('SELECT id FROM lager_brands WHERE name=? LIMIT 1');
+        $stB->execute([$brandName]);
+        $brandId = (int)($stB->fetchColumn() ?: 0) ?: null;
+        if (!$brandId) {
+            $pdo->prepare('INSERT IGNORE INTO lager_brands (name, active, sort_order) VALUES (?, 1, 100)')->execute([$brandName]);
+            $brandId = (int)$pdo->lastInsertId() ?: null;
+        }
+    }
+
+    $wholesale = isset($src['wholesale_price']) ? (float)$src['wholesale_price'] : null;
+    $retail = isset($src['retail_price']) ? (float)$src['retail_price'] : null;
+    $abv = isset($src['abv']) ? (float)$src['abv'] : null;
+    $cl = isset($src['bottle_size_cl']) ? (float)$src['bottle_size_cl'] : 70.0;
+    $vintage = isset($src['vintage_year']) ? (int)$src['vintage_year'] : null;
+
+    $stIns = $pdo->prepare('INSERT INTO lager_products
+        (sku, name, call_name, brand_id, category, distillery, country, age_text, vintage_year, abv, bottle_size_cl, cask_type, cask_number, bottle_count, wholesale_price, retail_price, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "active")');
+
+    $stIns->execute([
+        $sku,
+        $name,
+        $src['call_name'] ?? null,
+        $brandId,
+        $src['category'] ?? null,
+        $src['distillery'] ?? null,
+        $src['country'] ?? null,
+        $src['age_text'] ?? null,
+        $vintage,
+        $abv,
+        $cl,
+        $src['cask_type'] ?? null,
+        $src['cask_number'] ?? null,
+        $src['bottle_count'] ?? null,
+        $wholesale,
+        $retail
+    ]);
+
+    $newPid = (int)$pdo->lastInsertId();
+
+    // Insert stock quantities for mapped locations
+    $locs = $pdo->query('SELECT id FROM lager_locations WHERE active=1 ORDER BY sort_order, id')->fetchAll(PDO::FETCH_COLUMN);
+    $totalAddedStock = 0;
+
+    foreach ($locs as $lid) {
+        $locKey = 'stock_loc_' . $lid;
+        if (isset($src[$locKey])) {
+            $qty = max(0, (int)$src[$locKey]);
+            if ($qty > 0) {
+                $pdo->prepare('INSERT INTO lager_stock (product_id, location_id, quantity) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity)')
+                    ->execute([$newPid, $lid, $qty]);
+                $pdo->prepare('INSERT INTO lager_stock_movements (product_id, location_id, change_qty, balance_after, movement_type, reference, created_by_admin) VALUES (?, ?, ?, ?, "import", "Oprettet via Kims uploadfil", ?)')
+                    ->execute([$newPid, $lid, $qty, $qty, current_admin_id()]);
+                $totalAddedStock += $qty;
+            }
+        }
+    }
+
+    // Default stock if general stock_quantity mapped and no location stock mapped
+    if ($totalAddedStock === 0 && isset($src['stock_quantity'])) {
+        $genQty = max(0, (int)$src['stock_quantity']);
+        if ($genQty > 0 && !empty($locs[0])) {
+            $firstLid = (int)$locs[0];
+            $pdo->prepare('INSERT INTO lager_stock (product_id, location_id, quantity) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity)')
+                ->execute([$newPid, $firstLid, $genQty]);
+            $pdo->prepare('INSERT INTO lager_stock_movements (product_id, location_id, change_qty, balance_after, movement_type, reference, created_by_admin) VALUES (?, ?, ?, ?, "import", "Oprettet via Kims uploadfil", ?)')
+                ->execute([$newPid, $firstLid, $genQty, $genQty, current_admin_id()]);
+        }
+    }
+
+    hsg_sync_product_stock_status($pdo, $newPid);
+    return $newPid;
 }
