@@ -11,6 +11,28 @@ function flash(string $type,string $message): void { $_SESSION['flash'][]=[$type
 function render_flash(): void { foreach($_SESSION['flash']??[] as [$t,$m])echo '<div class="flash '.h($t).'">'.h($m).'</div>';unset($_SESSION['flash']); }
 function is_authenticated(): bool { return in_array($_SESSION['auth_mode']??'', ['link','admin'], true); }
 function is_admin(): bool { return ($_SESSION['auth_mode']??'')==='admin' && !empty($_SESSION['admin_id']); }
+function is_superadmin(): bool {
+    if(!is_admin()) return false;
+    if(isset($_SESSION['is_superadmin']) && $_SESSION['is_superadmin'] === true) return true;
+    if(isset($GLOBALS['pdo']) && ($GLOBALS['pdo'] instanceof PDO)){
+        $st=$GLOBALS['pdo']->prepare('SELECT is_superadmin FROM lager_admins WHERE id=?');
+        $st->execute([current_admin_id()]);
+        $val=$st->fetchColumn();
+        if($val === false || (int)$val === 1) {
+            $_SESSION['is_superadmin'] = true;
+            return true;
+        }
+        $superCount = (int)$GLOBALS['pdo']->query('SELECT COUNT(*) FROM lager_admins WHERE is_superadmin=1')->fetchColumn();
+        if($superCount === 0) {
+            $GLOBALS['pdo']->exec('UPDATE lager_admins SET is_superadmin=1');
+            $_SESSION['is_superadmin'] = true;
+            return true;
+        }
+        $_SESSION['is_superadmin'] = (bool)$val;
+        return $_SESSION['is_superadmin'];
+    }
+    return true;
+}
 function is_link_user(): bool { return ($_SESSION['auth_mode']??'')==='link' && !empty($_SESSION['user_id']); }
 function current_link_user_id(): ?int { return is_link_user()?(int)$_SESSION['user_id']:null; }
 function current_admin_id(): ?int { return is_admin()?(int)$_SESSION['admin_id']:null; }
@@ -37,14 +59,19 @@ function page_header(string $title): void {
   echo '</div></header>';
   echo '<aside class="sidebar"><nav>';
   if($admin){
-    $main=[
-      ['index.php','⌂','Overblik'],['status.php','▦','Lager'],['products.php','◇','Produkter'],
-      ['catalog.php','▤','Katalog'],['import_center.php','⇅','Import / Upload'],['admin.php','⚙','Administration']
+    $allNav=[
+      'dashboard'=>['index.php','⌂','Overblik'],
+      'stock'=>['status.php','▦','Lager'],
+      'products'=>['products.php','◇','Produkter'],
+      'catalog'=>['catalog.php','▤','Katalog'],
+      'supplier_upload'=>['import_center.php','⇅','Import / Upload'],
+      'system'=>['admin.php','⚙','Administration']
     ];
     $current=basename($_SERVER['SCRIPT_NAME']??'');
     $adminFiles=['admin.php','brands.php','locations.php','image_check.php','quality.php','users.php','user_permissions.php','backup.php','update.php','system.php','admin-account.php','stock.php'];
     $importFiles=['import_center.php','import.php','supplier_upload.php','export.php'];
-    foreach($main as [$href,$icon,$name]){
+    foreach($allNav as $mId=>[$href,$icon,$name]){
+      if(!is_superadmin() && function_exists('hsg_admin_can_view_module') && !hsg_admin_can_view_module($mId)) continue;
       $active=($current===basename($href)) || ($href==='status.php' && $current==='reservations.php') || ($href==='admin.php' && in_array($current,$adminFiles,true)) || ($href==='import_center.php' && in_array($current,$importFiles,true));
       echo '<a class="'.($active?'active':'').'" href="'.h($href).'">'.h($icon).' <span>'.h($name).'</span></a>';
     }
@@ -83,3 +110,13 @@ function canonical_location_name(string $name): string { $n=trim($name);$key=str
 function get_locations(PDO $pdo,bool $activeOnly=true): array { return $pdo->query('SELECT * FROM lager_locations '.($activeOnly?'WHERE active=1 ':'').'ORDER BY sort_order,name')->fetchAll(); }
 function available_for(PDO $pdo,int $pid,int $lid): int { $st=$pdo->prepare("SELECT COALESCE(s.quantity,0)-COALESCE(r.qty,0) FROM lager_stock s LEFT JOIN (SELECT product_id,location_id,SUM(quantity) qty FROM lager_reservations WHERE status='reserved' GROUP BY product_id,location_id) r ON r.product_id=s.product_id AND r.location_id=s.location_id WHERE s.product_id=? AND s.location_id=?");$st->execute([$pid,$lid]);$v=$st->fetchColumn();return $v===false?0:(int)$v; }
 function total_available_for(PDO $pdo,int $pid): int { $st=$pdo->prepare("SELECT COALESCE((SELECT SUM(quantity) FROM lager_stock WHERE product_id=?),0)-COALESCE((SELECT SUM(quantity) FROM lager_reservations WHERE product_id=? AND status='reserved'),0)");$st->execute([$pid,$pid]);return (int)$st->fetchColumn(); }
+
+function hsg_sync_product_stock_status(PDO $pdo, int $productId): void {
+    if($productId <= 0) return;
+    $avail = total_available_for($pdo, $productId);
+    if($avail <= 0) {
+        $pdo->prepare("UPDATE lager_products SET status='inactive' WHERE id=? AND status='active'")->execute([$productId]);
+    } else {
+        $pdo->prepare("UPDATE lager_products SET status='active' WHERE id=? AND status='inactive'")->execute([$productId]);
+    }
+}
