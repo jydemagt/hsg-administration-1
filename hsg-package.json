@@ -3,7 +3,7 @@
     "product": "HSG Administration",
     "package_type": "distribution",
     "version": "4.4.1",
-    "generated_at": "2026-09-05T16:57:16+00:00",
+    "generated_at": "2026-09-05T17:16:26+00:00",
     "files": {
         ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",
         ".gitignore": "63d01d02bfadc4d1eb02fa4d985fe4b6ac0d304cf3dba9ecb55faa89d3458ed0",
@@ -39,7 +39,7 @@
         "core/product_enrichment.php": "f0b906fe51a522da790523f75a5f7168870b3acbfbc9263bcbb73add3efc5cf7",
         "core/quality.php": "c03c9d65d27ead354d2f1daa6424df0c2a8f9c7f53942c91c1f3df41f46aec96",
         "core/settings.php": "c7235f51743933d467fdfeba89213b97edcaafb3fe5784a611fdf4c6b08bf8d7",
-        "core/supplier_import.php": "0b8b2a0b89d8515782a91b2786dcae8590aadfb48bf778f4ccb1007a79c71674",
+        "core/supplier_import.php": "753408c0dd5c2691d140bf573d4e02f0e5015402f1a2e90efc0ab26004ecd814",
         "core/updater.php": "f1acef9b54d98ed90e39f3acc90a1cda34420ee1257eb406043591e90a4a10f9",
         "core/woocommerce_sync.php": "44d1f176615eb038fa8f77389c4a758a0bfd3b1d6524b1a1a23b13d95af0d2b8",
         "cron/backup.php": "3908e23adbb3eb539305521d1d0c1986af535fd6953fb7059e1de623fddc5be1",
