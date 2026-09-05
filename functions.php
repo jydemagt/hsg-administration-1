@@ -13,12 +13,22 @@ function is_authenticated(): bool { return in_array($_SESSION['auth_mode']??'', 
 function is_admin(): bool { return ($_SESSION['auth_mode']??'')==='admin' && !empty($_SESSION['admin_id']); }
 function is_superadmin(): bool {
     if(!is_admin()) return false;
-    if(isset($_SESSION['is_superadmin'])) return (bool)$_SESSION['is_superadmin'];
+    if(isset($_SESSION['is_superadmin']) && $_SESSION['is_superadmin'] === true) return true;
     if(isset($GLOBALS['pdo']) && ($GLOBALS['pdo'] instanceof PDO)){
         $st=$GLOBALS['pdo']->prepare('SELECT is_superadmin FROM lager_admins WHERE id=?');
         $st->execute([current_admin_id()]);
         $val=$st->fetchColumn();
-        $_SESSION['is_superadmin'] = ($val===false) ? true : (bool)$val;
+        if($val === false || (int)$val === 1) {
+            $_SESSION['is_superadmin'] = true;
+            return true;
+        }
+        $superCount = (int)$GLOBALS['pdo']->query('SELECT COUNT(*) FROM lager_admins WHERE is_superadmin=1')->fetchColumn();
+        if($superCount === 0) {
+            $GLOBALS['pdo']->exec('UPDATE lager_admins SET is_superadmin=1');
+            $_SESSION['is_superadmin'] = true;
+            return true;
+        }
+        $_SESSION['is_superadmin'] = (bool)$val;
         return $_SESSION['is_superadmin'];
     }
     return true;

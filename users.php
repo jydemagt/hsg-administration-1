@@ -13,22 +13,23 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
    $username=trim((string)($_POST['username']??''));
    $displayName=trim((string)($_POST['display_name']??''));
    $password=(string)($_POST['password']??'');
+   $isSuper=!empty($_POST['is_superadmin']) ? 1 : 0;
    $selectedMods=(array)($_POST['modules']??[]);
    if($username===''||$displayName===''||$password===''){
      flash('error','Brugernavn, visningsnavn og adgangskode skal udfyldes.');
    } else {
      try{
        $hash=password_hash($password,PASSWORD_DEFAULT);
-       $st=$pdo->prepare('INSERT INTO lager_admins(username,display_name,password_hash,is_superadmin,active) VALUES(?,?,?,0,1)');
-       $st->execute([$username,$displayName,$hash]);
+       $st=$pdo->prepare('INSERT INTO lager_admins(username,display_name,password_hash,is_superadmin,active) VALUES(?,?,?,?,1)');
+       $st->execute([$username,$displayName,$hash,$isSuper]);
        $newAdminId=(int)$pdo->lastInsertId();
        $insPerm=$pdo->prepare('INSERT INTO hsg_admin_module_access(admin_id,module_id,can_view) VALUES(?,?,?)');
        foreach($assignableModules as $mId=>$m){
-         $canView=in_array($mId,$selectedMods,true)?1:0;
+         $canView=($isSuper || in_array($mId,$selectedMods,true))?1:0;
          $insPerm->execute([$newAdminId,$mId,$canView]);
        }
        audit_log($pdo,'admin_user.create','admin_user',(string)$newAdminId,['username'=>$username]);
-       flash('success','Ny login-bruger oprettet med valgte modulrettigheder.');
+       flash('success','Ny login-bruger oprettet.');
      }catch(Throwable $e){flash('error','Kunne ikke oprette login-bruger: '.$e->getMessage());}
      redirect('users.php?tab=admins');
    }
@@ -38,6 +39,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
    $username=trim((string)($_POST['username']??''));
    $displayName=trim((string)($_POST['display_name']??''));
    $newPassword=(string)($_POST['password']??'');
+   $isSuperNew=!empty($_POST['is_superadmin']) ? 1 : 0;
    $selectedMods=(array)($_POST['modules']??[]);
 
    if($adminId<=0 || $username==='' || $displayName===''){
@@ -48,24 +50,23 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
        $stCheck->execute([$adminId]);
        $target=$stCheck->fetch();
        if($target){
-         $isSuper=!empty($target['is_superadmin']);
          if($newPassword!==''){
            $hash=password_hash($newPassword, PASSWORD_DEFAULT);
-           $pdo->prepare('UPDATE lager_admins SET username=?, display_name=?, password_hash=? WHERE id=?')->execute([$username,$displayName,$hash,$adminId]);
+           $pdo->prepare('UPDATE lager_admins SET username=?, display_name=?, is_superadmin=?, password_hash=? WHERE id=?')->execute([$username,$displayName,$isSuperNew,$hash,$adminId]);
          } else {
-           $pdo->prepare('UPDATE lager_admins SET username=?, display_name=? WHERE id=?')->execute([$username,$displayName,$adminId]);
+           $pdo->prepare('UPDATE lager_admins SET username=?, display_name=?, is_superadmin=? WHERE id=?')->execute([$username,$displayName,$isSuperNew,$adminId]);
          }
-         if(!$isSuper){
-           $delPerm=$pdo->prepare('DELETE FROM hsg_admin_module_access WHERE admin_id=?');
-           $delPerm->execute([$adminId]);
-           $insPerm=$pdo->prepare('INSERT INTO hsg_admin_module_access(admin_id,module_id,can_view) VALUES(?,?,?)');
-           foreach($assignableModules as $mId=>$m){
-             $canView=in_array($mId,$selectedMods,true)?1:0;
-             $insPerm->execute([$adminId,$mId,$canView]);
-           }
+
+         $delPerm=$pdo->prepare('DELETE FROM hsg_admin_module_access WHERE admin_id=?');
+         $delPerm->execute([$adminId]);
+         $insPerm=$pdo->prepare('INSERT INTO hsg_admin_module_access(admin_id,module_id,can_view) VALUES(?,?,?)');
+         foreach($assignableModules as $mId=>$m){
+           $canView=($isSuperNew || in_array($mId,$selectedMods,true))?1:0;
+           $insPerm->execute([$adminId,$mId,$canView]);
          }
-         audit_log($pdo,'admin_user.update','admin_user',(string)$adminId,['username'=>$username,'display_name'=>$displayName]);
-         flash('success','Brugeroplysninger og moduladgange er opdateret.');
+
+         audit_log($pdo,'admin_user.update','admin_user',(string)$adminId,['username'=>$username,'display_name'=>$displayName,'is_superadmin'=>$isSuperNew]);
+         flash('success','Brugeroplysninger, rolle og moduladgange er opdateret.');
        }
      }catch(Throwable $e){flash('error','Kunne ikke opdatere bruger: '.$e->getMessage());}
    }
@@ -130,10 +131,16 @@ page_header('Brugere & adgang');
     <h2>Opret ny login-bruger</h2>
     <p class="muted">Opret brugere, der kan logge ind med brugernavn og adgangskode. Som administrator vælger du hvilke moduler brugeren har adgang til. <strong>Oprettelse og brugestyring kan ikke tildeles andre brugere.</strong></p>
     <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="create_admin">
-      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
         <label>Brugernavn<input name="username" required placeholder="fx peter"></label>
         <label>Visningsnavn<input name="display_name" required placeholder="fx Peter Hansen"></label>
         <label>Adgangskode<input type="password" name="password" required></label>
+        <label>Rolle
+          <select name="is_superadmin">
+            <option value="0">Almindelig bruger (Valgfri moduladgang)</option>
+            <option value="1">Hoved-administrator (Fuld adgang til alt)</option>
+          </select>
+        </label>
       </div>
       <div style="margin: 1rem 0;">
         <strong>Moduladgang / Rettigheder:</strong>
@@ -189,27 +196,29 @@ page_header('Brugere & adgang');
                 <label style="font-size:0.85rem;">Brugernavn<input name="username" value="<?=h($a['username'])?>" required style="padding:4px 6px; font-size:0.85rem;"></label>
                 <label style="font-size:0.85rem;">Visningsnavn<input name="display_name" value="<?=h($a['display_name'])?>" required style="padding:4px 6px; font-size:0.85rem;"></label>
                 <label style="font-size:0.85rem;">Ny adgangskode (valgfri)<input type="password" name="password" placeholder="Lad stå tom for uændret" style="padding:4px 6px; font-size:0.85rem;"></label>
+                <label style="font-size:0.85rem;">Rolle
+                  <select name="is_superadmin" style="padding:4px 6px; font-size:0.85rem;">
+                    <option value="0" <?=$isSuper?'':'selected'?>>Almindelig bruger (Valgfri moduladgang)</option>
+                    <option value="1" <?=$isSuper?'selected':''?>>Hoved-administrator (Fuld adgang)</option>
+                  </select>
+                </label>
               </div>
-              <?php if(!$isSuper): ?>
-                <div style="margin:10px 0 6px 0;">
-                  <strong style="font-size:0.85rem;">Moduladgang / Rettigheder:</strong>
-                  <div style="margin:4px 0; display:flex; gap:6px;">
-                    <button type="button" class="secondary small" style="font-size:0.75rem; padding:2px 6px;" onclick="this.closest('form').querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=true)">Vælg alle</button>
-                    <button type="button" class="secondary small" style="font-size:0.75rem; padding:2px 6px;" onclick="this.closest('form').querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=false)">Fjern alle</button>
-                  </div>
-                  <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px;">
-                    <?php foreach($assignableModules as $mId=>$m):
-                      $checked=in_array($mId,$userMods,true);
-                    ?>
-                      <label class="check" style="font-size:0.85rem;">
-                        <input type="checkbox" name="modules[]" value="<?=h($mId)?>" <?=$checked?'checked':''?>> <?=h($m['name'])?>
-                      </label>
-                    <?php endforeach; ?>
-                  </div>
+              <div style="margin:10px 0 6px 0;">
+                <strong style="font-size:0.85rem;">Moduladgang / Rettigheder:</strong>
+                <div style="margin:4px 0; display:flex; gap:6px;">
+                  <button type="button" class="secondary small" style="font-size:0.75rem; padding:2px 6px;" onclick="this.closest('form').querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=true)">Vælg alle</button>
+                  <button type="button" class="secondary small" style="font-size:0.75rem; padding:2px 6px;" onclick="this.closest('form').querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=false)">Fjern alle</button>
                 </div>
-              <?php else: ?>
-                <p class="muted" style="margin:8px 0; font-size:0.8rem;">Hoved-administrator har automatisk fuld adgang til alle moduler.</p>
-              <?php endif; ?>
+                <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px;">
+                  <?php foreach($assignableModules as $mId=>$m):
+                    $checked=in_array($mId,$userMods,true);
+                  ?>
+                    <label class="check" style="font-size:0.85rem;">
+                      <input type="checkbox" name="modules[]" value="<?=h($mId)?>" <?=$checked?'checked':''?>> <?=h($m['name'])?>
+                    </label>
+                  <?php endforeach; ?>
+                </div>
+              </div>
               <div style="margin-top:8px;">
                 <button class="button small">Gem ændringer</button>
               </div>
