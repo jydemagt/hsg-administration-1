@@ -2,8 +2,8 @@
     "name": "hsg-administration",
     "product": "HSG Administration",
     "package_type": "distribution",
-    "version": "4.3.4",
-    "generated_at": "2026-09-04T19:02:48+00:00",
+    "version": "4.3.5",
+    "generated_at": "2026-09-05T07:15:48+00:00",
     "files": {
         ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",
         ".gitignore": "63d01d02bfadc4d1eb02fa4d985fe4b6ac0d304cf3dba9ecb55faa89d3458ed0",
@@ -12,10 +12,10 @@
         "JULES-HANDOFF/HSG_Jules_Handoff.txt": "fae978b46ea3604ba2862339215ed527ab9c56d8a8eb014651adb140e966352c",
         "README.txt": "6fb9a25f0a8ee4651fcf953ddf3635c127c79484d33891d3def0b6633d9696cb",
         "admin-account.php": "a359357703b3293b926e97e39cab025fc7a27186b8e5f591e9f576abb15ff816",
-        "admin-login.php": "0e7124cd854664f1bf5868d4654d740438a78212261debb9b5f5ff5b672af00b",
+        "admin-login.php": "cee1d3761019d19608371a645730be37937a282befa0c703515260338ba401e7",
         "admin-setup.php": "323ecd555ca2f7b4e920c482736e53829c14e7ef0ef400e7421872f2b954e8d2",
         "admin.php": "e0ab785ffc6f69eea80462fd663709c43c88fe3b7b95ce4318107163aaed7dbc",
-        "app_version.php": "9da73a7784570318a1fcbd16e0f4ecb3f30b18106c7897ee472925598ec018e1",
+        "app_version.php": "1c1263299e1032f7f6456c9a057a6cea9d4e8a5d6aefdea8fa4a69b6e99262b5",
         "assets/bottle-placeholder.svg": "bb77203924ece9b630dce344f4d700e017028398787a1bdb1612b9a70b9599f4",
         "assets/style.css": "91b352a79d190744728134fccacebdf0ddcb703ec3780180f1b77a0e4e9e9094",
         "auth.php": "a34d291e367c49c6163dd3220624d8202c57b028bd6fa5d1db95e29cac66c556",
@@ -179,7 +179,7 @@
         "tools/restore-standalone.php": "00ab77e3320c1e81e841c2ce3a9a671aef4c4094633a3d9dffb2f1febf8aa328",
         "update.php": "01faa864127edfc4ba17274e5c0ff007b8e602ae617d5b7e6ff2c9354351d107",
         "user_permissions.php": "494b4d17cce138249baf2cbef73ddbc39cf49b8367cca8c9eb6c9a4bcdf1bfe9",
-        "users.php": "fbd0a71ba6f0dcf7aa6d7291d7c6b7fd858bf4f0f62d1620df6b9ea22573cf0f",
+        "users.php": "630f54b6d6e1c30f8a271cf41013e0a03a98b5f134f92ef728fab254f4a88f3c",
         "xlsx_tools.php": "b27a362c4be18b98e19e0640a6dca060290f25a2373987d9d7c224b052027751"
     },
     "release_notes": "v4.2.3: Support bidirectional CRLF/LF line ending normalization in updater package validator and add feature branch check."

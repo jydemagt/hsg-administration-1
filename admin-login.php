@@ -13,11 +13,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = (string)($_POST['password'] ?? '');
     $ipHash = hash('sha256', (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
 
-    // Begræns brute-force: højst 5 fejlede forsøg pr. brugernavn/IP på 15 minutter.
-    $lim = $pdo->prepare("SELECT COUNT(*) FROM lager_login_attempts WHERE username=? AND ip_hash=? AND success=0 AND attempted_at >= (NOW() - INTERVAL 15 MINUTE)");
-    $lim->execute([$username, $ipHash]);
-    if ((int)$lim->fetchColumn() >= 5) {
-        $error = 'For mange loginforsøg. Prøv igen senere.';
+    // Begræns brute-force: højst 5 fejlede forsøg pr. brugernavn eller 10 pr. IP-adresse inden for 15 minutter.
+    $limUser = $pdo->prepare("SELECT COUNT(*) FROM lager_login_attempts WHERE username=? AND success=0 AND attempted_at >= (NOW() - INTERVAL 15 MINUTE)");
+    $limUser->execute([$username]);
+    $limIp = $pdo->prepare("SELECT COUNT(*) FROM lager_login_attempts WHERE ip_hash=? AND success=0 AND attempted_at >= (NOW() - INTERVAL 15 MINUTE)");
+    $limIp->execute([$ipHash]);
+
+    if ((int)$limUser->fetchColumn() >= 5 || (int)$limIp->fetchColumn() >= 10) {
+        $error = 'For mange loginforsøg fra denne IP eller for denne bruger. Af sikkerhedshensyn er login midlertidigt blokeret i 15 minutter.';
     } else {
         $st = $pdo->prepare('SELECT id,username,display_name,password_hash,is_superadmin FROM lager_admins WHERE username=? AND active=1 LIMIT 1');
         $st->execute([$username]);

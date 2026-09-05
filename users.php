@@ -136,7 +136,11 @@ page_header('Brugere & adgang');
         <label>Adgangskode<input type="password" name="password" required></label>
       </div>
       <div style="margin: 1rem 0;">
-        <strong>Moduladgang:</strong>
+        <strong>Moduladgang / Rettigheder:</strong>
+        <div style="margin: 6px 0; display:flex; gap:8px;">
+          <button type="button" class="secondary small" onclick="this.closest('form').querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=true)">Vælg alle moduler</button>
+          <button type="button" class="secondary small" onclick="this.closest('form').querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=false)">Fjern alle moduler</button>
+        </div>
         <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top: 0.5rem;">
           <?php foreach($assignableModules as $mId=>$m): ?>
             <label class="check"><input type="checkbox" name="modules[]" value="<?=h($mId)?>" checked> <?=h($m['name'])?></label>
@@ -188,7 +192,11 @@ page_header('Brugere & adgang');
               </div>
               <?php if(!$isSuper): ?>
                 <div style="margin:10px 0 6px 0;">
-                  <strong style="font-size:0.85rem;">Moduladgang:</strong>
+                  <strong style="font-size:0.85rem;">Moduladgang / Rettigheder:</strong>
+                  <div style="margin:4px 0; display:flex; gap:6px;">
+                    <button type="button" class="secondary small" style="font-size:0.75rem; padding:2px 6px;" onclick="this.closest('form').querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=true)">Vælg alle</button>
+                    <button type="button" class="secondary small" style="font-size:0.75rem; padding:2px 6px;" onclick="this.closest('form').querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=false)">Fjern alle</button>
+                  </div>
                   <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px;">
                     <?php foreach($assignableModules as $mId=>$m):
                       $checked=in_array($mId,$userMods,true);
