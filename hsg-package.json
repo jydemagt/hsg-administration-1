@@ -3,7 +3,7 @@
     "product": "HSG Administration",
     "package_type": "distribution",
     "version": "4.4.0",
-    "generated_at": "2026-09-05T09:40:54+00:00",
+    "generated_at": "2026-09-05T16:08:50+00:00",
     "files": {
         ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",
         ".gitignore": "63d01d02bfadc4d1eb02fa4d985fe4b6ac0d304cf3dba9ecb55faa89d3458ed0",
@@ -91,7 +91,7 @@
         "product_enrich.php": "b103ed127f61bfeb0523dcd9c2427829befc068868da150f011a825ff36db153",
         "products.php": "bac1732fc50fdc1f92f80ef636506e00af104e07e4f39a93ac51cbee7791826d",
         "quality.php": "769fb82e1d7ccdbf9c06a648540a8c963208d5b0c6539a8a5f9a2e39bf83aa07",
-        "reports.php": "d3fee5295b3070e538e60052e5b24e0b123dd9ebb8543b0f57f0ab7ac396725b",
+        "reports.php": "667dab3b5f215d7a6e7b238136cffa1c40a5252158c8ec547e802d6ded96e155",
         "reservations.php": "5fb91b669b3540841376b53011fdd79a2cdf41dbbfbe59c687f457eb4a824e2f",
         "schema.sql": "8774599aeed16afb7e96414d2e0042e0f564b220b5d624bd6f49c737304f0e56",
         "seed/catalog-images.json": "c9f798dbc96e35012c8e4ad557c3dd639830c7cbf034a09363b6a369ca04a876",
