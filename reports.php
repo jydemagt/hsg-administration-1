@@ -24,6 +24,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('reports.php?tab=settings');
     }
 
+    if ($action === 'test_wc_connection') {
+        require_capability('reports.manage');
+        verify_csrf();
+        $shopUrl = trim((string)($_POST['woocommerce_shop_url'] ?? ''));
+        $ck = trim((string)($_POST['woocommerce_consumer_key'] ?? ''));
+        $cs = trim((string)($_POST['woocommerce_consumer_secret'] ?? ''));
+        $res = hsg_wc_test_connection($pdo, $shopUrl, $ck, $cs);
+        if ($res['success']) {
+            flash('success', $res['message']);
+        } else {
+            flash('error', $res['message']);
+        }
+        redirect('reports.php?tab=settings');
+    }
+
     if ($action === 'sync_wc') {
         require_capability('reports.manage');
         verify_csrf();
@@ -498,8 +513,9 @@ page_header('Rapporter & WooCommerce');
         <label>Consumer Secret (CS)<input type="password" name="woocommerce_consumer_secret" value="<?=h($creds['consumer_secret'])?>" placeholder="cs_..."></label>
       </div>
       <p class="muted" style="font-size:0.85rem; margin-top:8px;">Sidst synkroniseret: <?=h(setting_get($pdo, 'woocommerce_last_synced_at', 'Aldrig'))?></p>
-      <div style="margin-top:12px; display:flex; gap:8px;">
-        <button class="button">Gem indstillinger</button>
+      <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="button" name="action" value="save_settings">Gem indstillinger</button>
+        <button class="button secondary" type="submit" name="action" value="test_wc_connection">🔌 Test Forbindelse til WooCommerce</button>
       </div>
     </form>
   </div>

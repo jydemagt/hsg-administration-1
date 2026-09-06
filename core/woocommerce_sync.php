@@ -161,3 +161,72 @@ function hsg_wc_sync_orders_api(PDO $pdo, int $limitPages = 5): array {
     setting_set($pdo, 'woocommerce_last_synced_at', date('c'));
     return ['orders' => $ordersSynced, 'items' => $itemsSynced];
 }
+
+function hsg_wc_test_connection(PDO $pdo, ?string $shopUrl = null, ?string $ck = null, ?string $cs = null): array {
+    $creds = hsg_wc_get_api_credentials($pdo);
+    $urlInput = trim((string)($shopUrl ?? $creds['shop_url']));
+    $keyInput = trim((string)($ck ?? $creds['consumer_key']));
+    $secInput = trim((string)($cs ?? $creds['consumer_secret']));
+
+    if ($urlInput === '') {
+        return ['success' => false, 'message' => 'Webshop URL mangler. Indtast din WooCommerce URL.'];
+    }
+
+    $baseUrl = rtrim($urlInput, '/');
+    if (!str_starts_with($baseUrl, 'http://') && !str_starts_with($baseUrl, 'https://')) {
+        $baseUrl = 'https://' . $baseUrl;
+    }
+
+    $endpoint = $baseUrl . '/wp-json/wc/v3/orders?per_page=1';
+    if ($keyInput !== '' && $secInput !== '') {
+        $endpoint .= '&' . http_build_query([
+            'consumer_key' => $keyInput,
+            'consumer_secret' => $secInput,
+        ]);
+    }
+
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $endpoint,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_USERAGENT => 'HSG-Administration-TestConnection/1.0',
+        CURLOPT_SSL_VERIFYPEER => false,
+    ]);
+
+    if ($keyInput !== '' && $secInput !== '') {
+        curl_setopt($ch, CURLOPT_USERPWD, $keyInput . ':' . $secInput);
+    }
+
+    $res = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+
+    if ($err) {
+        return ['success' => false, 'message' => "Netværksfejl under forbindelse til webshop: $err"];
+    }
+
+    if ($code === 401 || $code === 403) {
+        return ['success' => false, 'message' => 'Fejl i API-nøgler (HTTP ' . $code . '). Kontrollér Consumer Key (CK) og Consumer Secret (CS).'];
+    }
+
+    if ($code === 404) {
+        return ['success' => false, 'message' => 'WooCommerce REST API blev ikke fundet på den angivne URL (HTTP 404). Kontrollér om WooCommerce og REST API er slået til.'];
+    }
+
+    if ($code < 200 || $code >= 300) {
+        return ['success' => false, 'message' => "Forbindelsen fejlede med HTTP-kode $code fra webshoppen."];
+    }
+
+    $data = json_decode((string)$res, true);
+    if (!is_array($data)) {
+        return ['success' => false, 'message' => 'Webshoppen svarer, men returnerede ikke gyldigt WooCommerce JSON-data.'];
+    }
+
+    return [
+        'success' => true,
+        'message' => 'Forbindelsen til WooCommerce webshoppen lykkedes! Der er hul igennem og data kan hentes.',
+        'orders_found' => count($data)
+    ];
+}
