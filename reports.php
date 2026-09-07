@@ -80,11 +80,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// Auto-sync if orders table is empty and WooCommerce is configured
+try {
+    $existingCount = (int)$pdo->query("SELECT COUNT(*) FROM hsg_woocommerce_orders")->fetchColumn();
+    $shopConfigured = trim((string)setting_get($pdo, 'woocommerce_shop_url', ''));
+    if ($existingCount === 0 && $shopConfigured !== '') {
+        hsg_wc_sync_orders_api($pdo, 10);
+    }
+} catch (Throwable $e) {
+    // Ignore initial auto-sync errors
+}
+
 // Global Filter Parameters
 $period = (string)($_GET['period'] ?? '30days');
 $dateFrom = trim((string)($_GET['date_from'] ?? ''));
 $dateTo = trim((string)($_GET['date_to'] ?? ''));
-$status = trim((string)($_GET['status'] ?? 'completed'));
+$status = trim((string)($_GET['status'] ?? 'all'));
 $brand = trim((string)($_GET['brand'] ?? ''));
 $distillery = trim((string)($_GET['distillery'] ?? ''));
 $country = trim((string)($_GET['country'] ?? ''));

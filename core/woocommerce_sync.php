@@ -11,7 +11,7 @@ function hsg_wc_get_api_credentials(PDO $pdo): array {
     ];
 }
 
-function hsg_wc_sync_orders_api(PDO $pdo, int $limitPages = 5): array {
+function hsg_wc_sync_orders_api(PDO $pdo, int $limitPages = 20): array {
     $creds = hsg_wc_get_api_credentials($pdo);
     if (empty($creds['shop_url'])) {
         throw new RuntimeException('WooCommerce Webshop URL er ikke angivet under Indstillinger.');
@@ -27,6 +27,7 @@ function hsg_wc_sync_orders_api(PDO $pdo, int $limitPages = 5): array {
         'per_page' => 100,
         'order' => 'desc',
         'orderby' => 'date',
+        'status' => 'any',
     ];
 
     if (!empty($creds['consumer_key']) && !empty($creds['consumer_secret'])) {
@@ -100,7 +101,8 @@ function hsg_wc_sync_orders_api(PDO $pdo, int $limitPages = 5): array {
             if (empty($order['id'])) continue;
             $wcOrderId = (int)$order['id'];
             $orderNumber = (string)($order['number'] ?? $wcOrderId);
-            $status = (string)($order['status'] ?? 'completed');
+            $rawStatus = (string)($order['status'] ?? 'completed');
+            $status = str_starts_with($rawStatus, 'wc-') ? substr($rawStatus, 3) : $rawStatus;
             $currency = (string)($order['currency'] ?? 'DKK');
             $totalAmount = (float)($order['total'] ?? 0);
             $shippingTotal = (float)($order['shipping_total'] ?? 0);
@@ -224,9 +226,22 @@ function hsg_wc_test_connection(PDO $pdo, ?string $shopUrl = null, ?string $ck =
         return ['success' => false, 'message' => 'Webshoppen svarer, men returnerede ikke gyldigt WooCommerce JSON-data.'];
     }
 
+    // Save valid settings
+    if ($urlInput !== '') setting_set($pdo, 'woocommerce_shop_url', $urlInput);
+    if ($keyInput !== '') setting_set($pdo, 'woocommerce_consumer_key', $keyInput);
+    if ($secInput !== '') setting_set($pdo, 'woocommerce_consumer_secret', $secInput);
+
+    // Automatically trigger order sync upon successful test connection
+    $synced = ['orders' => 0, 'items' => 0];
+    try {
+        $synced = hsg_wc_sync_orders_api($pdo, 10);
+    } catch (Throwable $e) {
+        // Suppress sync exception on test, but keep message
+    }
+
     return [
         'success' => true,
-        'message' => 'Forbindelsen til WooCommerce webshoppen lykkedes! Der er hul igennem og data kan hentes.',
+        'message' => 'Forbindelsen til WooCommerce webshoppen lykkedes! ' . ($synced['orders'] > 0 ? "Der blev indhentet {$synced['orders']} ordrer og {$synced['items']} varer direkte til din rapport." : "Der blev fundet kontakt til webshoppen."),
         'orders_found' => count($data)
     ];
 }
