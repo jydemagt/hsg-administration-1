@@ -149,7 +149,20 @@ function hsg_supplier_match_score(array $src,array $p): array {
     return ['score'=>min(99,$score),'reason'=>implode(', ',$reasons)?:'svagt match'];
 }
 
-function hsg_supplier_find_match(array $src,array $products,?int $brandId=null): array {
+function hsg_supplier_find_match(array $src,array $products,?int $brandId=null,?PDO $pdo=null): array {
+    $sku=trim((string)($src['sku']??''));
+    if($pdo && $sku!=='' && db_table_exists($pdo,'hsg_supplier_sku_aliases')){
+        $stA=$pdo->prepare('SELECT product_id FROM hsg_supplier_sku_aliases WHERE supplier_sku=? LIMIT 1');
+        $stA->execute([$sku]);
+        $aliasPid=(int)($stA->fetchColumn()?:0);
+        if($aliasPid>0){
+            foreach($products as $p){
+                if((int)$p['id']===$aliasPid){
+                    return ['id'=>$aliasPid,'score'=>100,'reason'=>'Automatisk fletning ud fra tidligere gemt match'];
+                }
+            }
+        }
+    }
     $best=['id'=>0,'score'=>0,'reason'=>'Intet sikkert match'];$second=0;
     foreach($products as $p){if($brandId && (int)($p['brand_id']??0)!==$brandId)continue;$m=hsg_supplier_match_score($src,$p);if($m['score']>$best['score']){$second=$best['score'];$best=['id'=>(int)$p['id'],'score'=>$m['score'],'reason'=>$m['reason']];}elseif($m['score']>$second)$second=$m['score'];}
     if($best['score']<70)return ['id'=>0,'score'=>$best['score'],'reason'=>'For usikkert: '.$best['reason']];
@@ -157,20 +170,21 @@ function hsg_supplier_find_match(array $src,array $products,?int $brandId=null):
     return $best;
 }
 
-function hsg_supplier_suggest_columns(array $headers, array $savedColMap = []): array {
+function hsg_supplier_suggest_columns(array $headers, array $savedHeaderMap = []): array {
     $aliases=hsg_supplier_aliases();$reverse=[];
     foreach($aliases as $field=>$names)foreach($names as $n)$reverse[hsg_supplier_norm($n)]=$field;
     $colMap=[];$usedFields=[];
     foreach($headers as $ci=>$cell){
         $ci=(int)$ci;
         $cell=trim((string)$cell);if($cell===''){$colMap[$ci]='';continue;}
-        $savedField=isset($savedColMap[$ci])?trim((string)$savedColMap[$ci]):'';
-        if($savedField!=='' && isset($aliases[$savedField]) && !in_array($savedField,$usedFields,true)){
+        $n=hsg_supplier_norm($cell);
+        $savedField=isset($savedHeaderMap[$n])?trim((string)$savedHeaderMap[$n]):(isset($savedHeaderMap[$ci])?trim((string)$savedHeaderMap[$ci]):'');
+        if($savedField!=='' && (isset($aliases[$savedField]) || $savedField==='' || str_starts_with($savedField,'stock_loc_')) && !in_array($savedField,$usedFields,true)){
             $usedFields[]=$savedField;
             $colMap[$ci]=$savedField;
             continue;
         }
-        $n=hsg_supplier_norm($cell);$matched=null;
+        $matched=null;
         if(isset($reverse[$n])){$matched=$reverse[$n];}
         else{
             foreach($aliases as $field=>$names){
@@ -196,7 +210,7 @@ function hsg_supplier_base_sku(string $sku): string {
     return $s;
 }
 
-function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $products, ?int $brandId = null, int $start = 1): array {
+function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $products, ?int $brandId = null, int $start = 1, ?PDO $pdo = null): array {
     $byId = [];
     foreach($products as $p) $byId[(int)$p['id']] = $p;
 
@@ -217,7 +231,7 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
     $grouped = [];
     foreach($parsedRows as $pRow) {
         $src = $pRow['src'];
-        $match = hsg_supplier_find_match($src, $products, $brandId);
+        $match = hsg_supplier_find_match($src, $products, $brandId, $pdo);
         $pid = (int)$match['id'];
 
         $groupKey = $pid > 0 ? "pid_{$pid}" : ($pRow['base_sku'] !== '' ? "sku_{$pRow['base_sku']}" : "row_{$pRow['original_row']}");
@@ -304,14 +318,14 @@ function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?i
     unset($p);
     $rows=$sheets[$bestSheet];$start=$bestHeader['row']+1;
     $headers=(array)$bestHeader['headers'];
-    $savedRaw=trim((string)setting_get($pdo,'supplier_import_last_col_map',''));
+    $savedRaw=trim((string)setting_get($pdo,'supplier_import_header_map',''));
     $savedColMap=json_decode($savedRaw,true);
     if(!is_array($savedColMap))$savedColMap=[];
     $colMap=hsg_supplier_suggest_columns($headers,$savedColMap);
     $fieldMap=[];
     foreach($colMap as $ci=>$field){if($field!==''){$fieldMap[$field]=(int)$ci;}}
     $rawRows=array_values(array_slice($rows,$start,null,true));
-    $items=hsg_supplier_merge_raw_items($rawRows, $fieldMap, $products, $brandId, $start);
+    $items=hsg_supplier_merge_raw_items($rawRows, $fieldMap, $products, $brandId, $start, $pdo);
 
     return [
         'filename'=>$filename,
@@ -360,7 +374,7 @@ function hsg_supplier_recalculate_preview(PDO $pdo, array $preview, array $custo
     $brandId = !empty($preview['brand_id']) ? (int)$preview['brand_id'] : null;
     $rawRows = (array)($preview['raw_rows'] ?? []);
     $start = (int)($preview['header_row'] ?? 1);
-    $items = hsg_supplier_merge_raw_items($rawRows, $fieldMap, $products, $brandId, $start);
+    $items = hsg_supplier_merge_raw_items($rawRows, $fieldMap, $products, $brandId, $start, $pdo);
 
     $preview['mapping'] = $fieldMap;
     $preview['col_mapping'] = $colMap;
@@ -400,9 +414,13 @@ function hsg_supplier_changes_for_product(array $src,array $product): array {
     foreach($updateFields as $field){
         if(!array_key_exists($field,$src))continue;$new=$src[$field];if($new===null||trim((string)$new)==='')continue;$old=$product[$field]??null;
         $isStockLoc = str_starts_with($field,'stock_loc_');
+        $isStockField = ($field === 'stock_quantity' || $isStockLoc);
+        if(!$isStockField && $old !== null && trim((string)$old) !== '') {
+            continue;
+        }
         $same=in_array($field,['wholesale_price','retail_price','abv','bottle_size_cl'],true)
             ?($old!==null&&trim((string)$old)!==''&&abs((float)$old-(float)$new)<0.001)
-            :($field==='stock_quantity' || $isStockLoc
+            :($isStockField
                 ?($old!==null&&trim((string)$old)!==''&&(int)$old===(int)$new)
                 :hsg_supplier_norm((string)$old)===hsg_supplier_norm((string)$new));
         if(!$same)$changes[$field]=['old'=>$old,'new'=>$new];
@@ -558,4 +576,13 @@ function hsg_supplier_create_product(PDO $pdo, array $src): int {
 
     hsg_sync_product_stock_status($pdo, $newPid);
     return $newPid;
+}
+
+
+function hsg_supplier_remember_alias(PDO $pdo, string $supplierSku, int $productId, ?string $supplierName = null): void {
+    $sku = trim($supplierSku);
+    if ($sku === '' || $productId <= 0 || !db_table_exists($pdo, 'hsg_supplier_sku_aliases')) return;
+    $normName = $supplierName ? hsg_supplier_norm($supplierName) : null;
+    $st = $pdo->prepare('INSERT INTO hsg_supplier_sku_aliases (supplier_sku, supplier_name_norm, product_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE product_id=VALUES(product_id), supplier_name_norm=VALUES(supplier_name_norm)');
+    $st->execute([$sku, $normName, $productId]);
 }

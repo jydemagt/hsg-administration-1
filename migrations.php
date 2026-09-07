@@ -87,6 +87,9 @@ function ensure_schema_updates(PDO $pdo): void {
     if(!db_table_exists($pdo,'hsg_product_field_exemptions')){
         $pdo->exec("CREATE TABLE hsg_product_field_exemptions (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,product_id INT UNSIGNED NOT NULL,field_key VARCHAR(80) NOT NULL,reason VARCHAR(255) NULL,created_by_admin INT UNSIGNED NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY uniq_product_quality_exemption(product_id,field_key),INDEX idx_quality_exemption_product(product_id),CONSTRAINT fk_quality_exemption_product FOREIGN KEY(product_id) REFERENCES lager_products(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     }
+        if(!db_table_exists($pdo,'hsg_supplier_sku_aliases')){
+        $pdo->exec("CREATE TABLE hsg_supplier_sku_aliases (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,supplier_sku VARCHAR(120) NOT NULL,supplier_name_norm VARCHAR(220) NULL,product_id INT UNSIGNED NOT NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY uniq_supplier_sku_product(supplier_sku,product_id),INDEX idx_supplier_sku_alias(supplier_sku),CONSTRAINT fk_supplier_alias_product FOREIGN KEY(product_id) REFERENCES lager_products(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    }
     if(!db_table_exists($pdo,'hsg_supplier_import_runs')){
         $pdo->exec("CREATE TABLE hsg_supplier_import_runs (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,filename VARCHAR(255) NOT NULL,sheet_name VARCHAR(180) NULL,rows_detected INT UNSIGNED NOT NULL DEFAULT 0,rows_updated INT UNSIGNED NOT NULL DEFAULT 0,created_by_admin INT UNSIGNED NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,INDEX idx_supplier_import_created(created_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     }

@@ -294,3 +294,15 @@ CREATE TABLE IF NOT EXISTS lager_image_rejections (
   INDEX idx_image_rejections_product (product_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
+
+CREATE TABLE IF NOT EXISTS hsg_supplier_sku_aliases (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  supplier_sku VARCHAR(120) NOT NULL,
+  supplier_name_norm VARCHAR(220) NULL,
+  product_id INT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_supplier_sku_product(supplier_sku, product_id),
+  INDEX idx_supplier_sku_alias(supplier_sku),
+  CONSTRAINT fk_supplier_alias_product FOREIGN KEY(product_id) REFERENCES lager_products(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

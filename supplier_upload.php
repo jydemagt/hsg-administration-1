@@ -43,8 +43,17 @@ if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='uplo
         $name=(string)$_FILES['file']['name'];$ext=strtolower(pathinfo($name,PATHINFO_EXTENSION));if(!in_array($ext,['xlsx','csv'],true))throw new RuntimeException('Brug en Excel-fil (.xlsx) eller CSV-fil.');
         $sheets=$ext==='xlsx'?hsg_supplier_read_xlsx($_FILES['file']['tmp_name']):hsg_supplier_read_csv($_FILES['file']['tmp_name']);
         $brandId=(int)($_POST['brand_id']??0)?:null;$preview=hsg_supplier_prepare_preview($pdo,$sheets,$name,$brandId);$token=hsg_supplier_preview_save($preview);
-        if(!empty($preview['col_mapping'])){
-            setting_set($pdo,'supplier_import_last_col_map',json_encode($preview['col_mapping'],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+        if(!empty($preview['col_mapping']) && !empty($preview['headers'])){
+            $hdrMap = [];
+            foreach((array)$preview['headers'] as $ci => $hdr){
+                $normHdr = hsg_supplier_norm((string)$hdr);
+                if($normHdr !== '' && isset($preview['col_mapping'][$ci])){
+                    $hdrMap[$normHdr] = $preview['col_mapping'][$ci];
+                }
+            }
+            if($hdrMap){
+                setting_set($pdo,'supplier_import_header_map',json_encode($hdrMap,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+            }
         }
         audit_log($pdo,'supplier_import.preview','import',null,['filename'=>$name,'sheet'=>$preview['sheet'],'rows'=>count($preview['items']),'brand_id'=>$brandId]);
         redirect('supplier_upload.php?preview='.$token);
@@ -57,8 +66,17 @@ if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='rema
         $customMap=(array)($_POST['col_map']??[]);
         $preview=hsg_supplier_recalculate_preview($pdo,$preview,$customMap);
         hsg_supplier_preview_save($preview,$token);
-        if(!empty($preview['col_mapping'])){
-            setting_set($pdo,'supplier_import_last_col_map',json_encode($preview['col_mapping'],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+        if(!empty($preview['col_mapping']) && !empty($preview['headers'])){
+            $hdrMap = [];
+            foreach((array)$preview['headers'] as $ci => $hdr){
+                $normHdr = hsg_supplier_norm((string)$hdr);
+                if($normHdr !== '' && isset($preview['col_mapping'][$ci])){
+                    $hdrMap[$normHdr] = $preview['col_mapping'][$ci];
+                }
+            }
+            if($hdrMap){
+                setting_set($pdo,'supplier_import_header_map',json_encode($hdrMap,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+            }
         }
         flash('success','Kolonnemapping blev opdateret og preview er genberegnet.');
         redirect('supplier_upload.php?preview='.$token.'&remap=1');
@@ -82,6 +100,9 @@ if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='appl
                 $pid=(int)($postedVal ?: ($item['match']['id']??0));
                 if(!$pid||!isset($byId[$pid]))continue;
                 $changes=hsg_supplier_apply_product($pdo,$pid,(array)$item['source']);
+                if(!empty($item['source']['sku'])){
+                    hsg_supplier_remember_alias($pdo, (string)$item['source']['sku'], $pid, $item['source']['name']??null);
+                }
                 if(!$changes)continue;
                 $updated++;$changedFields+=count($changes);
                 $details[]=['product_id'=>$pid,'fields'=>array_keys($changes),'source_row'=>$item['row']];
