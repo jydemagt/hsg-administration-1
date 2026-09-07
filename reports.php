@@ -131,7 +131,9 @@ if ($period === 'today') {
 $orderConds = ["date_created >= ? AND date_created <= ?"];
 $orderParams = [$dFrom, $dTo];
 
-if ($status !== 'all' && $status !== '') {
+if ($status === 'all' || $status === '') {
+    $orderConds[] = "status NOT IN ('cancelled', 'refunded', 'failed')";
+} else {
     $orderConds[] = "status = ?";
     $orderParams[] = $status;
 }
@@ -146,6 +148,7 @@ $orderWhereSql = implode(' AND ', $orderConds);
 $sqlOrderKpi = "SELECT
     COUNT(*) AS total_orders,
     COALESCE(SUM(total_amount), 0) AS gross_revenue,
+    COALESCE(SUM(tax_total), 0) AS tax_total,
     COALESCE(AVG(total_amount), 0) AS avg_order_value,
     COALESCE(SUM(shipping_total), 0) AS total_shipping,
     COALESCE(SUM(discount_total), 0) AS total_discounts
@@ -154,14 +157,23 @@ $sqlOrderKpi = "SELECT
 $stKpi = $pdo->prepare($sqlOrderKpi);
 $stKpi->execute($orderParams);
 $kpi = $stKpi->fetch(PDO::FETCH_ASSOC) ?: [
-    'total_orders' => 0, 'gross_revenue' => 0, 'avg_order_value' => 0, 'total_shipping' => 0, 'discount_total' => 0
+    'total_orders' => 0, 'gross_revenue' => 0, 'tax_total' => 0, 'avg_order_value' => 0, 'total_shipping' => 0, 'discount_total' => 0
 ];
+
+$grossRevenue = (float)$kpi['gross_revenue'];
+$taxTotal = (float)$kpi['tax_total'];
+if ($taxTotal <= 0 && $grossRevenue > 0) {
+    $taxTotal = $grossRevenue - ($grossRevenue / 1.25);
+}
+$netRevenue = $grossRevenue - $taxTotal;
 
 // Query Line Items Metrics
 $itemConds = ["i.date_created >= ? AND i.date_created <= ?"];
 $itemParams = [$dFrom, $dTo];
 
-if ($status !== 'all' && $status !== '') {
+if ($status === 'all' || $status === '') {
+    $itemConds[] = "o.status NOT IN ('cancelled', 'refunded', 'failed')";
+} else {
     $itemConds[] = "o.status = ?";
     $itemParams[] = $status;
 }
@@ -263,20 +275,29 @@ page_header('Rapporter & WooCommerce');
   <!-- Mobile-Friendly KPI Metrics Grid -->
   <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin-bottom:12px;">
     <div class="card metric" style="text-align:center; padding:12px; background:var(--bg-card,#ffffff);">
-      <small class="muted">Samlet Omsætning</small>
-      <strong style="font-size:1.4rem; color:#059669; display:block; margin-top:4px;"><?=number_format((float)$kpi['gross_revenue'], 2, ',', '.')?> kr</strong>
+      <small class="muted">Omsætning (m/ moms)</small>
+      <strong style="font-size:1.3rem; color:#059669; display:block; margin-top:4px;"><?=number_format($grossRevenue, 2, ',', '.')?> kr</strong>
+      <small class="muted" style="font-size:0.75rem;">Brutto salg</small>
+    </div>
+    <div class="card metric" style="text-align:center; padding:12px; background:var(--bg-card,#ffffff);">
+      <small class="muted">Omsætning (u/ moms)</small>
+      <strong style="font-size:1.3rem; color:#0d9488; display:block; margin-top:4px;"><?=number_format($netRevenue, 2, ',', '.')?> kr</strong>
+      <small class="muted" style="font-size:0.75rem;">Netto salg</small>
+    </div>
+    <div class="card metric" style="text-align:center; padding:12px; background:var(--bg-card,#ffffff);">
+      <small class="muted">Moms i alt (25%)</small>
+      <strong style="font-size:1.3rem; color:#d97706; display:block; margin-top:4px;"><?=number_format($taxTotal, 2, ',', '.')?> kr</strong>
+      <small class="muted" style="font-size:0.75rem;">Momsbeløb</small>
     </div>
     <div class="card metric" style="text-align:center; padding:12px; background:var(--bg-card,#ffffff);">
       <small class="muted">Antal Ordrer</small>
-      <strong style="font-size:1.4rem; color:#2563eb; display:block; margin-top:4px;"><?=intval($kpi['total_orders'])?></strong>
-    </div>
-    <div class="card metric" style="text-align:center; padding:12px; background:var(--bg-card,#ffffff);">
-      <small class="muted">Gns. Ordreværdi (AOV)</small>
-      <strong style="font-size:1.4rem; color:#d97706; display:block; margin-top:4px;"><?=number_format((float)$kpi['avg_order_value'], 2, ',', '.')?> kr</strong>
+      <strong style="font-size:1.3rem; color:#2563eb; display:block; margin-top:4px;"><?=intval($kpi['total_orders'])?></strong>
+      <small class="muted" style="font-size:0.75rem;">Godkendte ordrer</small>
     </div>
     <div class="card metric" style="text-align:center; padding:12px; background:var(--bg-card,#ffffff);">
       <small class="muted">Solgte Flasker/Enheder</small>
-      <strong style="font-size:1.4rem; color:#7c3aed; display:block; margin-top:4px;"><?=$totalItemsSold?></strong>
+      <strong style="font-size:1.3rem; color:#7c3aed; display:block; margin-top:4px;"><?=$totalItemsSold?></strong>
+      <small class="muted" style="font-size:0.75rem;">Varer i alt</small>
     </div>
   </div>
 
