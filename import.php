@@ -55,7 +55,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'&&isset($_FILES['file'])){try{if($_FILES['
      'cask_number'=>$cCaskNo!==null&&trim((string)($r[$cCaskNo]??''))!==''?trim((string)$r[$cCaskNo]," #\t\n\r\0\x0B"):($pf['cask_number']??''),
      'wholesale'=>$cW!==null?parse_decimal($r[$cW]??''):null,
      'retail'=>$cR!==null?parse_decimal($r[$cR]??''):null,
-     'is_new'=>$cNew!==null?boolv($r[$cNew]??''):0,
+     'is_new'=>$cNew!==null?boolv($r[$cNew]??''):1,
      'catalog'=>$cCatalog!==null?boolv($r[$cCatalog]??'',true):1
    ];
    $pid=product_id($pdo,$sku,$name,$f);
