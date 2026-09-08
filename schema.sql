@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS lager_products (
   bottle_count VARCHAR(80) NULL,
   wholesale_price DECIMAL(10,2) NULL,
   retail_price DECIMAL(10,2) NULL,
-  is_new TINYINT(1) NOT NULL DEFAULT 0,
+  is_new TINYINT(1) NOT NULL DEFAULT 1,
   show_in_catalog TINYINT(1) NOT NULL DEFAULT 1,
   status ENUM('active','inactive','discontinued') NOT NULL DEFAULT 'active',
   notes TEXT NULL,

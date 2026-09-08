@@ -520,7 +520,7 @@ function hsg_supplier_create_product(PDO $pdo, array $src): int {
     $vintage = isset($src['vintage_year']) ? (int)$src['vintage_year'] : null;
 
     $stIns = $pdo->prepare('INSERT INTO lager_products
-        (sku, name, call_name, brand_id, category, distillery, country, age_text, vintage_year, abv, bottle_size_cl, cask_type, cask_number, bottle_count, wholesale_price, retail_price, status)
+        (sku, name, call_name, brand_id, category, distillery, country, age_text, vintage_year, abv, bottle_size_cl, cask_type, cask_number, bottle_count, wholesale_price, retail_price, is_new, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "active")');
 
     $stIns->execute([
