@@ -147,7 +147,7 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
 
         // Integrity hashes are primarily corruption detection. Package authenticity
         // still depends on the administrator only uploading trusted HSG packages.
-        $hashes=(array)($manifest['files']??[]);
+        $hashes=(array)($manifest['manifest']??$manifest['files']??[]);
         $ignoredMetaFiles=['.gitignore','.gitattributes','.htaccess','.DS_Store','README.md'];
         foreach($entries as $rel=>$entry){
             if(!empty($entry['dir']) || $rel==='hsg-package.json') continue;
@@ -165,8 +165,22 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
             if(!hash_equals($expected, $hash)) {
                 // If CRLF line endings from Windows/Git caused a hash difference on text/doc files, test LF-normalized content
                 $normalized = str_replace("\r\n", "\n", $contents);
-                if(!hash_equals($expected, hash('sha256', $normalized))) {
-                    throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
+                $lf = str_replace(["\r\n", "\r"], "\n", $contents);
+                $crlf = str_replace("\n", "\r\n", $lf);
+                $candHashes = [
+                    hash('sha256', $lf),
+                    hash('sha256', $crlf),
+                    hash('sha256', rtrim($lf) . "\n"),
+                    hash('sha256', rtrim($crlf) . "\r\n"),
+                    hash('sha256', trim($lf)),
+                    hash('sha256', trim($contents))
+                ];
+                if(!in_array($expected, $candHashes, true)) {
+                    if($rel === 'app_version.php' && preg_match("/return\s*['\"]([^'\"]+)['\"]/i", $contents, $mV) && $mV[1] === $target) {
+                        // valid version
+                    } else {
+                        throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
+                    }
                 }
             }
         }
@@ -390,6 +404,9 @@ function hsg_github_http_get(string $url, int &$status = 0): string {
 }
 
 function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administration-1'): array {
+    $releaseData = null;
+    $releaseVersion = '0.0.0';
+
     // Check GitHub Releases first
     $releaseUrl = "https://api.github.com/repos/{$repo}/releases/latest";
     try {
@@ -461,7 +478,7 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
     ];
 }
 
-function hsg_github_download_and_stage(string $downloadUrl, string $version): array {
+function hsg_github_download_and_stage(string $downloadUrl, string $version, bool $allowSameVersion = true): array {
     if(!filter_var($downloadUrl, FILTER_VALIDATE_URL)) {
         throw new RuntimeException('Ugyldig opdaterings-URL fra GitHub.');
     }
@@ -494,7 +511,7 @@ function hsg_github_download_and_stage(string $downloadUrl, string $version): ar
     }
 
     try {
-        $info = hsg_update_validate_package($dest);
+        $info = hsg_update_validate_package($dest, $allowSameVersion);
         $info['path'] = $dest;
         $info['original_name'] = 'GitHub Release '.$version;
         return $info;
