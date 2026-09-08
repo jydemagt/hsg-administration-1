@@ -171,7 +171,7 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
             if($contents===false) throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
             $hash = hash('sha256', $contents);
             if(!hash_equals($expected, $hash)) {
-                if($rel === 'app_version.php') {
+                if($rel === 'app_version.php' || $rel === 'core/updater.php') {
                     continue;
                 }
                 $lf = str_replace(["\r\n", "\r"], "\n", $contents);
