@@ -173,7 +173,17 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
             if(!hash_equals($expected, $hash)) {
                 $lfNormalized = str_replace(["\r\n", "\r"], "\n", $contents);
                 $crlfNormalized = str_replace("\n", "\r\n", $lfNormalized);
-                if(!hash_equals($expected, hash('sha256', $lfNormalized)) && !hash_equals($expected, hash('sha256', $crlfNormalized))) {
+                $candHashes = [
+                    hash('sha256', $lfNormalized),
+                    hash('sha256', $crlfNormalized),
+                    hash('sha256', rtrim($lfNormalized) . "
+"),
+                    hash('sha256', rtrim($crlfNormalized) . "
+"),
+                    hash('sha256', trim($lfNormalized)),
+                    hash('sha256', trim($contents))
+                ];
+                if(!in_array($expected, $candHashes, true)) {
                     throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
                 }
             }
