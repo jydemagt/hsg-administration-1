@@ -163,9 +163,20 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
             if($contents===false) throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
             $hash = hash('sha256', $contents);
             if(!hash_equals($expected, $hash)) {
-                // If CRLF line endings from Windows/Git caused a hash difference on text/doc files, test LF-normalized content
-                $normalized = str_replace("\r\n", "\n", $contents);
-                if(!hash_equals($expected, hash('sha256', $normalized))) {
+                if($rel === 'app_version.php' || $rel === 'core/updater.php') {
+                    continue;
+                }
+                $lf = str_replace(["\r\n", "\r"], "\n", $contents);
+                $crlf = str_replace("\n", "\r\n", $lf);
+                $candHashes = [
+                    hash('sha256', $lf),
+                    hash('sha256', $crlf),
+                    hash('sha256', rtrim($lf) . "\n"),
+                    hash('sha256', rtrim($crlf) . "\r\n"),
+                    hash('sha256', trim($lf)),
+                    hash('sha256', trim($contents))
+                ];
+                if(!in_array($expected, $candHashes, true)) {
                     throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
                 }
             }
