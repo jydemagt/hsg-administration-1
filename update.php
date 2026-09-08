@@ -24,8 +24,10 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 flash('info','Du har allerede den nyeste version ('.$release['version'].') ifølge GitHub.');
             }
         } elseif($action==='stage_github'){
-            $url=(string)($_POST['download_url']??'');
-            $ver=(string)($_POST['version']??'');
+            $release=hsg_github_check_latest_release();
+            $_SESSION['hsg_github_release']=$release;
+            $url=$release['download_url']!==''?$release['download_url']:(string)($_POST['download_url']??'');
+            $ver=$release['version']!==''?$release['version']:(string)($_POST['version']??'');
             if($url==='' || $ver==='') throw new RuntimeException('Mangler oplysninger om GitHub-opdatering.');
             $old=hsg_staged_update_from_session(); if($old) hsg_update_cleanup_staged((string)$old['path']);
             $info=hsg_github_download_and_stage($url, $ver);
@@ -63,6 +65,11 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 }
 
 $staged=hsg_staged_update_from_session();
+if(!isset($_SESSION['hsg_github_release'])){
+    try {
+        $_SESSION['hsg_github_release'] = hsg_github_check_latest_release();
+    } catch(Throwable $e) {}
+}
 $githubRelease=$_SESSION['hsg_github_release']??null;
 $history=db_table_exists($pdo,'hsg_update_runs')?$pdo->query('SELECT * FROM hsg_update_runs ORDER BY created_at DESC,id DESC LIMIT 30')->fetchAll():[];
 $uploadLimit=ini_get('upload_max_filesize')?:'?';$postLimit=ini_get('post_max_size')?:'?';
@@ -74,35 +81,48 @@ page_header('Opgradering');
   <div class="card metric"><strong><?=class_exists('ZipArchive')?'OK':'Mangler'?></strong><span>ZIP-understøttelse</span></div>
 </div>
 
+<?php if($staged): ?>
+<div class="card" style="border-left: 5px solid var(--accent-color, #155eef); background: var(--bg-card, #ffffff);">
+  <h2 style="margin-top:0;">🚀 Klar til installation: Version <?=h($staged['version'])?></h2>
+  <div class="table-wrap"><table><tbody>
+    <tr><th>Opgraderingspakke</th><td><?=h($staged['original_name'])?></td></tr>
+    <tr><th>Installeret version</th><td><?=h($staged['current_version'])?></td></tr>
+    <tr><th>Ny version</th><td><strong style="font-size:1.1rem; color:#059669;"><?=h($staged['version'])?></strong></td></tr>
+    <tr><th>Filer i pakken</th><td><?=h((string)$staged['file_count'])?> filer godkendt</td></tr>
+    <tr><th>Pakkestørrelse</th><td><?=h(number_format(((int)$staged['package_size'])/1024/1024,2,',','.'))?> MB</td></tr>
+    <tr><th>Minimum PHP</th><td><?=h($staged['min_php'])?></td></tr>
+    <tr><th>Integritets-check (SHA-256)</th><td><code style="font-size:0.8rem;"><?=h($staged['sha256'])?></code></td></tr>
+  </tbody></table></div>
+  <?php if(trim((string)$staged['release_notes'])!==''): ?><h3 style="margin-top:12px;">Ændringer i denne version</h3><p><?=nl2br(h($staged['release_notes']))?></p><?php endif; ?>
+  <div class="readonly-note" style="margin:12px 0;"><strong>Automatisk sikkerhed:</strong> Systemet opretter automatisk en FULL disaster-recovery backup. <code>config.php</code>, uploads og eksisterende backups overskrives ikke.</div>
+  <div style="display:flex; gap:10px; margin-top:12px;">
+    <form method="post" style="margin:0;"><?=csrf_field()?><input type="hidden" name="action" value="install"><button class="button" style="font-weight:bold; font-size:1.05rem;">🚀 Installér opgradering nu</button></form>
+    <form method="post" style="margin:0;"><?=csrf_field()?><input type="hidden" name="action" value="cancel"><button class="secondary">Annuller</button></form>
+  </div>
+</div>
+<?php endif; ?>
+
 <div class="card">
-  <h2>Automatisk opdatering via GitHub</h2>
-  <p class="muted">HSG Administration kan direkte søge efter og hente den seneste godkendte version fra GitHub-repositoryet (<code>jydemagt/hsg-administration-1</code>).</p>
-  <form method="post">
-    <?=csrf_field()?>
-    <input type="hidden" name="action" value="check_github">
-    <button type="submit">Søg efter nye opdateringer på GitHub</button>
-  </form>
-
-  <?php if(is_array($githubRelease)): ?>
-    <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-card, #f8f9fa); border: 1px solid var(--border-color, #e0e0e0); border-radius: 6px;">
-      <h3>Seneste release på GitHub: <?=h($githubRelease['version'])?></h3>
-      <p><strong>Status:</strong> <?= $githubRelease['has_update'] ? '<span style="color: green; font-weight: bold;">Ny version tilgængelig!</span>' : 'Du kører allerede nyeste version.' ?></p>
-      <?php if(!empty($githubRelease['published_at'])): ?><p class="muted">Udgivet: <?=h(date('d-m-Y H:i', strtotime($githubRelease['published_at'])))?></p><?php endif; ?>
-      <?php if(trim($githubRelease['notes']) !== ''): ?>
-        <p><strong>Release notes:</strong></p>
-        <p><?=nl2br(h($githubRelease['notes']))?></p>
-      <?php endif; ?>
-
-      <?php if($githubRelease['download_url'] !== ''): ?>
-        <form method="post" style="margin-top: 1rem;">
-          <?=csrf_field()?>
-          <input type="hidden" name="action" value="stage_github">
-          <input type="hidden" name="version" value="<?=h($githubRelease['version'])?>">
-          <input type="hidden" name="download_url" value="<?=h($githubRelease['download_url'])?>">
-          <button type="submit">Hent og kontrollér opdatering fra GitHub</button>
-        </form>
-      <?php endif; ?>
+  <h2>Automatisk 1-klik opdatering via GitHub</h2>
+  <p class="muted">HSG Administration henter og installerer direkte den seneste godkendte version fra GitHub (<code>jydemagt/hsg-administration-1</code>).</p>
+  <?php if(is_array($githubRelease) && !empty($githubRelease['download_url'])): ?>
+    <div style="padding: 1rem; background: var(--bg-card, #f8f9fa); border: 1px solid var(--border-color, #e0e0e0); border-radius: 6px;">
+      <h3>GitHub version: <?=h($githubRelease['version'])?></h3>
+      <p><strong>Status:</strong> <?= $githubRelease['has_update'] ? '<span style="color: green; font-weight: bold;">Ny version tilgængelig!</span>' : '<span style="color: #155eef; font-weight: bold;">Installeret version matcher GitHub main-branch</span>' ?></p>
+      <form method="post" style="margin-top: 1rem;">
+        <?=csrf_field()?>
+        <input type="hidden" name="action" value="stage_github">
+        <input type="hidden" name="version" value="<?=h($githubRelease['version'])?>">
+        <input type="hidden" name="download_url" value="<?=h($githubRelease['download_url'])?>">
+        <button type="submit">Opdatér HSG Administration fra GitHub</button>
+      </form>
     </div>
+  <?php else: ?>
+    <form method="post">
+      <?=csrf_field()?>
+      <input type="hidden" name="action" value="check_github">
+      <button type="submit">Søg og hent seneste version fra GitHub</button>
+    </form>
   <?php endif; ?>
 </div>
 
@@ -118,26 +138,6 @@ page_header('Opgradering');
   </form>
 </div>
 
-<?php if($staged): ?>
-<div class="card">
-  <h2>Klar til installation</h2>
-  <div class="table-wrap"><table><tbody>
-    <tr><th>Fil</th><td><?=h($staged['original_name'])?></td></tr>
-    <tr><th>Installeret version</th><td><?=h($staged['current_version'])?></td></tr>
-    <tr><th>Ny version</th><td><strong><?=h($staged['version'])?></strong></td></tr>
-    <tr><th>Filer i pakken</th><td><?=h((string)$staged['file_count'])?></td></tr>
-    <tr><th>Pakkestørrelse</th><td><?=h(number_format(((int)$staged['package_size'])/1024/1024,2,',','.'))?> MB</td></tr>
-    <tr><th>Minimum PHP</th><td><?=h($staged['min_php'])?></td></tr>
-    <tr><th>SHA-256</th><td><code><?=h($staged['sha256'])?></code></td></tr>
-  </tbody></table></div>
-  <?php if(trim((string)$staged['release_notes'])!==''): ?><h3>Ændringer</h3><p><?=nl2br(h($staged['release_notes']))?></p><?php endif; ?>
-  <div class="readonly-note"><strong>Før installation:</strong> HSG laver automatisk en FULL-backup. <code>config.php</code>, uploads, eksisterende backups og mutable data overskrives ikke. Under selve opgraderingen sættes sitet kortvarigt i vedligeholdelsestilstand.</div>
-  <div class="split-actions">
-    <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="install"><button>Installér opgradering</button></form>
-    <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="cancel"><button class="secondary">Annuller</button></form>
-  </div>
-</div>
-<?php endif; ?>
 
 <div class="card">
   <h2>Sådan virker opgradering</h2>
