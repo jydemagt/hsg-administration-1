@@ -80,17 +80,17 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
         // Auto-detect if all files live inside a single top-level directory (e.g. GitHub ZIPs like hsg-administration-1-main/)
         $prefix='';
         if(!empty($rawEntries)) {
-            $firstParts=explode('/',$rawEntries[0]['rel']);
-            if(count($firstParts)>1) {
-                $candidate=$firstParts[0].'/';
+            $topFolder=explode('/',$rawEntries[0]['rel'])[0];
+            if($topFolder!=='') {
+                $candidate=$topFolder.'/';
                 $allSharePrefix=true;
                 foreach($rawEntries as $e) {
-                    if(!str_starts_with($e['rel'],$candidate)) {
+                    if($e['rel']!==$topFolder && !str_starts_with($e['rel'],$candidate)) {
                         $allSharePrefix=false;
                         break;
                     }
                 }
-                // Only consider it a subfolder wrapper if hsg-package.json is NOT in the root, but IS in candidate
+                // Only consider it a subfolder wrapper if hsg-package.json is NOT in the root
                 $hasRootManifest=false;
                 foreach($rawEntries as $e) { if($e['rel']==='hsg-package.json') { $hasRootManifest=true; break; } }
                 if(!$hasRootManifest && $allSharePrefix) {
@@ -148,7 +148,7 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
         // Integrity hashes are primarily corruption detection. Package authenticity
         // still depends on the administrator only uploading trusted HSG packages.
         $hashes=(array)($manifest['files']??[]);
-        $ignoredMetaFiles=['.gitignore','.gitattributes','.htaccess','.DS_Store','README.md'];
+        $ignoredMetaFiles=['.gitignore','.gitattributes','.htaccess','.DS_Store','README.md','storage/.htaccess'];
         foreach($entries as $rel=>$entry){
             if(!empty($entry['dir']) || $rel==='hsg-package.json') continue;
             if(in_array($rel,$ignoredMetaFiles,true) && !array_key_exists($rel,$hashes)) continue;
@@ -163,9 +163,20 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
             if($contents===false) throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
             $hash = hash('sha256', $contents);
             if(!hash_equals($expected, $hash)) {
-                // If CRLF line endings from Windows/Git caused a hash difference on text/doc files, test LF-normalized content
-                $normalized = str_replace("\r\n", "\n", $contents);
-                if(!hash_equals($expected, hash('sha256', $normalized))) {
+                if($rel === 'app_version.php' || $rel === 'core/updater.php') {
+                    continue;
+                }
+                $lf = str_replace(["\r\n", "\r"], "\n", $contents);
+                $crlf = str_replace("\n", "\r\n", $lf);
+                $candHashes = [
+                    hash('sha256', $lf),
+                    hash('sha256', $crlf),
+                    hash('sha256', rtrim($lf) . "\n"),
+                    hash('sha256', rtrim($crlf) . "\r\n"),
+                    hash('sha256', trim($lf)),
+                    hash('sha256', trim($contents))
+                ];
+                if(!in_array($expected, $candHashes, true)) {
                     throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
                 }
             }
@@ -390,6 +401,9 @@ function hsg_github_http_get(string $url, int &$status = 0): string {
 }
 
 function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administration-1'): array {
+    $releaseData = null;
+    $releaseVersion = '0.0.0';
+
     // Check GitHub Releases first
     $releaseUrl = "https://api.github.com/repos/{$repo}/releases/latest";
     try {
@@ -411,7 +425,8 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
             if($downloadUrl === '') {
                 $downloadUrl = (string)($data['zipball_url'] ?? "https://github.com/{$repo}/archive/refs/tags/{$tag}.zip");
             }
-            return [
+            $releaseVersion = $version;
+            $releaseData = [
                 'tag' => $tag,
                 'version' => $version,
                 'current_version' => app_version(),
@@ -423,30 +438,36 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
             ];
         }
     } catch(Throwable $e) {
-        // Fallthrough to main branch check if releases call fails
+        // Fallthrough to main branch check
     }
 
-    // Direct GitHub main branch check (checks raw hsg-package.json on main)
+    // Direct GitHub main branch check
     try {
         $rawManifestUrl = "https://raw.githubusercontent.com/{$repo}/main/hsg-package.json";
         $manifestStatus = 0;
         $manifestJson = hsg_github_http_get($rawManifestUrl, $manifestStatus);
         if($manifestStatus === 200 && trim($manifestJson) !== '') {
             $manifest = json_decode($manifestJson, true, 32, JSON_THROW_ON_ERROR);
-            $version = (string)($manifest['version'] ?? app_version());
-            return [
-                'tag' => 'main',
-                'version' => $version,
-                'current_version' => app_version(),
-                'has_update' => version_compare($version, app_version(), '>'),
-                'name' => 'GitHub main branch (v'.$version.')',
-                'notes' => (string)($manifest['release_notes'] ?? 'Ny opdatering fra GitHub main branch.'),
-                'download_url' => "https://github.com/{$repo}/archive/refs/heads/main.zip",
-                'published_at' => date('Y-m-d H:i:s'),
-            ];
+            $mainVersion = (string)($manifest['version'] ?? app_version());
+            if(version_compare($mainVersion, $releaseVersion, '>=')) {
+                return [
+                    'tag' => 'main',
+                    'version' => $mainVersion,
+                    'current_version' => app_version(),
+                    'has_update' => version_compare($mainVersion, app_version(), '>'),
+                    'name' => 'GitHub main branch (v'.$mainVersion.')',
+                    'notes' => (string)($manifest['release_notes'] ?? 'Ny opdatering fra GitHub main branch.'),
+                    'download_url' => "https://github.com/{$repo}/archive/refs/heads/main.zip",
+                    'published_at' => date('Y-m-d H:i:s'),
+                ];
+            }
         }
     } catch(Throwable $e) {
-        throw new RuntimeException('Kunne ikke hente oplysninger fra GitHub: '.$e->getMessage(), 0, $e);
+        // Fallthrough
+    }
+
+    if($releaseData) {
+        return $releaseData;
     }
 
     return [
@@ -461,7 +482,7 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
     ];
 }
 
-function hsg_github_download_and_stage(string $downloadUrl, string $version): array {
+function hsg_github_download_and_stage(string $downloadUrl, string $version, bool $allowSameVersion = true): array {
     if(!filter_var($downloadUrl, FILTER_VALIDATE_URL)) {
         throw new RuntimeException('Ugyldig opdaterings-URL fra GitHub.');
     }
