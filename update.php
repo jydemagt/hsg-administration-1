@@ -30,7 +30,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $ver=$release['version']!==''?$release['version']:(string)($_POST['version']??'');
             if($url==='' || $ver==='') throw new RuntimeException('Mangler oplysninger om GitHub-opdatering.');
             $old=hsg_staged_update_from_session(); if($old) hsg_update_cleanup_staged((string)$old['path']);
-            $info=hsg_github_download_and_stage($url, $ver);
+            $info=hsg_github_download_and_stage($url, $ver, true);
             $_SESSION['hsg_staged_update']=[
                 'path'=>$info['path'],'sha256'=>$info['package_sha256'],'original_name'=>$info['original_name'],
                 'version'=>$info['version'],'current_version'=>$info['current_version'],'release_notes'=>$info['release_notes'],
