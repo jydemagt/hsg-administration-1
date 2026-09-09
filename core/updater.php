@@ -401,60 +401,22 @@ function hsg_github_http_get(string $url, int &$status = 0): string {
 }
 
 function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administration-1'): array {
-    $releaseData = null;
-    $releaseVersion = '0.0.0';
+    $currentVersion = app_version();
 
-    // Check GitHub Releases first
-    $releaseUrl = "https://api.github.com/repos/{$repo}/releases/latest";
-    try {
-        $httpStatus = 0;
-        $json = hsg_github_http_get($releaseUrl, $httpStatus);
-        if($httpStatus === 200 && trim($json) !== '') {
-            $data = json_decode($json, true, 32, JSON_THROW_ON_ERROR);
-            $tag = (string)($data['tag_name'] ?? '');
-            $version = ltrim($tag, 'v');
-            $downloadUrl = '';
-            if(!empty($data['assets']) && is_array($data['assets'])) {
-                foreach($data['assets'] as $asset) {
-                    if(str_ends_with(strtolower((string)$asset['name']), '.zip')) {
-                        $downloadUrl = (string)($asset['browser_download_url'] ?? '');
-                        break;
-                    }
-                }
-            }
-            if($downloadUrl === '') {
-                $downloadUrl = (string)($data['zipball_url'] ?? "https://github.com/{$repo}/archive/refs/tags/{$tag}.zip");
-            }
-            $releaseVersion = $version;
-            $releaseData = [
-                'tag' => $tag,
-                'version' => $version,
-                'current_version' => app_version(),
-                'has_update' => version_compare($version, app_version(), '>'),
-                'name' => (string)($data['name'] ?? $tag),
-                'notes' => (string)($data['body'] ?? ''),
-                'download_url' => $downloadUrl,
-                'published_at' => (string)($data['published_at'] ?? ''),
-            ];
-        }
-    } catch(Throwable $e) {
-        // Fallthrough to main branch check
-    }
-
-    // Direct GitHub main branch check
+    // 1. Direct GitHub main branch check (primary source for HSG Administration updates)
     try {
         $rawManifestUrl = "https://raw.githubusercontent.com/{$repo}/main/hsg-package.json";
         $manifestStatus = 0;
         $manifestJson = hsg_github_http_get($rawManifestUrl, $manifestStatus);
         if($manifestStatus === 200 && trim($manifestJson) !== '') {
             $manifest = json_decode($manifestJson, true, 32, JSON_THROW_ON_ERROR);
-            $mainVersion = (string)($manifest['version'] ?? app_version());
-            if(version_compare($mainVersion, $releaseVersion, '>=')) {
+            $mainVersion = (string)($manifest['version'] ?? $currentVersion);
+            if(version_compare($mainVersion, '2.0.0', '>=')) {
                 return [
                     'tag' => 'main',
                     'version' => $mainVersion,
-                    'current_version' => app_version(),
-                    'has_update' => version_compare($mainVersion, app_version(), '>'),
+                    'current_version' => $currentVersion,
+                    'has_update' => version_compare($mainVersion, $currentVersion, '>'),
                     'name' => 'GitHub main branch (v'.$mainVersion.')',
                     'notes' => (string)($manifest['release_notes'] ?? 'Ny opdatering fra GitHub main branch.'),
                     'download_url' => "https://github.com/{$repo}/archive/refs/heads/main.zip",
@@ -463,20 +425,52 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
             }
         }
     } catch(Throwable $e) {
-        // Fallthrough
+        // Fallthrough to releases API if main branch call fails
     }
 
-    if($releaseData) {
-        return $releaseData;
-    }
+    // 2. Fallback to GitHub Releases API (ignoring legacy releases < v2.0.0)
+    try {
+        $releaseUrl = "https://api.github.com/repos/{$repo}/releases/latest";
+        $httpStatus = 0;
+        $json = hsg_github_http_get($releaseUrl, $httpStatus);
+        if($httpStatus === 200 && trim($json) !== '') {
+            $data = json_decode($json, true, 32, JSON_THROW_ON_ERROR);
+            $tag = (string)($data['tag_name'] ?? '');
+            $version = ltrim($tag, 'v');
+            if(version_compare($version, '2.0.0', '>=')) {
+                $downloadUrl = '';
+                if(!empty($data['assets']) && is_array($data['assets'])) {
+                    foreach($data['assets'] as $asset) {
+                        if(str_ends_with(strtolower((string)$asset['name']), '.zip')) {
+                            $downloadUrl = (string)($asset['browser_download_url'] ?? '');
+                            break;
+                        }
+                    }
+                }
+                if($downloadUrl === '') {
+                    $downloadUrl = (string)($data['zipball_url'] ?? "https://github.com/{$repo}/archive/refs/tags/{$tag}.zip");
+                }
+                return [
+                    'tag' => $tag,
+                    'version' => $version,
+                    'current_version' => $currentVersion,
+                    'has_update' => version_compare($version, $currentVersion, '>'),
+                    'name' => (string)($data['name'] ?? $tag),
+                    'notes' => (string)($data['body'] ?? ''),
+                    'download_url' => $downloadUrl,
+                    'published_at' => (string)($data['published_at'] ?? ''),
+                ];
+            }
+        }
+    } catch(Throwable $e) {}
 
     return [
         'tag' => '',
-        'version' => app_version(),
-        'current_version' => app_version(),
+        'version' => $currentVersion,
+        'current_version' => $currentVersion,
         'has_update' => false,
-        'name' => 'Ingen GitHub Releases endnu',
-        'notes' => 'Der er endnu ikke oprettet nogen officielle releases eller opdateringer på GitHub-repositoryet.',
+        'name' => 'Seneste version installeret',
+        'notes' => 'Du kører den nyeste version af HSG Administration.',
         'download_url' => '',
         'published_at' => '',
     ];
