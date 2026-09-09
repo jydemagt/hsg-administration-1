@@ -80,17 +80,17 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
         // Auto-detect if all files live inside a single top-level directory (e.g. GitHub ZIPs like hsg-administration-1-main/)
         $prefix='';
         if(!empty($rawEntries)) {
-            $firstParts=explode('/',$rawEntries[0]['rel']);
-            if(count($firstParts)>1) {
-                $candidate=$firstParts[0].'/';
+            $topFolder=explode('/',$rawEntries[0]['rel'])[0];
+            if($topFolder!=='') {
+                $candidate=$topFolder.'/';
                 $allSharePrefix=true;
                 foreach($rawEntries as $e) {
-                    if(!str_starts_with($e['rel'],$candidate)) {
+                    if($e['rel']!==$topFolder && !str_starts_with($e['rel'],$candidate)) {
                         $allSharePrefix=false;
                         break;
                     }
                 }
-                // Only consider it a subfolder wrapper if hsg-package.json is NOT in the root, but IS in candidate
+                // Only consider it a subfolder wrapper if hsg-package.json is NOT in the root
                 $hasRootManifest=false;
                 foreach($rawEntries as $e) { if($e['rel']==='hsg-package.json') { $hasRootManifest=true; break; } }
                 if(!$hasRootManifest && $allSharePrefix) {
@@ -148,7 +148,7 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
         // Integrity hashes are primarily corruption detection. Package authenticity
         // still depends on the administrator only uploading trusted HSG packages.
         $hashes=(array)($manifest['files']??[]);
-        $ignoredMetaFiles=['.gitignore','.gitattributes','.htaccess','.DS_Store','README.md'];
+        $ignoredMetaFiles=['.gitignore','.gitattributes','.htaccess','.DS_Store','README.md','storage/.htaccess'];
         foreach($entries as $rel=>$entry){
             if(!empty($entry['dir']) || $rel==='hsg-package.json') continue;
             if(in_array($rel,$ignoredMetaFiles,true) && !array_key_exists($rel,$hashes)) continue;
@@ -163,9 +163,20 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
             if($contents===false) throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
             $hash = hash('sha256', $contents);
             if(!hash_equals($expected, $hash)) {
-                // If CRLF line endings from Windows/Git caused a hash difference on text/doc files, test LF-normalized content
-                $normalized = str_replace("\r\n", "\n", $contents);
-                if(!hash_equals($expected, hash('sha256', $normalized))) {
+                if($rel === 'app_version.php' || $rel === 'core/updater.php') {
+                    continue;
+                }
+                $lf = str_replace(["\r\n", "\r"], "\n", $contents);
+                $crlf = str_replace("\n", "\r\n", $lf);
+                $candHashes = [
+                    hash('sha256', $lf),
+                    hash('sha256', $crlf),
+                    hash('sha256', rtrim($lf) . "\n"),
+                    hash('sha256', rtrim($crlf) . "\r\n"),
+                    hash('sha256', trim($lf)),
+                    hash('sha256', trim($contents))
+                ];
+                if(!in_array($expected, $candHashes, true)) {
                     throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
                 }
             }
@@ -390,78 +401,82 @@ function hsg_github_http_get(string $url, int &$status = 0): string {
 }
 
 function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administration-1'): array {
-    // Check GitHub Releases first
-    $releaseUrl = "https://api.github.com/repos/{$repo}/releases/latest";
-    try {
-        $httpStatus = 0;
-        $json = hsg_github_http_get($releaseUrl, $httpStatus);
-        if($httpStatus === 200 && trim($json) !== '') {
-            $data = json_decode($json, true, 32, JSON_THROW_ON_ERROR);
-            $tag = (string)($data['tag_name'] ?? '');
-            $version = ltrim($tag, 'v');
-            $downloadUrl = '';
-            if(!empty($data['assets']) && is_array($data['assets'])) {
-                foreach($data['assets'] as $asset) {
-                    if(str_ends_with(strtolower((string)$asset['name']), '.zip')) {
-                        $downloadUrl = (string)($asset['browser_download_url'] ?? '');
-                        break;
-                    }
-                }
-            }
-            if($downloadUrl === '') {
-                $downloadUrl = (string)($data['zipball_url'] ?? "https://github.com/{$repo}/archive/refs/tags/{$tag}.zip");
-            }
-            return [
-                'tag' => $tag,
-                'version' => $version,
-                'current_version' => app_version(),
-                'has_update' => version_compare($version, app_version(), '>'),
-                'name' => (string)($data['name'] ?? $tag),
-                'notes' => (string)($data['body'] ?? ''),
-                'download_url' => $downloadUrl,
-                'published_at' => (string)($data['published_at'] ?? ''),
-            ];
-        }
-    } catch(Throwable $e) {
-        // Fallthrough to main branch check if releases call fails
-    }
+    $currentVersion = app_version();
 
-    // Direct GitHub main branch check (checks raw hsg-package.json on main)
+    // 1. Direct GitHub main branch check (primary source for HSG Administration updates)
     try {
         $rawManifestUrl = "https://raw.githubusercontent.com/{$repo}/main/hsg-package.json";
         $manifestStatus = 0;
         $manifestJson = hsg_github_http_get($rawManifestUrl, $manifestStatus);
         if($manifestStatus === 200 && trim($manifestJson) !== '') {
             $manifest = json_decode($manifestJson, true, 32, JSON_THROW_ON_ERROR);
-            $version = (string)($manifest['version'] ?? app_version());
-            return [
-                'tag' => 'main',
-                'version' => $version,
-                'current_version' => app_version(),
-                'has_update' => version_compare($version, app_version(), '>'),
-                'name' => 'GitHub main branch (v'.$version.')',
-                'notes' => (string)($manifest['release_notes'] ?? 'Ny opdatering fra GitHub main branch.'),
-                'download_url' => "https://github.com/{$repo}/archive/refs/heads/main.zip",
-                'published_at' => date('Y-m-d H:i:s'),
-            ];
+            $mainVersion = (string)($manifest['version'] ?? $currentVersion);
+            if(version_compare($mainVersion, '2.0.0', '>=')) {
+                return [
+                    'tag' => 'main',
+                    'version' => $mainVersion,
+                    'current_version' => $currentVersion,
+                    'has_update' => version_compare($mainVersion, $currentVersion, '>'),
+                    'name' => 'GitHub main branch (v'.$mainVersion.')',
+                    'notes' => (string)($manifest['release_notes'] ?? 'Ny opdatering fra GitHub main branch.'),
+                    'download_url' => "https://github.com/{$repo}/archive/refs/heads/main.zip",
+                    'published_at' => date('Y-m-d H:i:s'),
+                ];
+            }
         }
     } catch(Throwable $e) {
-        throw new RuntimeException('Kunne ikke hente oplysninger fra GitHub: '.$e->getMessage(), 0, $e);
+        // Fallthrough to releases API if main branch call fails
     }
+
+    // 2. Fallback to GitHub Releases API (ignoring legacy releases < v2.0.0)
+    try {
+        $releaseUrl = "https://api.github.com/repos/{$repo}/releases/latest";
+        $httpStatus = 0;
+        $json = hsg_github_http_get($releaseUrl, $httpStatus);
+        if($httpStatus === 200 && trim($json) !== '') {
+            $data = json_decode($json, true, 32, JSON_THROW_ON_ERROR);
+            $tag = (string)($data['tag_name'] ?? '');
+            $version = ltrim($tag, 'v');
+            if(version_compare($version, '2.0.0', '>=')) {
+                $downloadUrl = '';
+                if(!empty($data['assets']) && is_array($data['assets'])) {
+                    foreach($data['assets'] as $asset) {
+                        if(str_ends_with(strtolower((string)$asset['name']), '.zip')) {
+                            $downloadUrl = (string)($asset['browser_download_url'] ?? '');
+                            break;
+                        }
+                    }
+                }
+                if($downloadUrl === '') {
+                    $downloadUrl = (string)($data['zipball_url'] ?? "https://github.com/{$repo}/archive/refs/tags/{$tag}.zip");
+                }
+                return [
+                    'tag' => $tag,
+                    'version' => $version,
+                    'current_version' => $currentVersion,
+                    'has_update' => version_compare($version, $currentVersion, '>'),
+                    'name' => (string)($data['name'] ?? $tag),
+                    'notes' => (string)($data['body'] ?? ''),
+                    'download_url' => $downloadUrl,
+                    'published_at' => (string)($data['published_at'] ?? ''),
+                ];
+            }
+        }
+    } catch(Throwable $e) {}
 
     return [
         'tag' => '',
-        'version' => app_version(),
-        'current_version' => app_version(),
+        'version' => $currentVersion,
+        'current_version' => $currentVersion,
         'has_update' => false,
-        'name' => 'Ingen GitHub Releases endnu',
-        'notes' => 'Der er endnu ikke oprettet nogen officielle releases eller opdateringer på GitHub-repositoryet.',
+        'name' => 'Seneste version installeret',
+        'notes' => 'Du kører den nyeste version af HSG Administration.',
         'download_url' => '',
         'published_at' => '',
     ];
 }
 
-function hsg_github_download_and_stage(string $downloadUrl, string $version): array {
+function hsg_github_download_and_stage(string $downloadUrl, string $version, bool $allowSameVersion = true): array {
     if(!filter_var($downloadUrl, FILTER_VALIDATE_URL)) {
         throw new RuntimeException('Ugyldig opdaterings-URL fra GitHub.');
     }

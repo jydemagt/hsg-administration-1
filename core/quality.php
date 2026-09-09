@@ -14,6 +14,7 @@ function hsg_quality_field_definitions(): array {
         'bottle_size_cl'=>['label'=>'Flaskestørrelse','group'=>'data'],
         'cask_type'=>['label'=>'Fadtype','group'=>'data'],
         'cask_number'=>['label'=>'Fadnummer','group'=>'data'],
+        'bottle_count'=>['label'=>'Antal flasker','group'=>'data'],
         'wholesale_price'=>['label'=>'Engrospris','group'=>'data'],
         'retail_price'=>['label'=>'Udsalgspris','group'=>'data'],
     ];
