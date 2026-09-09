@@ -77,25 +77,16 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
             $rawEntries[]=['index'=>$i,'raw'=>$raw,'rel'=>$rel,'size'=>$size,'dir'=>str_ends_with($raw,'/')];
         }
 
-        // Auto-detect if all files live inside a single top-level directory (e.g. GitHub ZIPs like hsg-administration-1-main/)
+        // Auto-detect if all files live inside a single top-level directory by locating hsg-package.json
         $prefix='';
-        if(!empty($rawEntries)) {
-            $firstParts=explode('/',$rawEntries[0]['rel']);
-            if(count($firstParts)>1) {
-                $candidate=$firstParts[0].'/';
-                $allSharePrefix=true;
-                foreach($rawEntries as $e) {
-                    if(!str_starts_with($e['rel'],$candidate)) {
-                        $allSharePrefix=false;
-                        break;
-                    }
-                }
-                // Only consider it a subfolder wrapper if hsg-package.json is NOT in the root, but IS in candidate
-                $hasRootManifest=false;
-                foreach($rawEntries as $e) { if($e['rel']==='hsg-package.json') { $hasRootManifest=true; break; } }
-                if(!$hasRootManifest && $allSharePrefix) {
-                    $prefix=$candidate;
-                }
+        foreach($rawEntries as $e) {
+            if($e['rel'] === 'hsg-package.json') {
+                $prefix = '';
+                break;
+            }
+            if(str_ends_with($e['rel'], '/hsg-package.json')) {
+                $prefix = substr($e['rel'], 0, -strlen('hsg-package.json'));
+                break;
             }
         }
 
@@ -148,7 +139,7 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
         // Integrity hashes are primarily corruption detection. Package authenticity
         // still depends on the administrator only uploading trusted HSG packages.
         $hashes=(array)($manifest['files']??[]);
-        $ignoredMetaFiles=['.gitignore','.gitattributes','.htaccess','.DS_Store','README.md'];
+        $ignoredMetaFiles=['.gitignore','.gitattributes','.htaccess','.DS_Store','README.md','storage/.htaccess'];
         foreach($entries as $rel=>$entry){
             if(!empty($entry['dir']) || $rel==='hsg-package.json') continue;
             if(in_array($rel,$ignoredMetaFiles,true) && !array_key_exists($rel,$hashes)) continue;
