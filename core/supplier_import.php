@@ -539,7 +539,8 @@ function hsg_supplier_create_product(PDO $pdo, array $src): int {
         $src['cask_number'] ?? null,
         $src['bottle_count'] ?? null,
         $wholesale,
-        $retail
+        $retail,
+        1
     ]);
 
     $newPid = (int)$pdo->lastInsertId();
