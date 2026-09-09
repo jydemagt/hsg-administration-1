@@ -77,25 +77,16 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
             $rawEntries[]=['index'=>$i,'raw'=>$raw,'rel'=>$rel,'size'=>$size,'dir'=>str_ends_with($raw,'/')];
         }
 
-        // Auto-detect if all files live inside a single top-level directory (e.g. GitHub ZIPs like hsg-administration-1-main/)
+        // Auto-detect if all files live inside a single top-level directory by locating hsg-package.json
         $prefix='';
-        if(!empty($rawEntries)) {
-            $topFolder=explode('/',$rawEntries[0]['rel'])[0];
-            if($topFolder!=='') {
-                $candidate=$topFolder.'/';
-                $allSharePrefix=true;
-                foreach($rawEntries as $e) {
-                    if($e['rel']!==$topFolder && !str_starts_with($e['rel'],$candidate)) {
-                        $allSharePrefix=false;
-                        break;
-                    }
-                }
-                // Only consider it a subfolder wrapper if hsg-package.json is NOT in the root
-                $hasRootManifest=false;
-                foreach($rawEntries as $e) { if($e['rel']==='hsg-package.json') { $hasRootManifest=true; break; } }
-                if(!$hasRootManifest && $allSharePrefix) {
-                    $prefix=$candidate;
-                }
+        foreach($rawEntries as $e) {
+            if($e['rel'] === 'hsg-package.json') {
+                $prefix = '';
+                break;
+            }
+            if(str_ends_with($e['rel'], '/hsg-package.json')) {
+                $prefix = substr($e['rel'], 0, -strlen('hsg-package.json'));
+                break;
             }
         }
 
