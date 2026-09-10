@@ -39,9 +39,12 @@ uasort($families,static fn($a,$b)=>$a['sort']<=>$b['sort']);
 function catalog_toc_page_count(array $families): int {
     if(!$families)return 1;$pages=1;$y=708;
     foreach($families as $family=>$f){
-        $topGap=($y<690)?16:0;
+        $topGap=($y<690)?28:0;
         if($y-$topGap-18<52){$pages++;$y=748-$topGap;}$y-=$topGap+18;
-        foreach($f['sections'] as $products){
+        foreach($f['sections'] as $section=>$products){
+            if($section !== $family){
+                if($y-16<52){$pages++;$y=748;}$y-=16;
+            }
             foreach($products as $_){
                 if($y-14<52){$pages++;$y=748;}$y-=14;
             }
@@ -56,8 +59,11 @@ foreach($families as $family=>$f){
     $familyMeta=$brandMeta[$family]??null;$familyDesc=hsg_catalog_get_family_desc($family,$f,$brandMeta);$familyLogo=(string)($familyMeta['logo_path']??'');
     $pagePlan[]=['type'=>'intro','family'=>$family,'display'=>hsg_catalog_family_display($family),'desc'=>$familyDesc,'logo'=>$familyLogo,'page'=>$introPage];
     foreach($f['sections'] as $section=>$products){
+        if($section !== $family){
+            $tocEntries[]=['type'=>'subbrand','text'=>(string)$section,'page'=>$currentPage];
+        }
         foreach(array_chunk($products,2) as $chunk){
-            $page=$currentPage++;foreach($chunk as $p){$tocEntries[]=['type'=>'product','text'=>(string)$p['name'],'page'=>$page];}
+            $page=$currentPage++;foreach($chunk as $p){$tocEntries[]=['type'=>'product','text'=>hsg_catalog_product_title($p),'page'=>$page];}
             $pagePlan[]=['type'=>'products','family'=>$family,'section'=>$section,'products'=>$chunk,'page'=>$page];
         }
     }
@@ -139,14 +145,19 @@ for($tocPage=0;$tocPage<$tocPages;$tocPage++){
     $pageNo=2+$tocPage;$ops=[];$images=[];add_hsg_logo($pdf,$ops,$images,$hsgLogo);$y=748;
     if($tocPage===0){$ops[]=$pdf->textFont(36,$y,17,'Indhold','helvetica-bold');$ops[]=$pdf->line(36,$y-3,90,$y-3,.8);$y-=40;}
     while($entryIndex<count($entries)){
-        $e=$entries[$entryIndex];$isFamily=$e['type']==='family';
-        $topGap=($isFamily && $y<690)?16:0;
-        $step=$isFamily?18:14;
+        $e=$entries[$entryIndex];$isFamily=$e['type']==='family';$isSubbrand=$e['type']==='subbrand';
+        $topGap=($isFamily && $y<690)?28:0;
+        $step=$isFamily?18:($isSubbrand?16:14);
         if($y-$topGap-$step<52)break;
         $y-=$topGap;
-        $size=$isFamily?12.5:8.8;$x=$isFamily?36:58;$font=$isFamily?'helvetica-bold':'helvetica';$text=(string)$e['text'];$page=(int)$e['page'];
+        $size=$isFamily?12.5:($isSubbrand?10.0:8.8);
+        $x=$isFamily?36:($isSubbrand?48:60);
+        $font=$isFamily?'helvetica-bold':($isSubbrand?'helvetica-bold':'helvetica');
+        $text=(string)$e['text'];$page=(int)$e['page'];
         $ops[]=$pdf->textFont($x,$y,$size,$text,$font);
-        $approx=min(430,$x+(function_exists('mb_strlen')?mb_strlen($text,'UTF-8'):strlen($text))*$size*.47+8);$ops[]=$pdf->dottedLine($approx,$y+2,539,.45);$ops[]=$pdf->textFont(543,$y,$size,(string)$page,$font);
+        $approx=min(430,$x+(function_exists('mb_strlen')?mb_strlen($text,'UTF-8'):strlen($text))*$size*.47+8);
+        $ops[]=$pdf->dottedLine($approx,$y+2,539,.45);
+        $ops[]=$pdf->textFont(543,$y,$size,(string)$page,$font);
         $pdf->addLink($pageNo,36.0,$y-3.0,558.0,$y+11.0,$page);
         $y-=$step;$entryIndex++;
     }
