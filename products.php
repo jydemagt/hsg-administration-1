@@ -2,6 +2,7 @@
 require __DIR__.'/auth.php';
 require_capability('products.manage');
 require_once __DIR__.'/core/quality.php';
+require_once __DIR__.'/core/catalog_layout.php';
 
 if($_SERVER['REQUEST_METHOD']==='POST'){
     try{
@@ -104,18 +105,30 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         }
         $id=(int)($_POST['id']??0);
         $sku=trim((string)($_POST['sku']??''));
-        $name=trim((string)($_POST['name']??''));
         $callName=trim((string)($_POST['call_name']??''));
-        if($sku===''||$name==='') throw new RuntimeException('SKU og navn skal udfyldes.');
+        if($sku==='') throw new RuntimeException('SKU skal udfyldes.');
         $brand=(int)($_POST['brand_id']??0)?:null;
         $status=in_array($_POST['status']??'active',['active','inactive','discontinued'],true)?$_POST['status']:'active';
         $vintage=trim((string)($_POST['vintage_year']??''));
         $vintage=$vintage!==''?(int)$vintage:null;
         if($vintage!==null && ($vintage<1900 || $vintage>(int)date('Y'))) throw new RuntimeException('Årgang skal være et gyldigt årstal.');
+        $distillery=trim((string)($_POST['distillery']??''));
+        $age=trim((string)($_POST['age_text']??''));
+        $abv=parse_decimal($_POST['abv']??'');
+
+        $composedP=[
+            'distillery'=>$distillery,
+            'vintage_year'=>$vintage,
+            'age_text'=>$age,
+            'abv'=>$abv,
+            'name'=>trim((string)($_POST['name']??'')) ?: ($distillery ?: ($sku ?: 'Nyt produkt'))
+        ];
+        $name=hsg_catalog_product_title($composedP);
+
         $vals=[
-            $sku,$name,$callName?:null,$brand,trim((string)($_POST['category']??'')),trim((string)($_POST['distillery']??'')),
-            trim((string)($_POST['country']??'')),trim((string)($_POST['age_text']??'')),$vintage,
-            parse_decimal($_POST['abv']??''),parse_decimal($_POST['bottle_size_cl']??''),trim((string)($_POST['cask_type']??'')),trim((string)($_POST['cask_number']??'')),
+            $sku,$name,$callName?:null,$brand,trim((string)($_POST['category']??'')),$distillery,
+            trim((string)($_POST['country']??'')),$age,$vintage,
+            $abv,parse_decimal($_POST['bottle_size_cl']??''),trim((string)($_POST['cask_type']??'')),trim((string)($_POST['cask_number']??'')),
             trim((string)($_POST['bottle_count']??'')),parse_decimal($_POST['wholesale_price']??''),parse_decimal($_POST['retail_price']??''),
             !empty($_POST['is_new'])?1:0,!empty($_POST['show_in_catalog'])?1:0,$status,trim((string)($_POST['supplier_name']??'')),
             trim((string)($_POST['supplier_domain']??'')),trim((string)($_POST['supplier_url']??'')),trim((string)($_POST['notes']??''))
@@ -196,7 +209,7 @@ page_header('Produkter');
 
 <div class="card"><h2><?=$edit?'Rediger produkt':'Nyt produkt'?></h2>
 <form method="post" id="productForm"><?=csrf_field()?><input type="hidden" name="id" value="<?=$edit['id']??0?>">
-<div class="three"><label>SKU / nummer *<input name="sku" required value="<?=h($edit['sku']??'')?>"></label><label>Produktnavn / varetekst *<input name="name" required value="<?=h($edit['name']??'')?>"></label><label>Kaldenavn (Valgfri underoverskrift)<input name="call_name" value="<?=h($edit['call_name']??'')?>" placeholder="fx The Chain - Chapter 2"></label></div>
+<div class="three"><label>SKU / nummer *<input name="sku" required value="<?=h($edit['sku']??'')?>"></label><label>Produktnavn / varetekst (Automatisk sammensat)<input name="name" id="product_name_input" readonly tabindex="-1" style="background-color:#f3f4f6;cursor:not-allowed;" value="<?=h($edit?hsg_catalog_product_title($edit):'')?>"></label><label>Kaldenavn (Valgfri underoverskrift)<input name="call_name" value="<?=h($edit['call_name']??'')?>" placeholder="fx The Chain - Chapter 2"></label></div>
 <div class="product-assistant-box">
   <div class="actions"><button type="button" id="enrichProductBtn">✨ Udfyld fra varetekst</button><label class="check" style="margin:0"><input type="checkbox" id="enrichUseAi" checked> Brug AI til usikre/manglende felter</label></div>
   <div id="enrichProductStatus" class="muted" style="margin-top:8px">Eksisterende værdier overskrives ikke automatisk.</div>
