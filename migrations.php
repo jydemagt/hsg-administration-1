@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__.'/core/settings.php';
 require_once __DIR__.'/core/product_enrichment.php';
 require_once __DIR__.'/core/catalog_image_seed.php';
+require_once __DIR__.'/core/catalog_layout.php';
 
 function db_table_exists(PDO $pdo, string $table): bool {
     $st=$pdo->prepare('SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?');
@@ -259,5 +260,18 @@ function ensure_schema_updates(PDO $pdo): void {
         }
         if((string)setting_get($pdo,'backup_cron_key','')==='') setting_set($pdo,'backup_cron_key',bin2hex(random_bytes(24)));
     }
+
+    // Batch update all product names to standardized catalog title format: [Destilleri] ([Årgang]) – [Alder] år – [Alc. %]
+    if (function_exists('hsg_catalog_product_title')) {
+        $allProds = $pdo->query('SELECT id, name, sku, distillery, vintage_year, age_text, abv FROM lager_products')->fetchAll(PDO::FETCH_ASSOC);
+        $stNameUpdate = $pdo->prepare('UPDATE lager_products SET name = ? WHERE id = ?');
+        foreach ($allProds as $p) {
+            $title = hsg_catalog_product_title($p);
+            if ($title !== '' && $title !== $p['name']) {
+                $stNameUpdate->execute([$title, (int)$p['id']]);
+            }
+        }
+    }
+
     meta_set($pdo,'schema_version',(string)(require __DIR__.'/app_version.php'));
 }
