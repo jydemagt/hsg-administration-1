@@ -20,6 +20,33 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
       if($st->rowCount()===0)throw new RuntimeException('Reservationen kunne ikke annulleres. Linkbrugere kan kun annullere egne aktive reservationer.');
       audit_log($pdo,'reservation.cancel','reservation',(string)$id);hsg_do_action('reservation.cancelled',['reservation_id'=>$id]);flash('success','Reservation annulleret og lageret frigivet.');redirect('reservations.php');
     }
+    if($action==='update'){
+      $id=(int)$_POST['id'];
+      if(!is_admin()) throw new RuntimeException('Kun administratorer kan redigere eksisterende reservationer.');
+      $qty=(int)$_POST['quantity'];
+      $customer=trim((string)($_POST['customer_name']??''));
+      $ref=trim((string)($_POST['reference']??''));
+      $note=trim((string)($_POST['note']??''));
+      if($qty<=0) throw new RuntimeException('Antal skal være større end 0.');
+
+      $pdo->beginTransaction();
+      $st=$pdo->prepare("SELECT * FROM lager_reservations WHERE id=? AND status='reserved' FOR UPDATE");
+      $st->execute([$id]);
+      $r=$st->fetch();
+      if(!$r) throw new RuntimeException('Reservationen findes ikke eller kan ikke redigeres.');
+
+      // Check available stock if quantity increased
+      $qtyDiff = $qty - (int)$r['quantity'];
+      if($qtyDiff > 0){
+        $avail = available_for($pdo, (int)$r['product_id'], (int)$r['location_id']);
+        if($avail < $qtyDiff) throw new RuntimeException('Der er ikke nok disponibelt lager til at øge reservationen med '.$qtyDiff.' stk.');
+      }
+
+      $pdo->prepare("UPDATE lager_reservations SET quantity=?, customer_name=?, reference=?, note=? WHERE id=?")->execute([$qty, $customer, $ref, $note, $id]);
+      $pdo->commit();
+      audit_log($pdo,'reservation.update','reservation',(string)$id,['quantity'=>$qty,'customer_name'=>$customer,'reference'=>$ref]);
+      flash('success','Reservation #'.$id.' opdateret.');redirect('reservations.php');
+    }
     if($action==='complete'){
       require_capability('reservations.complete');
       $id=(int)$_POST['id'];$pdo->beginTransaction();$st=$pdo->prepare("SELECT * FROM lager_reservations WHERE id=? AND status='reserved' FOR UPDATE");$st->execute([$id]);$r=$st->fetch();if(!$r)throw new RuntimeException('Reservationen findes ikke eller er allerede afsluttet.');$ss=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=? FOR UPDATE');$ss->execute([$r['product_id'],$r['location_id']]);$old=(int)$ss->fetchColumn();if($old<(int)$r['quantity'])throw new RuntimeException('Det fysiske lager er lavere end reservationen.');$new=$old-(int)$r['quantity'];$pdo->prepare('UPDATE lager_stock SET quantity=? WHERE product_id=? AND location_id=?')->execute([$new,$r['product_id'],$r['location_id']]);$pdo->prepare("UPDATE lager_reservations SET status='completed' WHERE id=?")->execute([$id]);$pdo->prepare("INSERT INTO lager_stock_movements(product_id,location_id,change_qty,balance_after,movement_type,reference,created_by,created_by_admin) VALUES(?,?,?,?,'sale',?,?,?)")->execute([$r['product_id'],$r['location_id'],-(int)$r['quantity'],$new,$r['reference']?:'Reservation #'.$id,null,current_admin_id()]);$pdo->commit();audit_log($pdo,'reservation.complete','reservation',(string)$id,['product_id'=>(int)$r['product_id'],'location_id'=>(int)$r['location_id'],'quantity'=>(int)$r['quantity']]);hsg_do_action('reservation.completed',['reservation_id'=>$id,'product_id'=>(int)$r['product_id'],'location_id'=>(int)$r['location_id'],'quantity'=>(int)$r['quantity']]);flash('success','Reservation markeret som solgt. Fysisk lager er nedskrevet.');redirect('reservations.php');
@@ -31,5 +58,47 @@ $pid=(int)($_GET['product']??0);$products=$pdo->query("SELECT p.id,p.sku,p.name 
 if(is_admin()){$rows=$pdo->query("SELECT r.*,p.sku,p.name product_name,l.name location_name,u.name user_name,a.display_name admin_name FROM lager_reservations r JOIN lager_products p ON p.id=r.product_id JOIN lager_locations l ON l.id=r.location_id LEFT JOIN lager_users u ON u.id=r.created_by LEFT JOIN lager_admins a ON a.id=r.created_by_admin ORDER BY r.status='reserved' DESC,r.created_at DESC LIMIT 300")->fetchAll();}else{$st=$pdo->prepare("SELECT r.*,p.sku,p.name product_name,l.name location_name,u.name user_name,a.display_name admin_name FROM lager_reservations r JOIN lager_products p ON p.id=r.product_id JOIN lager_locations l ON l.id=r.location_id LEFT JOIN lager_users u ON u.id=r.created_by LEFT JOIN lager_admins a ON a.id=r.created_by_admin WHERE r.created_by=? ORDER BY r.status='reserved' DESC,r.created_at DESC LIMIT 300");$st->execute([current_link_user_id()]);$rows=$st->fetchAll();}page_header('Reservationer');
 ?>
 <?php if(can('reservations.create')):?><div class="card"><h2>Reservér produkt</h2><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="create"><div class="split"><label>Produkt<select name="product_id" required><?php foreach($products as $p):?><option value="<?=$p['id']?>" <?=$pid===$p['id']?'selected':''?>><?=h($p['sku'].' – '.$p['name'])?></option><?php endforeach;?></select></label><label>Lokation<select name="location_id" required><?php foreach($locs as $l):?><option value="<?=$l['id']?>"><?=h($l['name'])?></option><?php endforeach;?></select></label></div><div class="three"><label>Antal<input type="number" min="1" name="quantity" value="1" required></label><label>Kunde<input name="customer_name" placeholder="Navn / virksomhed"></label><label>Ordre / reference<input name="reference" placeholder="Fx ordre #1047"></label></div><label>Bemærkning<input name="note"></label><button>Reservér</button></form></div><?php else:?><div class="readonly-note">Du har læseadgang til reservationer, men ikke rettighed til at oprette nye.</div><?php endif;?>
-<div class="table-wrap"><table><thead><tr><th>Dato</th><th>Produkt</th><th>Lokation</th><th>Antal</th><th>Kunde / reference</th><th>Oprettet af</th><th>Status</th><th></th></tr></thead><tbody><?php foreach($rows as $r):$own=is_link_user() && (int)$r['created_by']===(int)current_link_user_id();?><tr><td><?=h($r['created_at'])?></td><td><?=h($r['sku'].' – '.$r['product_name'])?></td><td><?=h($r['location_name'])?></td><td><?=$r['quantity']?></td><td><?=h($r['customer_name'])?><?php if(!empty($r['reference'])):?><br><span class="muted"><?=h($r['reference'])?></span><?php endif;?><?php if(!empty($r['note'])):?><br><span class="muted"><?=h($r['note'])?></span><?php endif;?></td><td><?=h($r['admin_name']?:$r['user_name']?:'-')?></td><td><span class="badge <?=$r['status']==='reserved'?'blue':($r['status']==='completed'?'green':'')?>"><?=h(reservation_status_label($r['status']))?></span></td><td><?php if($r['status']==='reserved' && (is_admin()||($own&&can('reservations.cancel_own')))):?><div class="actions"><?php if(is_admin()):?><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="complete"><input type="hidden" name="id" value="<?=$r['id']?>"><button class="success">Solgt</button></form><?php endif;?><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="cancel"><input type="hidden" name="id" value="<?=$r['id']?>"><button class="secondary">Annullér<?=$own&&!is_admin()?' min':''?></button></form></div><?php endif;?></td></tr><?php endforeach;?></tbody></table></div>
+<?php $editResId = (int)($_GET['edit_res']??0); ?>
+<div class="table-wrap"><table><thead><tr><th>Dato</th><th>Produkt</th><th>Lokation</th><th>Antal</th><th>Kunde / reference</th><th>Oprettet af</th><th>Status</th><th></th></tr></thead><tbody><?php foreach($rows as $r):$own=is_link_user() && (int)$r['created_by']===(int)current_link_user_id(); $isEditing = ($editResId === (int)$r['id'] && is_admin() && $r['status'] === 'reserved'); ?>
+<?php if($isEditing): ?>
+<tr style="background:#f0f9ff;">
+  <td colspan="8">
+    <form method="post" style="margin:0; padding:8px 0;"><?=csrf_field()?><input type="hidden" name="action" value="update"><input type="hidden" name="id" value="<?=$r['id']?>">
+      <div style="font-weight:bold; margin-bottom:6px;">Rediger reservation #<?=$r['id']?> (<?=h($r['sku'].' – '.$r['product_name'])?> på <?=h($r['location_name'])?>)</div>
+      <div class="four">
+        <label>Antal<input type="number" min="1" name="quantity" value="<?=$r['quantity']?>" required></label>
+        <label>Kunde<input name="customer_name" value="<?=h($r['customer_name']??'')?>"></label>
+        <label>Reference<input name="reference" value="<?=h($r['reference']??'')?>"></label>
+        <label>Bemærkning<input name="note" value="<?=h($r['note']??'')?>"></label>
+      </div>
+      <div class="actions" style="margin-top:8px;">
+        <button class="button">Gem ændringer</button>
+        <a class="button secondary" href="reservations.php">Annullér redigering</a>
+      </div>
+    </form>
+  </td>
+</tr>
+<?php else: ?>
+<tr>
+  <td><?=h($r['created_at'])?></td>
+  <td><?=h($r['sku'].' – '.$r['product_name'])?></td>
+  <td><?=h($r['location_name'])?></td>
+  <td><?=$r['quantity']?></td>
+  <td><?=h($r['customer_name'])?><?php if(!empty($r['reference'])):?><br><span class="muted"><?=h($r['reference'])?></span><?php endif;?><?php if(!empty($r['note'])):?><br><span class="muted"><?=h($r['note'])?></span><?php endif;?></td>
+  <td><?=h($r['admin_name']?:$r['user_name']?:'-')?></td>
+  <td><span class="badge <?=$r['status']==='reserved'?'blue':($r['status']==='completed'?'green':'')?>"><?=h(reservation_status_label($r['status']))?></span></td>
+  <td>
+    <?php if($r['status']==='reserved' && (is_admin()||($own&&can('reservations.cancel_own')))):?>
+      <div class="actions">
+        <?php if(is_admin()):?>
+          <a class="button secondary" href="reservations.php?edit_res=<?=$r['id']?>">Rediger</a>
+          <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="complete"><input type="hidden" name="id" value="<?=$r['id']?>"><button class="success">Solgt</button></form>
+        <?php endif;?>
+        <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="cancel"><input type="hidden" name="id" value="<?=$r['id']?>"><button class="secondary">Annullér<?=$own&&!is_admin()?' min':''?></button></form>
+      </div>
+    <?php endif;?>
+  </td>
+</tr>
+<?php endif; ?>
+<?php endforeach;?></tbody></table></div>
 <?php page_footer();

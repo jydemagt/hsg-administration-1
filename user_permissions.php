@@ -4,6 +4,9 @@ require __DIR__.'/auth.php';require_module_enabled('access');require_capability(
 $id=(int)($_GET['id']??$_POST['id']??0);
 $st=$pdo->prepare('SELECT * FROM lager_users WHERE id=?');$st->execute([$id]);$user=$st->fetch();if(!$user){http_response_code(404);exit('Brugeren findes ikke.');}
 $modules=hsg_link_accessible_modules();
+if(!isset($modules['reservations'])){
+    $modules['reservations']=['id'=>'reservations','name'=>'Reservationer','href'=>'reservations.php','icon'=>'▣','description'=>'Se og opret reservationer.'];
+}
 if($_SERVER['REQUEST_METHOD']==='POST'){
     $pdo->beginTransaction();
     try{
