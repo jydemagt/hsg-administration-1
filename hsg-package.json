@@ -1,9 +1,9 @@
 {
     "name": "hsg-administration",
     "product": "HSG Administration",
-    "version": "8.0.6",
+    "version": "8.0.7",
     "package_type": "distribution",
-    "release_notes": "Udvidet administrationsrettigheder for reservationer til linkbrugere.",
+    "release_notes": "Opdelt reservationsrettigheder for linkbrugere (opret vs. rediger).",
     "min_php": "8.1.0",
     "manifest": {
         ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",
@@ -16,7 +16,7 @@
         "admin-login.php": "cee1d3761019d19608371a645730be37937a282befa0c703515260338ba401e7",
         "admin-setup.php": "323ecd555ca2f7b4e920c482736e53829c14e7ef0ef400e7421872f2b954e8d2",
         "admin.php": "e0ab785ffc6f69eea80462fd663709c43c88fe3b7b95ce4318107163aaed7dbc",
-        "app_version.php": "353adc35ac95beb24f399e68b2a07fe430392524ff4487d4d94643636599b6c3",
+        "app_version.php": "35aa44a1910eb55f1f7dfcde63ea6f736b3ae5eed3e3ec8559649eb259ab7c38",
         "assets/bottle-placeholder.svg": "bb77203924ece9b630dce344f4d700e017028398787a1bdb1612b9a70b9599f4",
         "assets/style.css": "afea0ede908c427b808cb005c7d1d4855df7336142a9ac7c846d525d4b8b03f9",
         "auth.php": "a34d291e367c49c6163dd3220624d8202c57b028bd6fa5d1db95e29cac66c556",
@@ -182,7 +182,7 @@
         "system.php": "aff882ede35a17219bc5d610de7953904e345628e869247313213c74069dd487",
         "tools/restore-standalone.php": "00ab77e3320c1e81e841c2ce3a9a671aef4c4094633a3d9dffb2f1febf8aa328",
         "update.php": "8b37131eff1f386b32f8f97820b65605bd023862ed2546cf0752b62c87c9e895",
-        "user_permissions.php": "f00a9c105fd57c397899b215792fdd6866d67e790d12bd7d6bc6ec7dadaad27a",
+        "user_permissions.php": "1b3676fbe7f2809e3b09281fec15304bad040549c261aa5c2a613c0c2cd4a976",
         "users.php": "f3571f51005b80eaa0a06c28ec984cf3a1e382bbfbccee026adacbfdb8fdf287",
         "xlsx_tools.php": "b27a362c4be18b98e19e0640a6dca060290f25a2373987d9d7c224b052027751"
     },
@@ -197,7 +197,7 @@
         "admin-login.php": "cee1d3761019d19608371a645730be37937a282befa0c703515260338ba401e7",
         "admin-setup.php": "323ecd555ca2f7b4e920c482736e53829c14e7ef0ef400e7421872f2b954e8d2",
         "admin.php": "e0ab785ffc6f69eea80462fd663709c43c88fe3b7b95ce4318107163aaed7dbc",
-        "app_version.php": "353adc35ac95beb24f399e68b2a07fe430392524ff4487d4d94643636599b6c3",
+        "app_version.php": "35aa44a1910eb55f1f7dfcde63ea6f736b3ae5eed3e3ec8559649eb259ab7c38",
         "assets/bottle-placeholder.svg": "bb77203924ece9b630dce344f4d700e017028398787a1bdb1612b9a70b9599f4",
         "assets/style.css": "afea0ede908c427b808cb005c7d1d4855df7336142a9ac7c846d525d4b8b03f9",
         "auth.php": "a34d291e367c49c6163dd3220624d8202c57b028bd6fa5d1db95e29cac66c556",
@@ -363,7 +363,7 @@
         "system.php": "aff882ede35a17219bc5d610de7953904e345628e869247313213c74069dd487",
         "tools/restore-standalone.php": "00ab77e3320c1e81e841c2ce3a9a671aef4c4094633a3d9dffb2f1febf8aa328",
         "update.php": "8b37131eff1f386b32f8f97820b65605bd023862ed2546cf0752b62c87c9e895",
-        "user_permissions.php": "f00a9c105fd57c397899b215792fdd6866d67e790d12bd7d6bc6ec7dadaad27a",
+        "user_permissions.php": "1b3676fbe7f2809e3b09281fec15304bad040549c261aa5c2a613c0c2cd4a976",
         "users.php": "f3571f51005b80eaa0a06c28ec984cf3a1e382bbfbccee026adacbfdb8fdf287",
         "xlsx_tools.php": "b27a362c4be18b98e19e0640a6dca060290f25a2373987d9d7c224b052027751"
     }
