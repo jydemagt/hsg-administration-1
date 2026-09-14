@@ -53,7 +53,7 @@ function hsg_capabilities(): array {
     if(hsg_link_can_view_module('dashboard')) $caps[]='dashboard.view';
     if(hsg_link_can_view_module('inventory')) $caps[]='inventory.view';
     if(hsg_link_can_view_module('reservations')) $caps[]='reservations.view';
-    if(hsg_link_can_operate_module('reservations')) { $caps[]='reservations.create'; $caps[]='reservations.cancel_own'; }
+    if(hsg_link_can_operate_module('reservations')) { $caps[]='reservations.create'; $caps[]='reservations.cancel_own'; $caps[]='reservations.manage_all'; }
     if(hsg_link_can_view_module('catalog')) $caps[]='catalog.view';
     return $caps;
 }
