@@ -7,7 +7,10 @@ function hsg_catalog_normalize_name(string $name): string {
     return trim(preg_replace('/\s+/',' ',$name)??$name);
 }
 
-function hsg_catalog_family(string $brand): string {
+function hsg_catalog_family(string $brand, ?string $parentBrand = null): string {
+    if($parentBrand !== null && trim($parentBrand) !== '') {
+        return trim($parentBrand);
+    }
     $n=hsg_catalog_normalize_name($brand);
     if(str_contains($n,'samhain')||str_contains($n,'dalgety')||str_contains($n,'bridget')) return "Lady of the Glen";
     if(str_contains($n,'jane street')) return "Woodrow's of Edinburgh";
@@ -49,7 +52,12 @@ function hsg_catalog_logo_url(string $family,?string $dbLogo=null): ?string {
 
 function hsg_catalog_hsg_logo_path(): ?string {$p=hsg_catalog_seed_asset_path('hsg-logo.jpg');return is_file($p)?$p:null;}
 function hsg_catalog_hsg_logo_url(): string {return hsg_catalog_seed_asset_url('hsg-logo.jpg');}
-function hsg_catalog_new_badge_path(): ?string {$p=hsg_catalog_seed_asset_path('nyhed.jpg');return is_file($p)?$p:null;}
+function hsg_catalog_new_badge_path(): ?string {
+    $p=hsg_catalog_seed_asset_path('nyhed.png');
+    if(is_file($p)) return $p;
+    $jpg=hsg_catalog_seed_asset_path('nyhed.jpg');
+    return is_file($jpg)?$jpg:null;
+}
 
 
 /**
@@ -136,22 +144,74 @@ function hsg_catalog_product_effective(array $p): array {
     $p['_catalog_seed_title']=trim((string)($seed['title']??''));return $p;
 }
 function hsg_catalog_product_title(array $p): string {
-    $p=hsg_catalog_product_effective($p);$seed=trim((string)($p['_catalog_seed_title']??''));$title=$seed!==''?$seed:(string)($p['name']??'');
-    $title=preg_replace('/\s+([,;%])/u','$1',$title)??$title;
-    $title=preg_replace('/([,(])\s+/u','$1',$title)??$title;
-    $title=preg_replace('/\s+([)])/u','$1',$title)??$title;
-    $title=preg_replace('/(?<=\d),\s+(?=\d)/u',',',$title)??$title;
+    $p=hsg_catalog_product_effective($p);
+    $distillery=trim((string)($p['distillery']??''));
+    if($distillery==='') {
+        $distillery=trim((string)($p['name']??''));
+    }
+    $vintage=$p['vintage_year']?intval($p['vintage_year']):null;
+    $age=trim((string)($p['age_text']??''));
+    $abv=$p['abv']!==null?hsg_catalog_abv($p['abv']):'';
+
+    $parts=[];
+    $distPart=$distillery;
+    if($vintage){
+        $distPart.=' ('.$vintage.')';
+    }
+    $parts[]=$distPart;
+    if($age!=='' && $age!=='N/A'){
+        if(preg_match('/\b(?:år|years?|yr|yrs)\b/i',$age)){
+            $parts[]=$age;
+        } else {
+            $parts[]=$age.' år';
+        }
+    }
+    if($abv!=='' && $abv!=='N/A'){
+        $parts[]=$abv;
+    }
+
+    $title=implode(' – ',$parts);
     return trim(preg_replace('/\s+/u',' ',$title)??$title);
+}
+
+function hsg_catalog_product_subtitle(array $p): string {
+    return trim((string)($p['call_name']??''));
 }
 
 function hsg_catalog_price_meta(string $price): array {
     if($price==='retail') return ['field'=>'retail_price','label'=>'Vejl. pris (inkl. moms)','short'=>'Vejl. pris'];
-    return ['field'=>'wholesale_price','label'=>'Engros pris (ekskl. moms)','short'=>'Engros pris'];
+    return ['field'=>'wholesale_price','label'=>'Engrospris (ekskl. moms)','short'=>'Engrospris'];
 }
 
 function hsg_catalog_abv($v): string {
     if($v===null||$v==='')return 'N/A';
     return rtrim(rtrim(number_format((float)$v,2,',',''),'0'),',').' %';
+}
+
+function hsg_catalog_get_family_desc(string $family, array $familyData, array $brandMeta): string {
+    if(!empty($brandMeta[$family]['description'])) {
+        return trim((string)$brandMeta[$family]['description']);
+    }
+    $norm = strtolower(trim($family));
+    foreach ($brandMeta as $bName => $bData) {
+        if (strtolower(trim((string)$bName)) === $norm && !empty($bData['description'])) {
+            return trim((string)$bData['description']);
+        }
+    }
+    foreach ((array)($familyData['sections'] ?? []) as $section => $products) {
+        if (!empty($brandMeta[$section]['description'])) {
+            return trim((string)$brandMeta[$section]['description']);
+        }
+        foreach ($products as $p) {
+            if (!empty($p['brand_description'])) {
+                return trim((string)$p['brand_description']);
+            }
+            if (!empty($p['parent_brand_description'])) {
+                return trim((string)$p['parent_brand_description']);
+            }
+        }
+    }
+    return '';
 }
 
 function hsg_catalog_product_rows(array $p,string $priceField,string $priceLabel): array {
