@@ -4,6 +4,9 @@ require __DIR__.'/auth.php';require_module_enabled('access');require_capability(
 $id=(int)($_GET['id']??$_POST['id']??0);
 $st=$pdo->prepare('SELECT * FROM lager_users WHERE id=?');$st->execute([$id]);$user=$st->fetch();if(!$user){http_response_code(404);exit('Brugeren findes ikke.');}
 $modules=hsg_link_accessible_modules();
+if(!isset($modules['reservations'])){
+    $modules['reservations']=['id'=>'reservations','name'=>'Reservationer','href'=>'reservations.php','icon'=>'▣','description'=>'Se og opret reservationer.'];
+}
 if($_SERVER['REQUEST_METHOD']==='POST'){
     $pdo->beginTransaction();
     try{
@@ -19,13 +22,13 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 $access=[];$st=$pdo->prepare('SELECT module_id,can_view,can_operate FROM hsg_user_module_access WHERE user_id=?');$st->execute([$id]);foreach($st->fetchAll() as $r)$access[$r['module_id']]=$r;
 page_header('Rettigheder · '.$user['name']);
 ?>
-<div class="card"><h2>Moduladgang for <?=h($user['name'])?></h2><p class="muted">Et direkte link giver aldrig administratoradgang. Her vælger du kun hvilke brugerrettede moduler linket må se. Reservation kan desuden få arbejdsadgang til at oprette og annullere egne aktive reservationer.</p>
+<div class="card"><h2>Moduladgang for <?=h($user['name'])?></h2><p class="muted">Et direkte link giver aldrig administratoradgang. Her vælger du hvilke moduler linket har adgang til, og om reservationer må administreres.</p>
 <form method="post"><?=csrf_field()?><input type="hidden" name="id" value="<?=$id?>">
-<div class="table-wrap"><table><thead><tr><th>Modul</th><th>Se</th><th>Arbejde</th><th>Bemærkning</th></tr></thead><tbody>
+<div class="table-wrap"><table><thead><tr><th>Modul</th><th>Adgang</th><th>Arbejde / Administrer</th><th>Bemærkning</th></tr></thead><tbody>
 <?php foreach($modules as $moduleId=>$m):$a=$access[$moduleId]??['can_view'=>0,'can_operate'=>0];?>
 <tr><td><strong><?=h($m['name'])?></strong><br><small class="muted"><?=h($m['description']??'')?></small></td>
-<td><label class="check"><input type="checkbox" name="view[<?=h($moduleId)?>]" value="1" <?=$a['can_view']?'checked':''?>> Adgang</label></td>
-<td><?php if($moduleId==='reservations'):?><label class="check"><input type="checkbox" name="operate[<?=h($moduleId)?>]" value="1" <?=$a['can_operate']?'checked':''?>> Må reservere</label><?php else:?><span class="muted">Read-only via link</span><?php endif;?></td>
-<td class="muted"><?=$moduleId==='reservations'?'Opret + annullér egne aktive reservationer.':'Ændringer kræver admin-login.'?></td></tr>
+<td><label class="check"><input type="checkbox" name="view[<?=h($moduleId)?>]" value="1" <?=$a['can_view']?'checked':''?>> Vis modul</label></td>
+<td><?php if($moduleId==='reservations'):?><label class="check"><input type="checkbox" name="operate[<?=h($moduleId)?>]" value="1" <?=$a['can_operate']?'checked':''?>> Må reservere og administrere</label><?php else:?><span class="muted">Læseadgang via link</span><?php endif;?></td>
+<td class="muted"><?=$moduleId==='reservations'?'Tildeler adgang til at oprette, redigere, sælge og annullere reservationer.':'Ændringer kræver admin-login.'?></td></tr>
 <?php endforeach;?></tbody></table></div><button>Gem rettigheder</button> <a class="button secondary" href="users.php">Tilbage</a></form></div>
 <?php page_footer();
