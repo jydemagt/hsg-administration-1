@@ -16,13 +16,17 @@ final class SimplePdf {
   if($info[2]===IMAGETYPE_PNG && function_exists('imagecreatefrompng') && function_exists('imagejpeg')){
    $cacheDir=__DIR__.'/storage/tmp/pdf-cache';
    if(!is_dir($cacheDir))@mkdir($cacheDir,0775,true);
-   $cachedJpeg=$cacheDir.'/png-'.md5($path.(string)@filemtime($path)).'.jpg';
+   $cachedJpeg=$cacheDir.'/png-v2-'.md5($path.(string)@filemtime($path)).'.jpg';
    if(!is_file($cachedJpeg)){
     $src=@imagecreatefrompng($path);
     if($src){
      $w=imagesx($src);$h=imagesy($src);
-     $bg=imagecreatetruecolor($w,$h);$white=imagecolorallocate($bg,255,255,255);imagefill($bg,0,0,$white);
-     imagecopyresampled($bg,$src,0,0,0,0,$w,$h,$w,$h);imagejpeg($bg,$cachedJpeg,95);
+     $bg=imagecreatetruecolor($w,$h);
+     // Sample corner colors or use top-left pixel to blend transparent PNGs nicely onto white
+     $white=imagecolorallocate($bg,255,255,255);imagefill($bg,0,0,$white);
+     imagealphablending($bg, true);
+     imagecopyresampled($bg,$src,0,0,0,0,$w,$h,$w,$h);
+     imagejpeg($bg,$cachedJpeg,95);
      imagedestroy($bg);imagedestroy($src);
     }
    }
