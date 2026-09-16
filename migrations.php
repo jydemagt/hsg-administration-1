@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__.'/core/settings.php';
 require_once __DIR__.'/core/product_enrichment.php';
 require_once __DIR__.'/core/catalog_image_seed.php';
+require_once __DIR__.'/core/catalog_layout.php';
 
 function db_table_exists(PDO $pdo, string $table): bool {
     $st=$pdo->prepare('SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?');
@@ -35,9 +36,14 @@ function ensure_schema_updates(PDO $pdo): void {
 
     if(db_table_exists($pdo,'lager_users') && !db_column_exists($pdo,'lager_users','token_cipher')) $pdo->exec('ALTER TABLE lager_users ADD token_cipher TEXT NULL AFTER token_last4');
 
-    if(db_table_exists($pdo,'lager_brands') && !db_column_exists($pdo,'lager_brands','image_search_url')) $pdo->exec('ALTER TABLE lager_brands ADD image_search_url VARCHAR(500) NULL AFTER website_url');
+    if(db_table_exists($pdo,'lager_brands')){
+        if(!db_column_exists($pdo,'lager_brands','parent_id')) $pdo->exec('ALTER TABLE lager_brands ADD parent_id INT UNSIGNED NULL AFTER id');
+        if(!db_column_exists($pdo,'lager_brands','image_search_url')) $pdo->exec('ALTER TABLE lager_brands ADD image_search_url VARCHAR(500) NULL AFTER website_url');
+        if(!db_column_exists($pdo,'lager_brands','show_in_catalog')) $pdo->exec('ALTER TABLE lager_brands ADD show_in_catalog TINYINT(1) NOT NULL DEFAULT 1 AFTER logo_path');
+    }
 
     $productChanges=[
+      'call_name'=>'ALTER TABLE lager_products ADD call_name VARCHAR(180) NULL AFTER name',
       'brand_id'=>'ALTER TABLE lager_products ADD brand_id INT UNSIGNED NULL AFTER name',
       'category'=>'ALTER TABLE lager_products ADD category VARCHAR(140) NULL AFTER brand_id',
       'distillery'=>'ALTER TABLE lager_products ADD distillery VARCHAR(160) NULL AFTER category',
@@ -81,6 +87,9 @@ function ensure_schema_updates(PDO $pdo): void {
     if(!db_column_exists($pdo,'lager_products','quality_approved_by_admin'))$pdo->exec('ALTER TABLE lager_products ADD quality_approved_by_admin INT UNSIGNED NULL AFTER quality_approved_at');
     if(!db_table_exists($pdo,'hsg_product_field_exemptions')){
         $pdo->exec("CREATE TABLE hsg_product_field_exemptions (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,product_id INT UNSIGNED NOT NULL,field_key VARCHAR(80) NOT NULL,reason VARCHAR(255) NULL,created_by_admin INT UNSIGNED NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY uniq_product_quality_exemption(product_id,field_key),INDEX idx_quality_exemption_product(product_id),CONSTRAINT fk_quality_exemption_product FOREIGN KEY(product_id) REFERENCES lager_products(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    }
+        if(!db_table_exists($pdo,'hsg_supplier_sku_aliases')){
+        $pdo->exec("CREATE TABLE hsg_supplier_sku_aliases (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,supplier_sku VARCHAR(120) NOT NULL,supplier_name_norm VARCHAR(220) NULL,product_id INT UNSIGNED NOT NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY uniq_supplier_sku_product(supplier_sku,product_id),INDEX idx_supplier_sku_alias(supplier_sku),CONSTRAINT fk_supplier_alias_product FOREIGN KEY(product_id) REFERENCES lager_products(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     }
     if(!db_table_exists($pdo,'hsg_supplier_import_runs')){
         $pdo->exec("CREATE TABLE hsg_supplier_import_runs (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,filename VARCHAR(255) NOT NULL,sheet_name VARCHAR(180) NULL,rows_detected INT UNSIGNED NOT NULL DEFAULT 0,rows_updated INT UNSIGNED NOT NULL DEFAULT 0,created_by_admin INT UNSIGNED NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,INDEX idx_supplier_import_created(created_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
@@ -157,20 +166,47 @@ function ensure_schema_updates(PDO $pdo): void {
     if(!db_column_exists($pdo,'lager_reservations','customer_name'))$pdo->exec('ALTER TABLE lager_reservations ADD customer_name VARCHAR(180) NULL AFTER quantity');
     if(!db_column_exists($pdo,'lager_reservations','created_by_admin'))$pdo->exec('ALTER TABLE lager_reservations ADD created_by_admin INT UNSIGNED NULL AFTER created_by');
     if(!db_column_exists($pdo,'lager_stock_movements','created_by_admin'))$pdo->exec('ALTER TABLE lager_stock_movements ADD created_by_admin INT UNSIGNED NULL AFTER created_by');
-    if(db_table_exists($pdo,'lager_admins') && (int)$pdo->query('SELECT COUNT(*) FROM lager_admins')->fetchColumn()>0)$pdo->exec("UPDATE lager_users SET role='user' WHERE role='admin'");
+    if(db_table_exists($pdo,'lager_admins')){
+        if(!db_column_exists($pdo,'lager_admins','is_superadmin')) $pdo->exec('ALTER TABLE lager_admins ADD is_superadmin TINYINT(1) NOT NULL DEFAULT 1 AFTER password_hash');
+        $superCount = (int)$pdo->query('SELECT COUNT(*) FROM lager_admins WHERE is_superadmin=1')->fetchColumn();
+        if($superCount === 0){
+            $pdo->exec('UPDATE lager_admins SET is_superadmin=1');
+        }
+        if((int)$pdo->query('SELECT COUNT(*) FROM lager_admins')->fetchColumn()>0) $pdo->exec("UPDATE lager_users SET role='user' WHERE role='admin'");
+    }
+    if(!db_table_exists($pdo,'hsg_admin_module_access')){
+        $pdo->exec("CREATE TABLE hsg_admin_module_access (
+          admin_id INT UNSIGNED NOT NULL,
+          module_id VARCHAR(100) NOT NULL,
+          can_view TINYINT(1) NOT NULL DEFAULT 1,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY(admin_id,module_id),
+          CONSTRAINT fk_hsg_admin_module_admin FOREIGN KEY(admin_id) REFERENCES lager_admins(id) ON DELETE CASCADE,
+          INDEX idx_hsg_admin_module(module_id,can_view)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    }
     if(db_table_exists($pdo,'lager_login_attempts'))$pdo->exec("DELETE FROM lager_login_attempts WHERE attempted_at < (NOW() - INTERVAL 30 DAY)");
+    $pdo->exec("UPDATE lager_products p SET status='inactive' WHERE p.status='active' AND COALESCE((SELECT SUM(s.quantity) FROM lager_stock s WHERE s.product_id=p.id),0) - COALESCE((SELECT SUM(r.quantity) FROM lager_reservations r WHERE r.product_id=p.id AND r.status='reserved'),0) <= 0");
     $old=$pdo->query("SELECT id FROM lager_locations WHERE name='Lager Gert' LIMIT 1")->fetchColumn();$new=$pdo->query("SELECT id FROM lager_locations WHERE name='Gert Lager' LIMIT 1")->fetchColumn();if($old && !$new)$pdo->prepare('UPDATE lager_locations SET name=? WHERE id=?')->execute(['Gert Lager',(int)$old]);
     $pdo->exec("INSERT IGNORE INTO lager_locations(name,description,active,sort_order) VALUES ('Hovedlager','Primært lager',1,10),('Gert Lager','Gert lager',1,20)");
     $brandSeeds=[
-      ["Woodrow's of Edinburgh",'Woodrow’s of Edinburgh er en uafhængig aftapper og fadhandler. Når de modtager fade, udvælger de de særlige fade, som er for gode til at sende videre, og aftapper dem blandt andet under Warehouse Reserve.',10],
-      ['Fragrant Drops','Fragrant Drops er en lille uafhængig aftapper drevet af George og Rachel med fokus på unikke aftapninger og et særpræget flaskedesign inspireret af 1920’erne.',20],
-      ['Edinburgh Whisky','Edinburgh Whisky laver en serie af single malts med fokus på god kvalitet til fornuftige priser og et markant, mørkt flaskedesign.',30],
-      ['Lady of the Glen','Lady of the Glen er en uafhængig aftapper med fokus på enkeltfade, høj styrke og begrænsede aftapninger. Sortimentet omfatter også serier som St Bridget’s Kirk og Dalgety Bay.',40],
-      ['Samhain Series','Samhain Series er en særserie af begrænsede aftapninger.',45],['Dalgety Bay','Dalgety Bay er en serie af whisky med fokus på klassiske destillerikarakterer og fadmodning.',50],['St. Bridget Kirk','St. Bridget Kirk er en serie med whiskyblends og særlige aftapninger.',55],
-      ['Uncharted Whisky','Uncharted Whisky drives af Jack Breslin og Dana Devos fra Fintry nær Glasgow. De udvælger kvalitetsfade og aftapper ofte ved høj styrke med navne inspireret af musik.',60],
-      ['Nyborg Destilleri','Nyborg Destilleri er et dansk økologisk destilleri i Nyborg. De producerer blandt andet whisky under navnet Isle of Fionia samt gin, rom, bitter, kaffelikør og akvavit.',70]
+      ["Woodrow's of Edinburgh",'Woodrow’s of Edinburgh er en uafhængig aftapper og fadhandler. Når de modtager fade, udvælger de de særlige fade, som er for gode til at sende videre, og aftapper dem blandt andet under Warehouse Reserve.',10,null],
+      ['Fragrant Drops','Fragrant Drops er en lille uafhængig aftapper drevet af George og Rachel med fokus på unikke aftapninger og et særpræget flaskedesign inspireret af 1920’erne.',20,null],
+      ['Edinburgh Whisky','Edinburgh Whisky laver en serie af single malts med fokus på god kvalitet til fornuftige priser og et markant, mørkt flaskedesign.',30,null],
+      ['Lady of the Glen','Lady of the Glen er en uafhængig aftapper med fokus på enkeltfade, høj styrke og begrænsede aftapninger. Sortimentet omfatter også serier som St Bridget’s Kirk og Dalgety Bay.',40,null],
+      ['Samhain Series',null,45,'Lady of the Glen'],['Dalgety Bay',null,50,'Lady of the Glen'],['St. Bridget Kirk',null,55,'Lady of the Glen'],
+      ['Uncharted Whisky','Uncharted Whisky drives af Jack Breslin og Dana Devos fra Fintry nær Glasgow. De udvælger kvalitetsfade og aftapper ofte ved høj styrke med navne inspireret af musik.',60,null],
+      ['Nyborg Destilleri','Nyborg Destilleri er et dansk økologisk destilleri i Nyborg. De producerer blandt andet whisky under navnet Isle of Fionia samt gin, rom, bitter, kaffelikør og akvavit.',70,null]
     ];
-    foreach($brandSeeds as $b){$pdo->prepare('INSERT IGNORE INTO lager_brands(name,description,active,sort_order) VALUES(?,?,1,?)')->execute($b);$pdo->prepare("UPDATE lager_brands SET description=IF(description IS NULL OR description='',?,description),sort_order=? WHERE name=?")->execute([$b[1],$b[2],$b[0]]);}
+    foreach($brandSeeds as $b){
+        $parentName=$b[3]??null;
+        $parentId=null;
+        if($parentName){
+            $stP=$pdo->prepare('SELECT id FROM lager_brands WHERE name=?');$stP->execute([$parentName]);$parentId=(int)($stP->fetchColumn()?:0)?:null;
+        }
+        $pdo->prepare('INSERT IGNORE INTO lager_brands(name,description,active,sort_order,parent_id) VALUES(?,?,1,?,?)')->execute([$b[0],$b[1],$b[2],$parentId]);
+        $pdo->prepare("UPDATE lager_brands SET sort_order=?,parent_id=?,description=COALESCE(NULLIF(description,''),?) WHERE name=?")->execute([$b[2],$parentId,$b[1],$b[0]]);
+    }
     $pdo->exec("UPDATE lager_products p JOIN lager_brands b ON b.name='Woodrow''s of Edinburgh' SET p.brand_id=b.id WHERE p.brand_id IS NULL AND p.sku LIKE '17-%'");
     $pdo->exec("UPDATE lager_products p JOIN lager_brands b ON b.name='Fragrant Drops' SET p.brand_id=b.id WHERE p.brand_id IS NULL AND p.sku LIKE '18-%'");
     $pdo->exec("UPDATE lager_products p JOIN lager_brands b ON b.name='Edinburgh Whisky' SET p.brand_id=b.id WHERE p.brand_id IS NULL AND p.sku LIKE '19-%'");
@@ -224,5 +260,18 @@ function ensure_schema_updates(PDO $pdo): void {
         }
         if((string)setting_get($pdo,'backup_cron_key','')==='') setting_set($pdo,'backup_cron_key',bin2hex(random_bytes(24)));
     }
+
+    // Batch update all product names to standardized catalog title format: [Destilleri] ([Årgang]) – [Alder] år – [Alc. %]
+    if (function_exists('hsg_catalog_product_title')) {
+        $allProds = $pdo->query('SELECT id, name, sku, distillery, vintage_year, age_text, abv FROM lager_products')->fetchAll(PDO::FETCH_ASSOC);
+        $stNameUpdate = $pdo->prepare('UPDATE lager_products SET name = ? WHERE id = ?');
+        foreach ($allProds as $p) {
+            $title = hsg_catalog_product_title($p);
+            if ($title !== '' && $title !== $p['name']) {
+                $stNameUpdate->execute([$title, (int)$p['id']]);
+            }
+        }
+    }
+
     meta_set($pdo,'schema_version',(string)(require __DIR__.'/app_version.php'));
 }
