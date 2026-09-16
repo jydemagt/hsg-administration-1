@@ -110,8 +110,41 @@ function add_product_slot(SimplePdf $pdf,array &$ops,array &$images,array $p,int
     $path=hsg_catalog_image_path((string)($p['image_path']??''));
     $imgType=@getimagesize($path)[2]??0;
     if(($p['image_approval_status']??'')==='approved'&&$path&&is_file($path)&&in_array($imgType,[IMAGETYPE_JPEG,IMAGETYPE_PNG],true)){
-        $name='P'.(int)$p['id'].'_'.$slot;$images[$name]=$path;$op=pdf_image_fit($name,$path,$imgX,$imgY,$imgW,$imgH);if($op)$ops[]=$op;
-        if(!empty($p['is_new'])&&$newBadge){$b='NB'.(int)$p['id'].'_'.$slot;$images[$b]=$newBadge;$bo=pdf_image_fit($b,$newBadge,$imgX-24,$imgY+$imgH-95,116,116);if($bo)$ops[]=$bo;}
+        $finalPath = $path;
+        if(!empty($p['is_new']) && $newBadge && is_file($newBadge)){
+            $cacheDir = __DIR__.'/storage/tmp/pdf-cache';
+            if(!is_dir($cacheDir)) @mkdir($cacheDir,0775,true);
+            $compositeKey = 'comp-p'.(int)$p['id'].'-'.md5($path.'|'.(string)@filemtime($path).'|'.(string)@filemtime($newBadge)).'.jpg';
+            $compositePath = $cacheDir.'/'.$compositeKey;
+            if(is_file($compositePath)){
+                $finalPath = $compositePath;
+            } else {
+                $srcBytes = @file_get_contents($path);
+                $bottleImg = $srcBytes ? @imagecreatefromstring($srcBytes) : null;
+                $badgeImg = @imagecreatefrompng($newBadge);
+                if($bottleImg && $badgeImg){
+                    $bw = imagesx($bottleImg); $bh = imagesy($bottleImg);
+                    $canvas = imagecreatetruecolor($bw, $bh);
+                    $white = imagecolorallocate($canvas, 255, 255, 255);
+                    imagefill($canvas, 0, 0, $white);
+                    imagecopy($canvas, $bottleImg, 0, 0, 0, 0, $bw, $bh);
+                    imagealphablending($canvas, true);
+
+                    // Render badge overlay in top-left quadrant of bottle crop
+                    $badgeSize = (int)round(min($bw, $bh) * 0.40);
+                    $badgeSize = max(100, min(500, $badgeSize));
+                    $badgeX = 0;
+                    $badgeY = 0;
+                    imagecopyresampled($canvas, $badgeImg, $badgeX, $badgeY, 0, 0, $badgeSize, $badgeSize, imagesx($badgeImg), imagesy($badgeImg));
+                    imagejpeg($canvas, $compositePath, 95);
+                    imagedestroy($canvas); imagedestroy($bottleImg); imagedestroy($badgeImg);
+                    if(is_file($compositePath)){
+                        $finalPath = $compositePath;
+                    }
+                }
+            }
+        }
+        $name='P'.(int)$p['id'].'_'.$slot;$images[$name]=$finalPath;$op=pdf_image_fit($name,$finalPath,$imgX,$imgY,$imgW,$imgH);if($op)$ops[]=$op;
     }else{
         $ops[]=$pdf->setRgb(.95,.95,.95,true);$ops[]=$pdf->rect($imgX+30,$imgY+40,$imgW-60,$imgH-80,true);$ops[]=$pdf->setRgb(.45,.45,.45,true);$ops[]=$pdf->textFont($imgX+52,$imgY+($imgH/2),10,'Intet godkendt billede','helvetica');$ops[]=$pdf->setRgb(0,0,0,true);
     }
