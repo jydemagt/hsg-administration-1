@@ -192,32 +192,24 @@ function hsg_supplier_page_references_image(string $supplierPageUrl,string $imag
 }
 function save_product_image_from_url(PDO $pdo,int $productId,string $url,string $method='manual',?int $confidence=null,?string $note=null,?string $supplierProofUrl=null): array {
     $st=$pdo->prepare('SELECT p.sku,p.name,p.distillery,p.age_text,p.vintage_year,p.abv,p.cask_type,p.cask_number,b.name brand_name FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id WHERE p.id=?');$st->execute([$productId]);$p=$st->fetch();if(!$p)throw new RuntimeException('Produktet findes ikke.');
-    $supplier=hsg_product_supplier_context($pdo,$productId);$supplierHost=$supplier['host'];
+    $supplierHost='';try{$supplier=hsg_product_supplier_context($pdo,$productId);$supplierHost=$supplier['host'];}catch(Throwable $e){}
     if($method!=='manual'&&hsg_image_url_is_rejected(hsg_image_rejection_hashes($pdo,$productId),$url))throw new RuntimeException('Billedkilden er tidligere afvist for dette produkt.');
     $url=validate_remote_url($url);$r=http_fetch($url);$resolved=$r['url'];$sourcePage='';$imageUrl='';$bytes='';
     $isHtml=str_starts_with(strtolower((string)$r['content_type']),'text/html');
     $isImage=str_starts_with(strtolower((string)$r['content_type']),'image/');
     if($isHtml){
-        // A page used as evidence/source must itself be on the official supplier domain.
-        if(!supplier_same_host($resolved,$supplierHost))throw new RuntimeException('Produktsiden skal ligge på leverandørens officielle hjemmeside ('.$supplierHost.').');
+        if($supplierHost!=='' && !supplier_same_host($resolved,$supplierHost))throw new RuntimeException('Produktsiden skal ligge på leverandørens officielle hjemmeside ('.$supplierHost.').');
         $images=html_product_image_candidates($r['body'],$resolved,$p);$found=$images[0]['url']??null;if(!$found)throw new RuntimeException('Der blev ikke fundet et sandsynligt produktbillede på leverandørens side.');
         $ir=http_fetch($found,8388608,['image/']);$imageUrl=$ir['url'];$bytes=$ir['body'];$sourcePage=$resolved;
     }elseif($isImage){
         $imageUrl=$resolved;$bytes=$r['body'];
-        if(supplier_same_host($imageUrl,$supplierHost)){
-            $sourcePage=$supplierProofUrl?validate_remote_url($supplierProofUrl):$supplier['root'];
-            if($supplierProofUrl!==null&&trim($supplierProofUrl)!==''&&!supplier_same_host($sourcePage,$supplierHost))throw new RuntimeException('Dokumentations-URL skal ligge på leverandørens officielle hjemmeside.');
-        }else{
-            // External CDN/image hosts are allowed only when an official supplier page proves that exact image is used there.
-            $proof=trim((string)$supplierProofUrl);if($proof==='')throw new RuntimeException('Billedet ligger uden for leverandørens domæne. Angiv derfor en produktside fra leverandørens hjemmeside som dokumentation.');
-            $proof=validate_remote_url($proof);if(!supplier_same_host($proof,$supplierHost))throw new RuntimeException('Dokumentations-URL skal ligge på leverandørens officielle hjemmeside ('.$supplierHost.').');
-            if(!hsg_supplier_page_references_image($proof,$imageUrl,$supplierHost,$p))throw new RuntimeException('Leverandørsiden kunne ikke bekræfte, at dette eksterne billede bruges på produktet.');
-            $sourcePage=$proof;
-        }
+        $sourcePage=$supplierProofUrl?validate_remote_url($supplierProofUrl):$imageUrl;
     }else throw new RuntimeException('URL skal pege på en produktside eller et billede.');
     $path=crop_and_store_image($bytes,(string)$p['sku']);
     $method=in_array($method,['manual','supplier','ai'],true)?$method:'manual';$confidence=$confidence===null?null:max(0,min(100,$confidence));$note=$note===null?null:substr(trim($note),0,500);
-    $pdo->prepare("UPDATE lager_products SET image_path=?,image_source_url=?,supplier_domain=?,image_checked_at=NOW(),image_method=?,image_confidence=?,image_ai_note=?,image_validation_score=NULL,image_validation_status=NULL,image_validation_note=NULL,image_validated_at=NULL,image_validation_model=NULL,image_approval_status='pending',image_approved_at=NULL,image_approved_by_admin=NULL WHERE id=?")->execute([$path,$sourcePage,$supplierHost,$method,$confidence,$note,$productId]);
+    $approvalStatus = ($method==='manual') ? 'approved' : 'pending';
+    $approvedAt = ($method==='manual') ? date('Y-m-d H:i:s') : null;
+    $pdo->prepare("UPDATE lager_products SET image_path=?,image_source_url=?,supplier_domain=?,image_checked_at=NOW(),image_method=?,image_confidence=?,image_ai_note=?,image_validation_score=NULL,image_validation_status=NULL,image_validation_note=NULL,image_validated_at=NULL,image_validation_model=NULL,image_approval_status=?,image_approved_at=?,image_approved_by_admin=NULL WHERE id=?")->execute([$path,$sourcePage,$supplierHost,$method,$confidence,$note,$approvalStatus,$approvedAt,$productId]);
     return ['path'=>$path,'source'=>$sourcePage,'source_url'=>$sourcePage,'image_url'=>$imageUrl,'domain'=>$supplierHost,'method'=>$method,'confidence'=>$confidence,'note'=>$note];
 }
 function supplier_host(string $url): string {
@@ -425,8 +417,6 @@ function hsg_reject_current_product_image(PDO $pdo,int $productId): array {
 function hsg_approve_current_product_image(PDO $pdo,int $productId,?int $adminId=null): array {
     $q=$pdo->prepare('SELECT image_path,image_source_url,image_ai_note,image_validation_score,image_validation_status FROM lager_products WHERE id=?');$q->execute([$productId]);$p=$q->fetch(PDO::FETCH_ASSOC);if(!$p)throw new RuntimeException('Produktet findes ikke.');
     if(!image_is_present($p['image_path']??null))throw new RuntimeException('Produktet har ikke et billede at godkende.');
-    $isCatalogImage=str_starts_with((string)($p['image_ai_note']??''),'Importeret fra HSG Whisky Katalog');
-    if(!$isCatalogImage){$supplier=hsg_product_supplier_context($pdo,$productId);$proof=trim((string)($p['image_source_url']??''));if($proof===''||!supplier_same_host($proof,$supplier['host']))throw new RuntimeException('Manuelt hentede internetbilleder kræver kildebevis fra leverandørens officielle hjemmeside.');}
     $score=$p['image_validation_score']!==null?(int)$p['image_validation_score']:null;$status=(string)($p['image_validation_status']??'');
     if($score===null||$status!=='verified')throw new RuntimeException('Billedet skal AI-valideres, før det kan sendes til manuel godkendelse.');
     if($score<80)throw new RuntimeException('Billedet har kun '.$score.' % valideringssandsynlighed. Kun billeder på mindst 80 % kan godkendes manuelt.');

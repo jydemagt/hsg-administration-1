@@ -13,12 +13,15 @@ $recent=$pdo->query("SELECT m.*,p.name product_name,l.name location_name FROM la
 $lastBackup=null;if(is_admin()&&db_table_exists($pdo,'hsg_backup_runs'))$lastBackup=$pdo->query("SELECT * FROM hsg_backup_runs ORDER BY created_at DESC,id DESC LIMIT 1")->fetch();
 $quality=is_admin()?hsg_quality_summary($pdo):null;
 $available=max(0,(int)$stats['physical']-(int)$stats['reserved_qty']);
+$reservedQty=(int)$stats['reserved_qty'];
+$totalPhysicalPlusReserved=$available + $reservedQty;
 page_header('Overblik');
 ?>
 <div class="grid overview-primary">
   <a class="card metric quality-card-link" href="products.php"><strong><?=intval($stats['products'])?></strong><span>Aktive produkter</span></a>
   <a class="card metric quality-card-link" href="status.php"><strong><?=$available?></strong><span>Disponibelt lager</span></a>
-  <a class="card metric quality-card-link" href="reservations.php"><strong><?=intval($stats['active_reservations'])?></strong><span>Aktive reservationer</span></a>
+  <a class="card metric quality-card-link" href="reservations.php"><strong><?=$reservedQty?></strong><span>Reserverede flasker</span></a>
+  <a class="card metric quality-card-link" href="status.php"><strong><?=$totalPhysicalPlusReserved?></strong><span>Samlet (Disponibelt + Reserveret)</span></a>
   <?php if(is_admin()&&$quality):?><a class="card metric quality-card-link" href="quality.php?filter=needs_action"><strong><?=$quality['needs_action']?></strong><span>Kræver handling</span></a><?php endif;?>
   <?php if(is_admin()):?><a class="card metric quality-card-link" href="users.php?status=active"><strong><?=intval($stats['active_links'])?></strong><span>Aktive links</span></a><?php endif;?>
 </div>
