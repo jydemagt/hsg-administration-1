@@ -1,9 +1,9 @@
 {
     "name": "hsg-administration",
     "product": "HSG Administration",
-    "version": "9.0.1",
+    "version": "9.0.2",
     "package_type": "distribution",
-    "release_notes": "Genereret hsg-package.json med pr\u00e6cise SHA-256 hashes.",
+    "release_notes": "Komplet opdateringspakke v9.0.2 med synkroniseret manifest og GitHub opdateringsmotor.",
     "min_php": "8.1.0",
     "manifest": {
         ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",
