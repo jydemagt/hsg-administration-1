@@ -1,9 +1,9 @@
 {
     "name": "hsg-administration",
     "product": "HSG Administration",
-    "version": "8.0.9",
+    "version": "9.0.0",
     "package_type": "distribution",
-    "release_notes": "Nyhedsm\u00e6rke i PDF-katalog flettes direkte p\u00e5 produktbillede med fuld gennemsigtighed.",
+    "release_notes": "Komplet opdatering v9.0.0 med 100% synkroniserede GitHub-hashes og udvidet opdateringsmotor.",
     "min_php": "8.1.0",
     "manifest": {
         ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",
