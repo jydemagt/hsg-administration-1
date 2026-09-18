@@ -1,9 +1,9 @@
 {
     "name": "hsg-administration",
     "product": "HSG Administration",
-    "version": "10.2.0",
+    "version": "10.2.1",
     "package_type": "distribution",
-    "release_notes": "Lagerstyring opdateret med status-filter (Aktive/Inaktive/Alle), direkte lagerjustering af inaktive varer og automatisk genaktivering.",
+    "release_notes": "Renset udelukkelse af storage/tmp, uploads/ og runtime cache fra pakkemanifestet og udrulning v10.2.1.",
     "min_php": "8.1.0",
     "manifest": {
         ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",
