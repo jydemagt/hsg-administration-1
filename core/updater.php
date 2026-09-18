@@ -386,6 +386,7 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
     // Check GitHub Releases API for published stable release tags with official ZIP assets
     $releasesUrl = "https://api.github.com/repos/{$repo}/releases";
     try {
+        $releaseUrl = "https://api.github.com/repos/{$repo}/releases/latest";
         $httpStatus = 0;
         $json = hsg_github_http_get($releasesUrl, $httpStatus);
         if ($httpStatus === 200 && trim($json) !== '') {
@@ -445,8 +446,8 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
 
     return [
         'tag' => '',
-        'version' => app_version(),
-        'current_version' => app_version(),
+        'version' => $currentVersion,
+        'current_version' => $currentVersion,
         'has_update' => false,
         'name' => 'Ingen GitHub Releases endnu',
         'notes' => 'Der er endnu ikke oprettet nogen officielle releases på GitHub-repositoryet.',
@@ -455,7 +456,7 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
     ];
 }
 
-function hsg_github_download_and_stage(string $downloadUrl, string $version): array {
+function hsg_github_download_and_stage(string $downloadUrl, string $version, bool $allowSameVersion = true): array {
     if(!filter_var($downloadUrl, FILTER_VALIDATE_URL)) {
         throw new RuntimeException('Ugyldig opdaterings-URL fra GitHub.');
     }
