@@ -4,12 +4,6 @@ on:
   push:
     tags:
       - 'v*.*.*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version tag to build (e.g. 10.2.2)'
-        required: true
-        default: '10.2.2'
 
 jobs:
   build-and-release:
@@ -42,11 +36,7 @@ jobs:
       - name: Determine Version
         id: get_version
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            VERSION="${GITHUB_REF_NAME#v}"
-          fi
+          VERSION="${GITHUB_REF_NAME#v}"
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
           echo "Building release for version ${VERSION}"
 
@@ -66,3 +56,31 @@ jobs:
             --notes "Officiel release-pakke for HSG Administration ${TAG_NAME}." \
             --clobber || \
           gh release upload "${TAG_NAME}" "${ZIP_NAME}" --clobber
+
+      - name: Download and Validate Published Release Asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="v${{ steps.get_version.outputs.VERSION }}"
+          ZIP_NAME="HSG-Administration-${TAG_NAME}.zip"
+          DOWNLOAD_DIR="downloaded-release-test"
+          mkdir -p "${DOWNLOAD_DIR}"
+
+          echo "Downloading published asset ${ZIP_NAME} from release ${TAG_NAME} for post-upload QA..."
+          gh release download "${TAG_NAME}" -p "${ZIP_NAME}" -D "${DOWNLOAD_DIR}" --clobber
+
+          DOWNLOADED_ZIP="${DOWNLOAD_DIR}/${ZIP_NAME}"
+          if [ ! -f "${DOWNLOADED_ZIP}" ]; then
+            echo "ERROR: Downloaded release asset ${DOWNLOADED_ZIP} not found!"
+            exit 1
+          fi
+
+          echo "Running strict package validation against downloaded asset..."
+          php -r '
+            require_once "functions.php";
+            require_once "core/updater.php";
+            $zip = $argv[1];
+            echo "Validating downloaded ZIP: " . $zip . "\n";
+            $info = hsg_update_validate_package($zip, true);
+            echo "QA PASS: Downloaded GitHub Release asset passed validation with " . $info["file_count"] . " files.\n";
+          ' "${DOWNLOADED_ZIP}"

@@ -383,7 +383,7 @@ function hsg_github_http_get(string $url, int &$status = 0): string {
 }
 
 function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administration-1'): array {
-    // Check GitHub Releases API for published release tags and official asset ZIPs
+    // Check GitHub Releases API for published stable release tags with official ZIP assets
     $releasesUrl = "https://api.github.com/repos/{$repo}/releases";
     try {
         $httpStatus = 0;
@@ -391,12 +391,20 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
         if ($httpStatus === 200 && trim($json) !== '') {
             $releases = json_decode($json, true, 32, JSON_THROW_ON_ERROR);
             if (is_array($releases)) {
+                $bestRelease = null;
+                $highestVersion = '0.0.0';
+
                 foreach ($releases as $relData) {
-                    if (!empty($relData['draft'])) continue;
+                    // Ignore drafts and prereleases
+                    if (!empty($relData['draft']) || !empty($relData['prerelease'])) continue;
+
                     $tag = trim((string)($relData['tag_name'] ?? ''));
                     $version = ltrim($tag, 'v');
-                    if (!preg_match('/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/', $version)) continue;
 
+                    // Strict semver format for stable production releases
+                    if (!preg_match('/^\d+\.\d+\.\d+$/', $version)) continue;
+
+                    // Search for official HSG ZIP asset attached to this release
                     $downloadUrl = '';
                     if (!empty($relData['assets']) && is_array($relData['assets'])) {
                         foreach ($relData['assets'] as $asset) {
@@ -408,20 +416,26 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
                         }
                     }
 
-                    if ($downloadUrl === '') {
-                        throw new RuntimeException("Officiel release-pakke (HSG-Administration-{$tag}.zip) mangler på GitHub release {$tag}.");
-                    }
+                    // Skip releases missing the official ZIP asset
+                    if ($downloadUrl === '') continue;
 
-                    return [
-                        'tag' => $tag,
-                        'version' => $version,
-                        'current_version' => app_version(),
-                        'has_update' => version_compare($version, app_version(), '>'),
-                        'name' => (string)($relData['name'] ?? $tag),
-                        'notes' => (string)($relData['body'] ?? ''),
-                        'download_url' => $downloadUrl,
-                        'published_at' => (string)($relData['published_at'] ?? ''),
-                    ];
+                    if ($bestRelease === null || version_compare($version, $highestVersion, '>')) {
+                        $highestVersion = $version;
+                        $bestRelease = [
+                            'tag' => $tag,
+                            'version' => $version,
+                            'current_version' => app_version(),
+                            'has_update' => version_compare($version, app_version(), '>'),
+                            'name' => (string)($relData['name'] ?? $tag),
+                            'notes' => (string)($relData['body'] ?? ''),
+                            'download_url' => $downloadUrl,
+                            'published_at' => (string)($relData['published_at'] ?? ''),
+                        ];
+                    }
+                }
+
+                if ($bestRelease !== null) {
+                    return $bestRelease;
                 }
             }
         }
