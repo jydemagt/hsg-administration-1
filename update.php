@@ -26,9 +26,9 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         } elseif($action==='stage_github'){
             $release=hsg_github_check_latest_release();
             $_SESSION['hsg_github_release']=$release;
-            $url=$release['download_url']!==''?$release['download_url']:(string)($_POST['download_url']??'');
-            $ver=$release['version']!==''?$release['version']:(string)($_POST['version']??'');
-            if($url==='' || $ver==='') throw new RuntimeException('Mangler oplysninger om GitHub-opdatering.');
+            $url=(string)($release['download_url']??'');
+            $ver=(string)($release['version']??'');
+            if($url==='' || $ver==='') throw new RuntimeException('Der blev ikke fundet en gyldig officiel release-pakke med ZIP asset på GitHub.');
             $old=hsg_staged_update_from_session(); if($old) hsg_update_cleanup_staged((string)$old['path']);
             $info=hsg_github_download_and_stage($url, $ver, true);
             $_SESSION['hsg_staged_update']=[
@@ -65,10 +65,10 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 }
 
 $staged=hsg_staged_update_from_session();
-if(!isset($_SESSION['hsg_github_release'])){
-    try {
-        $_SESSION['hsg_github_release'] = hsg_github_check_latest_release();
-    } catch(Throwable $e) {}
+try {
+    $_SESSION['hsg_github_release'] = hsg_github_check_latest_release();
+} catch(Throwable $e) {
+    unset($_SESSION['hsg_github_release']);
 }
 $githubRelease=$_SESSION['hsg_github_release']??null;
 $history=db_table_exists($pdo,'hsg_update_runs')?$pdo->query('SELECT * FROM hsg_update_runs ORDER BY created_at DESC,id DESC LIMIT 30')->fetchAll():[];
@@ -108,12 +108,10 @@ page_header('Opgradering');
   <?php if(is_array($githubRelease) && !empty($githubRelease['download_url'])): ?>
     <div style="padding: 1rem; background: var(--bg-card, #f8f9fa); border: 1px solid var(--border-color, #e0e0e0); border-radius: 6px;">
       <h3>GitHub version: <?=h($githubRelease['version'])?></h3>
-      <p><strong>Status:</strong> <?= $githubRelease['has_update'] ? '<span style="color: green; font-weight: bold;">Ny version tilgængelig!</span>' : '<span style="color: #155eef; font-weight: bold;">Installeret version matcher GitHub main-branch</span>' ?></p>
+      <p><strong>Status:</strong> <?= $githubRelease['has_update'] ? '<span style="color: green; font-weight: bold;">Ny version tilgængelig!</span>' : '<span style="color: #155eef; font-weight: bold;">Installeret version matcher seneste GitHub Release</span>' ?></p>
       <form method="post" style="margin-top: 1rem;">
         <?=csrf_field()?>
         <input type="hidden" name="action" value="stage_github">
-        <input type="hidden" name="version" value="<?=h($githubRelease['version'])?>">
-        <input type="hidden" name="download_url" value="<?=h($githubRelease['download_url'])?>">
         <button type="submit">Opdatér HSG Administration fra GitHub</button>
       </form>
     </div>
