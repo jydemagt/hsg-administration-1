@@ -110,42 +110,26 @@ function add_product_slot(SimplePdf $pdf,array &$ops,array &$images,array $p,int
     $path=hsg_catalog_image_path((string)($p['image_path']??''));
     $imgType=@getimagesize($path)[2]??0;
     if(($p['image_approval_status']??'')==='approved'&&$path&&is_file($path)&&in_array($imgType,[IMAGETYPE_JPEG,IMAGETYPE_PNG],true)){
-        $finalPath = $path;
-        if(!empty($p['is_new']) && $newBadge && is_file($newBadge)){
-            $cacheDir = __DIR__.'/storage/tmp/pdf-cache';
-            if(!is_dir($cacheDir)) @mkdir($cacheDir,0775,true);
-            $compositeKey = 'comp-p'.(int)$p['id'].'-'.md5($path.'|'.(string)@filemtime($path).'|'.(string)@filemtime($newBadge)).'.jpg';
-            $compositePath = $cacheDir.'/'.$compositeKey;
-            if(is_file($compositePath)){
-                $finalPath = $compositePath;
-            } else {
-                $srcBytes = @file_get_contents($path);
-                $bottleImg = $srcBytes ? @imagecreatefromstring($srcBytes) : null;
-                $badgeImg = @imagecreatefrompng($newBadge);
-                if($bottleImg && $badgeImg){
-                    $bw = imagesx($bottleImg); $bh = imagesy($bottleImg);
-                    $canvas = imagecreatetruecolor($bw, $bh);
-                    $white = imagecolorallocate($canvas, 255, 255, 255);
-                    imagefill($canvas, 0, 0, $white);
-                    imagecopy($canvas, $bottleImg, 0, 0, 0, 0, $bw, $bh);
-                    imagealphablending($canvas, true);
+        $name='P'.(int)$p['id'].'_'.$slot;$images[$name]=$path;
+        $info=@getimagesize($path);
+        if($info&&$info[0]>0&&$info[1]>0){
+            $scale=min($imgW/$info[0],$imgH/$info[1]);
+            $iw=$info[0]*$scale;$ih=$info[1]*$scale;
+            $ix=$imgX+($imgW-$iw)/2;$iy=$imgY+($imgH-$ih)/2;
+            $ops[]='q '.$iw.' 0 0 '.$ih.' '.$ix.' '.$iy.' cm /'.$name.' Do Q';
 
-                    // Calculate badge size on canvas so it renders as constant 116pt width on PDF page ($imgW = 214pt)
-                    $targetPdfPt = 116.0;
-                    $badgeSize = (int)round(($targetPdfPt / $imgW) * $bw);
-                    $badgeSize = max(60, min($bw, $badgeSize));
-                    $badgeX = 0;
-                    $badgeY = 0;
-                    imagecopyresampled($canvas, $badgeImg, $badgeX, $badgeY, 0, 0, $badgeSize, $badgeSize, imagesx($badgeImg), imagesy($badgeImg));
-                    imagejpeg($canvas, $compositePath, 95);
-                    imagedestroy($canvas); imagedestroy($bottleImg); imagedestroy($badgeImg);
-                    if(is_file($compositePath)){
-                        $finalPath = $compositePath;
-                    }
-                }
+            // Render NYHED sticker overlay with FIXED physical PDF dimensions (width: 58 pt, height: 58 pt)
+            // placed at top-left corner of rendered bottle bounding box with slight offset.
+            if(!empty($p['is_new'])&&$newBadge&&is_file($newBadge)){
+                $badgeName='NB'.(int)$p['id'].'_'.$slot;
+                $images[$badgeName]=$newBadge;
+                $badgeW=58.0;
+                $badgeH=58.0;
+                $badgeX=$ix - 10.0;
+                $badgeY=$iy + $ih - $badgeH + 10.0;
+                $ops[]='q '.$badgeW.' 0 0 '.$badgeH.' '.$badgeX.' '.$badgeY.' cm /'.$badgeName.' Do Q';
             }
         }
-        $name='P'.(int)$p['id'].'_'.$slot;$images[$name]=$finalPath;$op=pdf_image_fit($name,$finalPath,$imgX,$imgY,$imgW,$imgH);if($op)$ops[]=$op;
     }else{
         $ops[]=$pdf->setRgb(.95,.95,.95,true);$ops[]=$pdf->rect($imgX+30,$imgY+40,$imgW-60,$imgH-80,true);$ops[]=$pdf->setRgb(.45,.45,.45,true);$ops[]=$pdf->textFont($imgX+52,$imgY+($imgH/2),10,'Intet godkendt billede','helvetica');$ops[]=$pdf->setRgb(0,0,0,true);
     }
