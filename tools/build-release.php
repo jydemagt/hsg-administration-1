@@ -115,6 +115,25 @@ function hsg_build_check_version_consistency(string $buildDir, string $targetVer
     }
 }
 
+function hsg_build_filter_production_source(string $buildDir): void {
+    // Repository, CI, and dev-only items that must be purged before manifest generation
+    $devExclusions = [
+        '.github',
+        '.git',
+        '.gitignore',
+        '.gitattributes',
+    ];
+
+    foreach ($devExclusions as $item) {
+        $path = $buildDir . '/' . $item;
+        if (is_dir($path)) {
+            hsg_build_rrmdir($path);
+        } elseif (is_file($path)) {
+            @unlink($path);
+        }
+    }
+}
+
 function hsg_build_check_prohibited(string $buildDir): void {
     $iterator = new RecursiveIteratorIterator(
         new RecursiveDirectoryIterator($buildDir, FilesystemIterator::SKIP_DOTS),
@@ -423,10 +442,13 @@ try {
     hsg_build_log("2. Kontrollerer versionskonsistens (Git tag vs app_version.php vs hsg-package.json)...", 'INFO');
     hsg_build_check_version_consistency($buildDir, $version);
 
-    hsg_build_log("3. Kontrollerer for prohibiterede runtime-stier...", 'INFO');
+    hsg_build_log("3. Fjerner repository-/CI-stier (.github, .gitignore osv)...", 'INFO');
+    hsg_build_filter_production_source($buildDir);
+
+    hsg_build_log("4. Kontrollerer for prohibiterede runtime-stier...", 'INFO');
     hsg_build_check_prohibited($buildDir);
 
-    hsg_build_log("4. Genererer hsg-package.json manifest...", 'INFO');
+    hsg_build_log("5. Genererer hsg-package.json manifest...", 'INFO');
     $manifest = hsg_build_generate_manifest($buildDir, $version, $commitHash);
 
     hsg_build_log("4. Bygger ZIP-arkiv...", 'INFO');
