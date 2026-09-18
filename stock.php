@@ -68,12 +68,21 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
   }
  }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();flash('error',$e->getMessage());}
 }
-$products=$pdo->query("SELECT id,sku,name FROM lager_products WHERE status='active' ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+$products=$pdo->query("SELECT id,sku,name,status FROM lager_products WHERE status<>'discontinued' ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
 $locations=$pdo->query("SELECT id,name FROM lager_locations WHERE active=1 ORDER BY sort_order, name")->fetchAll(PDO::FETCH_ASSOC);
 $qFilter=trim((string)($_GET['q']??''));
 $locFilter=(int)($_GET['location']??0);
+$statusFilter=in_array($_GET['status']??'active', ['active','inactive','all'], true) ? $_GET['status'] : 'active';
 
-$whereConds=["p.status='active'"]; $whereParams=[];
+$whereConds=[]; $whereParams=[];
+if($statusFilter === 'active') {
+    $whereConds[] = "p.status='active'";
+} elseif($statusFilter === 'inactive') {
+    $whereConds[] = "p.status='inactive'";
+} else {
+    $whereConds[] = "p.status<>'discontinued'";
+}
+
 if($qFilter!=='') {
     $whereConds[] = "(p.name LIKE ? OR p.sku LIKE ?)";
     $whereParams[] = '%'.$qFilter.'%';
@@ -81,7 +90,7 @@ if($qFilter!=='') {
 }
 
 $whereSql = implode(' AND ', $whereConds);
-$pSql = "SELECT p.id product_id, p.sku, p.name FROM lager_products p WHERE {$whereSql} ORDER BY p.name";
+$pSql = "SELECT p.id product_id, p.sku, p.name, p.status FROM lager_products p WHERE {$whereSql} ORDER BY p.name";
 $stP = $pdo->prepare($pSql); $stP->execute($whereParams);
 $gridProducts = $stP->fetchAll(PDO::FETCH_ASSOC);
 
@@ -92,6 +101,11 @@ page_header('Lager');
 ?>
 <form class="searchbar" method="get">
   <input name="q" value="<?=h($qFilter)?>" placeholder="Søg produkt eller SKU...">
+  <select name="status">
+    <option value="active" <?=$statusFilter==='active'?'selected':''?>>Aktive produkter</option>
+    <option value="inactive" <?=$statusFilter==='inactive'?'selected':''?>>Inaktive produkter</option>
+    <option value="all" <?=$statusFilter==='all'?'selected':''?>>Alle produkter (inkl. inaktive)</option>
+  </select>
   <select name="location">
     <option value="0">Alle lokationer</option>
     <?php foreach($locations as $l): ?>
@@ -158,6 +172,9 @@ page_header('Lager');
       <tr>
         <th>SKU</th>
         <th>Produkt</th>
+        <?php if($statusFilter !== 'active'): ?>
+          <th style="text-align:center;">Status</th>
+        <?php endif; ?>
         <?php foreach($locations as $l): if($locFilter && (int)$l['id'] !== $locFilter) continue; ?>
           <th style="text-align:center;"><?=h($l['name'])?></th>
         <?php endforeach; ?>
@@ -178,6 +195,11 @@ page_header('Lager');
         <tr>
           <td><strong><?=h($gp['sku'])?></strong></td>
           <td><strong><?=h($gp['name'])?></strong></td>
+          <?php if($statusFilter !== 'active'): ?>
+            <td style="text-align:center;">
+              <span class="badge <?=$gp['status']==='active'?'green':'red'?>"><?=h(product_status_label($gp['status']))?></span>
+            </td>
+          <?php endif; ?>
           <?php foreach($locations as $l):
             $lid=(int)$l['id']; if($locFilter && $lid !== $locFilter) continue;
             $curPhys = $pLocStock[$lid] ?? 0;
@@ -211,6 +233,9 @@ page_header('Lager');
       <tr>
         <th>SKU</th>
         <th>Produkt</th>
+        <?php if($statusFilter !== 'active'): ?>
+          <th style="text-align:center;">Status</th>
+        <?php endif; ?>
         <?php foreach($locations as $l): if($locFilter && (int)$l['id'] !== $locFilter) continue; ?>
           <th><?=h($l['name'])?> (Disponibelt)</th>
         <?php endforeach; ?>
@@ -231,6 +256,11 @@ page_header('Lager');
         <tr>
           <td><strong><?=h($gp['sku'])?></strong></td>
           <td><?=h($gp['name'])?></td>
+          <?php if($statusFilter !== 'active'): ?>
+            <td style="text-align:center;">
+              <span class="badge <?=$gp['status']==='active'?'green':'red'?>"><?=h(product_status_label($gp['status']))?></span>
+            </td>
+          <?php endif; ?>
           <?php foreach($locations as $l):
             $lid=(int)$l['id']; if($locFilter && $lid !== $locFilter) continue;
             $curPhys = $pLocStock[$lid] ?? 0;
