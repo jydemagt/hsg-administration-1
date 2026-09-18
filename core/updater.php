@@ -141,20 +141,25 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
         $hashes=(array)($manifest['manifest']??$manifest['files']??[]);
         foreach($entries as $rel=>$entry){
             if(!empty($entry['dir']) || $rel==='hsg-package.json') continue;
-            if(!array_key_exists($rel,$hashes)) throw new RuntimeException('Pakken indeholder en fil, som ikke er med i integritetsmanifestet: '.$rel);
+            if(!array_key_exists($rel,$hashes)) {
+                throw new RuntimeException("Opdateringen blev afvist.\n\nUventet fil:\n{$rel}\n\nDenne fil må ikke indgå i en HSG releasepakke.");
+            }
         }
         foreach($hashes as $rel=>$expected){
             $rel=hsg_update_normalize_entry((string)$rel);
             $expected=strtolower(trim((string)$expected));
-            if($rel==='' || !isset($entries[$rel]) || $entries[$rel]['dir']) throw new RuntimeException('Manifestet refererer til en manglende fil: '.$rel);
-            if(!preg_match('/^[a-f0-9]{64}$/',$expected)) throw new RuntimeException('Ugyldig filhash i pakkemanifestet.');
+            if($rel==='' || !isset($entries[$rel]) || $entries[$rel]['dir']) {
+                throw new RuntimeException("Opdateringen blev afvist.\n\nManifestet refererer til en manglende fil:\n{$rel}");
+            }
+            if(!preg_match('/^[a-f0-9]{64}$/',$expected)) throw new RuntimeException('Ugyldig filhash i pakkemanifestet for: '.$rel);
             $contents=$zip->getFromIndex((int)$entries[$rel]['index']);
-            if($contents===false) throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
+            if($contents===false) throw new RuntimeException('Kunne ikke læse fil fra ZIP til integritetskontrol: '.$rel);
             $hash = hash('sha256', $contents);
             if(!hash_equals($expected, $hash)) {
                 $normalized = str_replace("\r\n", "\n", $contents);
-                if(!hash_equals($expected, hash('sha256', $normalized))) {
-                    throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
+                $normHash = hash('sha256', $normalized);
+                if(!hash_equals($expected, $normHash)) {
+                    throw new RuntimeException("Opdateringen blev afvist.\n\nFil:\n{$rel}\n\nExpected SHA-256:\n{$expected}\n\nActual SHA-256:\n{$hash}\n\nPackage:\n" . basename($zipPath) . "\n\nRelease:\nv{$target}");
                 }
             }
         }

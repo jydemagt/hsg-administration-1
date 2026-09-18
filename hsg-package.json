@@ -1,7 +1,7 @@
 {
     "name": "hsg-administration",
     "product": "HSG Administration",
-    "version": "10.2.1",
+    "version": "10.2.2",
     "package_type": "distribution",
     "release_notes": "Renset udelukkelse af storage/tmp, uploads/ og runtime cache fra pakkemanifestet og udrulning v10.2.1.",
     "min_php": "8.1.0",

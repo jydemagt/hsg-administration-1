@@ -65,28 +65,52 @@ function hsg_build_clean_export(string $targetDir): void {
         throw new RuntimeException("Kunne ikke oprette midlertidig build-mappe: {$targetDir}");
     }
 
-    // Export tracked files using git archive or git ls-files
-    $gitArchiveCmd = sprintf('git archive --format=tar HEAD | tar -x -C %s', escapeshellarg($targetDir));
-    exec($gitArchiveCmd, $output, $returnCode);
-
-    if ($returnCode !== 0) {
-        // Fallback to git ls-files copy if git archive fails
-        hsg_build_log("git archive fejlede (kode {$returnCode}), forsøger git ls-files...", 'WARN');
-        exec('git ls-files', $files, $lsCode);
-        if ($lsCode !== 0 || empty($files)) {
+    // Export tracked files using git ls-files to capture current tracked source tree cleanly
+    exec('git ls-files', $files, $lsCode);
+    if ($lsCode !== 0 || empty($files)) {
+        // Fallback to git archive HEAD if git ls-files fails
+        $gitArchiveCmd = sprintf('git archive --format=tar HEAD | tar -x -C %s', escapeshellarg($targetDir));
+        exec($gitArchiveCmd, $output, $returnCode);
+        if ($returnCode !== 0) {
             throw new RuntimeException("Kunne ikke hente Git-sporede filer.");
         }
-        foreach ($files as $file) {
-            $file = trim($file);
-            if ($file === '') continue;
-            $src = HSG_ROOT . '/' . $file;
-            $dst = $targetDir . '/' . $file;
-            if (!is_file($src)) continue;
-            $dstDir = dirname($dst);
-            if (!is_dir($dstDir)) {
-                mkdir($dstDir, 0775, true);
+        return;
+    }
+
+    foreach ($files as $file) {
+        $file = trim($file);
+        if ($file === '') continue;
+        $src = HSG_ROOT . '/' . $file;
+        $dst = $targetDir . '/' . $file;
+        if (!is_file($src)) continue;
+        $dstDir = dirname($dst);
+        if (!is_dir($dstDir)) {
+            mkdir($dstDir, 0775, true);
+        }
+        copy($src, $dst);
+    }
+}
+
+function hsg_build_check_version_consistency(string $buildDir, string $targetVersion): void {
+    $appVersionFile = $buildDir . '/app_version.php';
+    if (!file_exists($appVersionFile)) {
+        throw new RuntimeException("VERSION CONSISTENCY FEJLEDE: app_version.php mangler i source tree.");
+    }
+
+    $appVer = trim((string)(require $appVersionFile));
+    if ($appVer !== $targetVersion) {
+        throw new RuntimeException("VERSION CONSISTENCY FEJLEDE: Target release version '{$targetVersion}' matcher ikke app_version.php ('{$appVer}').");
+    }
+
+    $packageJsonFile = $buildDir . '/hsg-package.json';
+    if (file_exists($packageJsonFile)) {
+        $jsonRaw = file_get_contents($packageJsonFile);
+        if ($jsonRaw !== false) {
+            $data = json_decode($jsonRaw, true);
+            $manifestVer = trim((string)($data['version'] ?? ''));
+            if ($manifestVer !== '' && $manifestVer !== $targetVersion) {
+                throw new RuntimeException("VERSION CONSISTENCY FEJLEDE: Target release version '{$targetVersion}' matcher ikke eksisterende hsg-package.json version ('{$manifestVer}').");
             }
-            copy($src, $dst);
         }
     }
 }
@@ -253,81 +277,104 @@ function hsg_run_negative_test(): bool {
     require_once HSG_ROOT . '/core/updater.php';
 
     $testsPassed = 0;
-    $totalTests = 5;
+    $totalTests = 7;
 
-    // Test 1: Injected prohibited pdf-cache file
-    $dir1 = sys_get_temp_dir() . '/hsg-neg-1-' . bin2hex(random_bytes(4));
+    // Test A: Injected prohibited pdf-cache file
+    $dirA = sys_get_temp_dir() . '/hsg-neg-A-' . bin2hex(random_bytes(4));
     try {
-        hsg_build_clean_export($dir1);
-        $pDir = $dir1 . '/storage/tmp/pdf-cache';
+        hsg_build_clean_export($dirA);
+        $pDir = $dirA . '/storage/tmp/pdf-cache';
         if (!is_dir($pDir)) mkdir($pDir, 0775, true);
         file_put_contents($pDir . '/test-untracked.jpg', 'fake-jpg');
-        hsg_build_check_prohibited($dir1);
-        hsg_build_log("Test 1 FEJLEDE: Prohibited fil blev ikke afvist!", 'ERROR');
+        hsg_build_check_prohibited($dirA);
+        hsg_build_log("Test A FEJLEDE: Prohibited pdf-cache blev ikke afvist!", 'ERROR');
     } catch (RuntimeException $e) {
         $testsPassed++;
-        hsg_build_log("Test 1 BESTÅET: Prohibited fil afvist (" . $e->getMessage() . ")", 'SUCCESS');
-    } finally { hsg_build_rrmdir($dir1); }
+        hsg_build_log("Test A BESTÅET: Prohibited pdf-cache afvist (" . $e->getMessage() . ")", 'SUCCESS');
+    } finally { hsg_build_rrmdir($dirA); }
 
-    // Test 2: Injected unmanifested file into ZIP
-    $dir2 = sys_get_temp_dir() . '/hsg-neg-2-' . bin2hex(random_bytes(4));
-    $zip2 = sys_get_temp_dir() . '/hsg-neg-2-' . bin2hex(random_bytes(4)) . '.zip';
+    // Test B: Injected unmanifested extra file
+    $dirB = sys_get_temp_dir() . '/hsg-neg-B-' . bin2hex(random_bytes(4));
+    $zipB = sys_get_temp_dir() . '/hsg-neg-B-' . bin2hex(random_bytes(4)) . '.zip';
     try {
-        hsg_build_clean_export($dir2);
-        $manifest = hsg_build_generate_manifest($dir2, '10.2.2', 'testcommit');
-        // Inject unmanifested extra file AFTER manifest generation
-        file_put_contents($dir2 . '/unmanifested_extra.php', '<?php // extra');
-        hsg_build_zip($dir2, $zip2);
-        hsg_build_validate_zip($zip2, $manifest);
-        hsg_build_log("Test 2 FEJLEDE: Unmanifested fil i ZIP blev ikke opdaget!", 'ERROR');
+        hsg_build_clean_export($dirB);
+        $manifest = hsg_build_generate_manifest($dirB, '10.2.2', 'testcommit');
+        file_put_contents($dirB . '/unmanifested_extra.php', '<?php // extra');
+        hsg_build_zip($dirB, $zipB);
+        hsg_build_validate_zip($zipB, $manifest);
+        hsg_build_log("Test B FEJLEDE: Unmanifested fil blev ikke opdaget!", 'ERROR');
     } catch (RuntimeException $e) {
         $testsPassed++;
-        hsg_build_log("Test 2 BESTÅET: Unmanifested fil afvist (" . $e->getMessage() . ")", 'SUCCESS');
-    } finally { hsg_build_rrmdir($dir2); @unlink($zip2); }
+        hsg_build_log("Test B BESTÅET: Unmanifested fil afvist (" . $e->getMessage() . ")", 'SUCCESS');
+    } finally { hsg_build_rrmdir($dirB); @unlink($zipB); }
 
-    // Test 3: Altered file hash mismatch
-    $dir3 = sys_get_temp_dir() . '/hsg-neg-3-' . bin2hex(random_bytes(4));
-    $zip3 = sys_get_temp_dir() . '/hsg-neg-3-' . bin2hex(random_bytes(4)) . '.zip';
+    // Test C: Altered file hash mismatch after manifest
+    $dirC = sys_get_temp_dir() . '/hsg-neg-C-' . bin2hex(random_bytes(4));
+    $zipC = sys_get_temp_dir() . '/hsg-neg-C-' . bin2hex(random_bytes(4)) . '.zip';
     try {
-        hsg_build_clean_export($dir3);
-        $manifest = hsg_build_generate_manifest($dir3, '10.2.2', 'testcommit');
-        // Alter file contents after manifest generation
-        file_put_contents($dir3 . '/app_version.php', '<?php return "99.99.99"; // tampered');
-        hsg_build_zip($dir3, $zip3);
-        hsg_build_validate_zip($zip3, $manifest);
-        hsg_build_log("Test 3 FEJLEDE: Ændret filhash blev ikke opdaget!", 'ERROR');
+        hsg_build_clean_export($dirC);
+        $manifest = hsg_build_generate_manifest($dirC, '10.2.2', 'testcommit');
+        file_put_contents($dirC . '/app_version.php', '<?php return "99.99.99"; // tampered');
+        hsg_build_zip($dirC, $zipC);
+        hsg_build_validate_zip($zipC, $manifest);
+        hsg_build_log("Test C FEJLEDE: Ændret filhash blev ikke opdaget!", 'ERROR');
     } catch (RuntimeException $e) {
         $testsPassed++;
-        hsg_build_log("Test 3 BESTÅET: Ændret filhash afvist (" . $e->getMessage() . ")", 'SUCCESS');
-    } finally { hsg_build_rrmdir($dir3); @unlink($zip3); }
+        hsg_build_log("Test C BESTÅET: Ændret filhash afvist (" . $e->getMessage() . ")", 'SUCCESS');
+    } finally { hsg_build_rrmdir($dirC); @unlink($zipC); }
 
-    // Test 4: Missing hsg-package.json manifest
-    $dir4 = sys_get_temp_dir() . '/hsg-neg-4-' . bin2hex(random_bytes(4));
-    $zip4 = sys_get_temp_dir() . '/hsg-neg-4-' . bin2hex(random_bytes(4)) . '.zip';
+    // Test D: Missing hsg-package.json manifest
+    $dirD = sys_get_temp_dir() . '/hsg-neg-D-' . bin2hex(random_bytes(4));
+    $zipD = sys_get_temp_dir() . '/hsg-neg-D-' . bin2hex(random_bytes(4)) . '.zip';
     try {
-        hsg_build_clean_export($dir4);
-        hsg_build_zip($dir4, $zip4);
-        hsg_update_validate_package($zip4, true);
-        hsg_build_log("Test 4 FEJLEDE: Manglende manifest blev ikke opdaget!", 'ERROR');
+        hsg_build_clean_export($dirD);
+        hsg_build_zip($dirD, $zipD);
+        hsg_update_validate_package($zipD, true);
+        hsg_build_log("Test D FEJLEDE: Manglende manifest blev ikke opdaget!", 'ERROR');
     } catch (RuntimeException $e) {
         $testsPassed++;
-        hsg_build_log("Test 4 BESTÅET: Manglende manifest afvist (" . $e->getMessage() . ")", 'SUCCESS');
-    } finally { hsg_build_rrmdir($dir4); @unlink($zip4); }
+        hsg_build_log("Test D BESTÅET: Manglende manifest afvist (" . $e->getMessage() . ")", 'SUCCESS');
+    } finally { hsg_build_rrmdir($dirD); @unlink($zipD); }
 
-    // Test 5: Injected config.php
-    $dir5 = sys_get_temp_dir() . '/hsg-neg-5-' . bin2hex(random_bytes(4));
+    // Test E: Injected config.php
+    $dirE = sys_get_temp_dir() . '/hsg-neg-E-' . bin2hex(random_bytes(4));
     try {
-        hsg_build_clean_export($dir5);
-        file_put_contents($dir5 . '/config.php', '<?php // secret config');
-        hsg_build_check_prohibited($dir5);
-        hsg_build_log("Test 5 FEJLEDE: Prohibited config.php blev ikke afvist!", 'ERROR');
+        hsg_build_clean_export($dirE);
+        file_put_contents($dirE . '/config.php', '<?php // secret config');
+        hsg_build_check_prohibited($dirE);
+        hsg_build_log("Test E FEJLEDE: Prohibited config.php blev ikke afvist!", 'ERROR');
     } catch (RuntimeException $e) {
         $testsPassed++;
-        hsg_build_log("Test 5 BESTÅET: Prohibited config.php afvist (" . $e->getMessage() . ")", 'SUCCESS');
-    } finally { hsg_build_rrmdir($dir5); }
+        hsg_build_log("Test E BESTÅET: Prohibited config.php afvist (" . $e->getMessage() . ")", 'SUCCESS');
+    } finally { hsg_build_rrmdir($dirE); }
+
+    // Test F: Version mismatch (Git tag v10.2.2 vs app_version.php 10.2.1)
+    $dirF = sys_get_temp_dir() . '/hsg-neg-F-' . bin2hex(random_bytes(4));
+    try {
+        hsg_build_clean_export($dirF);
+        file_put_contents($dirF . '/app_version.php', '<?php return "10.2.1";');
+        hsg_build_check_version_consistency($dirF, '10.2.2');
+        hsg_build_log("Test F FEJLEDE: Version mismatch mellem tag og app_version.php blev ikke opdaget!", 'ERROR');
+    } catch (RuntimeException $e) {
+        $testsPassed++;
+        hsg_build_log("Test F BESTÅET: Version mismatch afvist (" . $e->getMessage() . ")", 'SUCCESS');
+    } finally { hsg_build_rrmdir($dirF); }
+
+    // Test G: Manifest version 10.2.2 vs ZIP source app_version.php 10.2.1
+    $dirG = sys_get_temp_dir() . '/hsg-neg-G-' . bin2hex(random_bytes(4));
+    try {
+        hsg_build_clean_export($dirG);
+        file_put_contents($dirG . '/hsg-package.json', json_encode(['version' => '10.2.2']));
+        file_put_contents($dirG . '/app_version.php', '<?php return "10.2.1";');
+        hsg_build_check_version_consistency($dirG, '10.2.2');
+        hsg_build_log("Test G FEJLEDE: Manifest version vs app_version.php blev ikke afvist!", 'ERROR');
+    } catch (RuntimeException $e) {
+        $testsPassed++;
+        hsg_build_log("Test G BESTÅET: Manifest vs source version mismatch afvist (" . $e->getMessage() . ")", 'SUCCESS');
+    } finally { hsg_build_rrmdir($dirG); }
 
     if ($testsPassed === $totalTests) {
-        hsg_build_log("ALLE {$totalTests} NEGATIVE TESTS BESTÅET SIKKERT!", 'SUCCESS');
+        hsg_build_log("ALLE {$totalTests} NEGATIVE TESTS (A-G) BESTÅET SIKKERT!", 'SUCCESS');
         return true;
     } else {
         hsg_build_log("KUN {$testsPassed} / {$totalTests} NEGATIVE TESTS BESTÅET!", 'ERROR');
@@ -373,10 +420,13 @@ try {
     hsg_build_log("1. Eksporterer ren source tree fra Git...", 'INFO');
     hsg_build_clean_export($buildDir);
 
-    hsg_build_log("2. Kontrollerer for prohibiterede runtime-stier...", 'INFO');
+    hsg_build_log("2. Kontrollerer versionskonsistens (Git tag vs app_version.php vs hsg-package.json)...", 'INFO');
+    hsg_build_check_version_consistency($buildDir, $version);
+
+    hsg_build_log("3. Kontrollerer for prohibiterede runtime-stier...", 'INFO');
     hsg_build_check_prohibited($buildDir);
 
-    hsg_build_log("3. Genererer hsg-package.json manifest...", 'INFO');
+    hsg_build_log("4. Genererer hsg-package.json manifest...", 'INFO');
     $manifest = hsg_build_generate_manifest($buildDir, $version, $commitHash);
 
     hsg_build_log("4. Bygger ZIP-arkiv...", 'INFO');
