@@ -130,9 +130,10 @@ function add_product_slot(SimplePdf $pdf,array &$ops,array &$images,array $p,int
                     imagecopy($canvas, $bottleImg, 0, 0, 0, 0, $bw, $bh);
                     imagealphablending($canvas, true);
 
-                    // Render badge overlay in top-left quadrant of bottle crop
-                    $badgeSize = (int)round(min($bw, $bh) * 0.40);
-                    $badgeSize = max(100, min(500, $badgeSize));
+                    // Calculate badge size on canvas so it renders as constant 116pt width on PDF page ($imgW = 214pt)
+                    $targetPdfPt = 116.0;
+                    $badgeSize = (int)round(($targetPdfPt / $imgW) * $bw);
+                    $badgeSize = max(60, min($bw, $badgeSize));
                     $badgeX = 0;
                     $badgeY = 0;
                     imagecopyresampled($canvas, $badgeImg, $badgeX, $badgeY, 0, 0, $badgeSize, $badgeSize, imagesx($badgeImg), imagesy($badgeImg));

@@ -10,14 +10,20 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     }
     if($action==='cancel'){
       $id=(int)$_POST['id'];
+      $resToCancel = null;
       if(is_admin() || can('reservations.manage_all')){
+        $stSel=$pdo->prepare("SELECT product_id FROM lager_reservations WHERE id=? AND status='reserved'");$stSel->execute([$id]);$resToCancel=$stSel->fetch();
         $st=$pdo->prepare("UPDATE lager_reservations SET status='cancelled' WHERE id=? AND status='reserved'");$st->execute([$id]);
       }else{
         require_capability('reservations.cancel_own');
         $uid=current_link_user_id();if(!$uid)throw new RuntimeException('Du har ikke adgang til at annullere reservationen.');
+        $stSel=$pdo->prepare("SELECT product_id FROM lager_reservations WHERE id=? AND status='reserved' AND created_by=?");$stSel->execute([$id,$uid]);$resToCancel=$stSel->fetch();
         $st=$pdo->prepare("UPDATE lager_reservations SET status='cancelled' WHERE id=? AND status='reserved' AND created_by=?");$st->execute([$id,$uid]);
       }
       if($st->rowCount()===0)throw new RuntimeException('Reservationen kunne ikke annulleres.');
+      if(!empty($resToCancel['product_id'])){
+        hsg_sync_product_stock_status($pdo, (int)$resToCancel['product_id']);
+      }
       audit_log($pdo,'reservation.cancel','reservation',(string)$id);hsg_do_action('reservation.cancelled',['reservation_id'=>$id]);flash('success','Reservation annulleret og lageret frigivet.');redirect('reservations.php');
     }
     if($action==='update'){
@@ -44,12 +50,51 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 
       $pdo->prepare("UPDATE lager_reservations SET quantity=?, customer_name=?, reference=?, note=? WHERE id=?")->execute([$qty, $customer, $ref, $note, $id]);
       $pdo->commit();
+      hsg_sync_product_stock_status($pdo, (int)$r['product_id']);
       audit_log($pdo,'reservation.update','reservation',(string)$id,['quantity'=>$qty,'customer_name'=>$customer,'reference'=>$ref]);
       flash('success','Reservation #'.$id.' opdateret.');redirect('reservations.php');
     }
+    if($action==='partial_sale'){
+      if(!is_admin() && !can('reservations.manage_all')) require_capability('reservations.complete');
+      $id=(int)$_POST['id'];
+      $soldQty=(int)($_POST['sold_quantity']??0);
+      if($soldQty<=0) throw new RuntimeException('Antal solgte flasker skal være mindst 1.');
+
+      $pdo->beginTransaction();
+      $st=$pdo->prepare("SELECT * FROM lager_reservations WHERE id=? AND status='reserved' FOR UPDATE");
+      $st->execute([$id]);
+      $r=$st->fetch();
+      if(!$r) throw new RuntimeException('Reservationen findes ikke eller er ikke aktiv.');
+
+      $curResQty=(int)$r['quantity'];
+      if($soldQty > $curResQty) throw new RuntimeException('Det solgte antal ('.$soldQty.') må ikke overstige reservationens antal ('.$curResQty.').');
+
+      $ss=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=? FOR UPDATE');
+      $ss->execute([$r['product_id'],$r['location_id']]);
+      $oldPhysical=(int)($ss->fetchColumn()?:0);
+      if($oldPhysical < $soldQty) throw new RuntimeException('Det fysiske lager ('.$oldPhysical.') er lavere end det solgte antal ('.$soldQty.').');
+
+      $newPhysical = $oldPhysical - $soldQty;
+      $newResQty = $curResQty - $soldQty;
+      $newStatus = ($newResQty === 0) ? 'completed' : 'reserved';
+
+      $pdo->prepare('UPDATE lager_stock SET quantity=? WHERE product_id=? AND location_id=?')->execute([$newPhysical, $r['product_id'], $r['location_id']]);
+      $pdo->prepare("UPDATE lager_reservations SET quantity=?, status=? WHERE id=?")->execute([$newResQty, $newStatus, $id]);
+      $pdo->prepare("INSERT INTO lager_stock_movements(product_id,location_id,change_qty,balance_after,movement_type,reference,created_by,created_by_admin) VALUES(?,?,?,?,'sale',?,?,?)")
+          ->execute([$r['product_id'],$r['location_id'],-$soldQty,$newPhysical,$r['reference']?:'Delvis solgt reservation #'.$id,null,current_admin_id()]);
+
+      $pdo->commit();
+      hsg_sync_product_stock_status($pdo, (int)$r['product_id']);
+
+      audit_log($pdo,'reservation.partial_sale','reservation',(string)$id,['product_id'=>(int)$r['product_id'],'location_id'=>(int)$r['location_id'],'sold_quantity'=>$soldQty,'remaining_reserved'=>$newResQty]);
+      hsg_do_action('reservation.partial_sale',['reservation_id'=>$id,'product_id'=>(int)$r['product_id'],'location_id'=>(int)$r['location_id'],'sold_quantity'=>$soldQty,'remaining_reserved'=>$newResQty]);
+
+      $msg = ($newStatus==='completed') ? 'Hele reservationen (#'.$id.') er nu markeret som solgt.' : 'Delvist salg af '.$soldQty.' flasker registreret for reservation #'.$id.'. Resterende reserveret: '.$newResQty.' stk.';
+      flash('success',$msg);redirect('reservations.php');
+    }
     if($action==='complete'){
       if(!is_admin() && !can('reservations.manage_all')) require_capability('reservations.complete');
-      $id=(int)$_POST['id'];$pdo->beginTransaction();$st=$pdo->prepare("SELECT * FROM lager_reservations WHERE id=? AND status='reserved' FOR UPDATE");$st->execute([$id]);$r=$st->fetch();if(!$r)throw new RuntimeException('Reservationen findes ikke eller er allerede afsluttet.');$ss=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=? FOR UPDATE');$ss->execute([$r['product_id'],$r['location_id']]);$old=(int)$ss->fetchColumn();if($old<(int)$r['quantity'])throw new RuntimeException('Det fysiske lager er lavere end reservationen.');$new=$old-(int)$r['quantity'];$pdo->prepare('UPDATE lager_stock SET quantity=? WHERE product_id=? AND location_id=?')->execute([$new,$r['product_id'],$r['location_id']]);$pdo->prepare("UPDATE lager_reservations SET status='completed' WHERE id=?")->execute([$id]);$pdo->prepare("INSERT INTO lager_stock_movements(product_id,location_id,change_qty,balance_after,movement_type,reference,created_by,created_by_admin) VALUES(?,?,?,?,'sale',?,?,?)")->execute([$r['product_id'],$r['location_id'],-(int)$r['quantity'],$new,$r['reference']?:'Reservation #'.$id,null,current_admin_id()]);$pdo->commit();audit_log($pdo,'reservation.complete','reservation',(string)$id,['product_id'=>(int)$r['product_id'],'location_id'=>(int)$r['location_id'],'quantity'=>(int)$r['quantity']]);hsg_do_action('reservation.completed',['reservation_id'=>$id,'product_id'=>(int)$r['product_id'],'location_id'=>(int)$r['location_id'],'quantity'=>(int)$r['quantity']]);flash('success','Reservation markeret som solgt. Fysisk lager er nedskrevet.');redirect('reservations.php');
+      $id=(int)$_POST['id'];$pdo->beginTransaction();$st=$pdo->prepare("SELECT * FROM lager_reservations WHERE id=? AND status='reserved' FOR UPDATE");$st->execute([$id]);$r=$st->fetch();if(!$r)throw new RuntimeException('Reservationen findes ikke eller er allerede afsluttet.');$ss=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=? FOR UPDATE');$ss->execute([$r['product_id'],$r['location_id']]);$old=(int)$ss->fetchColumn();if($old<(int)$r['quantity'])throw new RuntimeException('Det fysiske lager er lavere end reservationen.');$new=$old-(int)$r['quantity'];$pdo->prepare('UPDATE lager_stock SET quantity=? WHERE product_id=? AND location_id=?')->execute([$new,$r['product_id'],$r['location_id']]);$pdo->prepare("UPDATE lager_reservations SET status='completed' WHERE id=?")->execute([$id]);$pdo->prepare("INSERT INTO lager_stock_movements(product_id,location_id,change_qty,balance_after,movement_type,reference,created_by,created_by_admin) VALUES(?,?,?,?,'sale',?,?,?)")->execute([$r['product_id'],$r['location_id'],-(int)$r['quantity'],$new,$r['reference']?:'Reservation #'.$id,null,current_admin_id()]);$pdo->commit();hsg_sync_product_stock_status($pdo, (int)$r['product_id']);audit_log($pdo,'reservation.complete','reservation',(string)$id,['product_id'=>(int)$r['product_id'],'location_id'=>(int)$r['location_id'],'quantity'=>(int)$r['quantity']]);hsg_do_action('reservation.completed',['reservation_id'=>$id,'product_id'=>(int)$r['product_id'],'location_id'=>(int)$r['location_id'],'quantity'=>(int)$r['quantity']]);flash('success','Reservation markeret som solgt. Fysisk lager er nedskrevet.');redirect('reservations.php');
     }
     throw new RuntimeException('Ukendt handling.');
   }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();flash('error',$e->getMessage());redirect('reservations.php'.(!empty($_POST['product_id'])?'?product='.(int)$_POST['product_id']:''));}
@@ -58,8 +103,11 @@ $pid=(int)($_GET['product']??0);$products=$pdo->query("SELECT p.id,p.sku,p.name 
 if(is_admin() || can('reservations.manage_all')){$rows=$pdo->query("SELECT r.*,p.sku,p.name product_name,l.name location_name,u.name user_name,a.display_name admin_name FROM lager_reservations r JOIN lager_products p ON p.id=r.product_id JOIN lager_locations l ON l.id=r.location_id LEFT JOIN lager_users u ON u.id=r.created_by LEFT JOIN lager_admins a ON a.id=r.created_by_admin ORDER BY r.status='reserved' DESC,r.created_at DESC LIMIT 300")->fetchAll();}else{$st=$pdo->prepare("SELECT r.*,p.sku,p.name product_name,l.name location_name,u.name user_name,a.display_name admin_name FROM lager_reservations r JOIN lager_products p ON p.id=r.product_id JOIN lager_locations l ON l.id=r.location_id LEFT JOIN lager_users u ON u.id=r.created_by LEFT JOIN lager_admins a ON a.id=r.created_by_admin WHERE r.created_by=? ORDER BY r.status='reserved' DESC,r.created_at DESC LIMIT 300");$st->execute([current_link_user_id()]);$rows=$st->fetchAll();}page_header('Reservationer');
 ?>
 <?php if(can('reservations.create')):?><div class="card"><h2>Reservér produkt</h2><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="create"><div class="split"><label>Produkt<select name="product_id" required><?php foreach($products as $p):?><option value="<?=$p['id']?>" <?=$pid===$p['id']?'selected':''?>><?=h($p['sku'].' – '.$p['name'])?></option><?php endforeach;?></select></label><label>Lokation<select name="location_id" required><?php foreach($locs as $l):?><option value="<?=$l['id']?>"><?=h($l['name'])?></option><?php endforeach;?></select></label></div><div class="three"><label>Antal<input type="number" min="1" name="quantity" value="1" required></label><label>Kunde<input name="customer_name" placeholder="Navn / virksomhed"></label><label>Ordre / reference<input name="reference" placeholder="Fx ordre #1047"></label></div><label>Bemærkning<input name="note"></label><button>Reservér</button></form></div><?php else:?><div class="readonly-note">Du har læseadgang til reservationer, men ikke rettighed til at oprette nye.</div><?php endif;?>
-<?php $editResId = (int)($_GET['edit_res']??0); ?>
-<div class="table-wrap"><table><thead><tr><th>Dato</th><th>Produkt</th><th>Lokation</th><th>Antal</th><th>Kunde / reference</th><th>Oprettet af</th><th>Status</th><th></th></tr></thead><tbody><?php foreach($rows as $r):$own=is_link_user() && (int)$r['created_by']===(int)current_link_user_id(); $canManageRes = (is_admin() || can('reservations.manage_all')); $isEditing = ($editResId === (int)$r['id'] && $canManageRes && $r['status'] === 'reserved'); ?>
+<?php
+$editResId = (int)($_GET['edit_res']??0);
+$partialResId = (int)($_GET['partial_res']??0);
+?>
+<div class="table-wrap"><table><thead><tr><th>Dato</th><th>Produkt</th><th>Lokation</th><th>Antal</th><th>Kunde / reference</th><th>Oprettet af</th><th>Status</th><th></th></tr></thead><tbody><?php foreach($rows as $r):$own=is_link_user() && (int)$r['created_by']===(int)current_link_user_id(); $canManageRes = (is_admin() || can('reservations.manage_all')); $isEditing = ($editResId === (int)$r['id'] && $canManageRes && $r['status'] === 'reserved'); $isPartial = ($partialResId === (int)$r['id'] && $canManageRes && $r['status'] === 'reserved'); ?>
 <?php if($isEditing): ?>
 <tr style="background:#f0f9ff;">
   <td colspan="8">
@@ -78,6 +126,26 @@ if(is_admin() || can('reservations.manage_all')){$rows=$pdo->query("SELECT r.*,p
     </form>
   </td>
 </tr>
+<?php elseif($isPartial): ?>
+<tr style="background:#fefce8;">
+  <td colspan="8">
+    <form method="post" style="margin:0; padding:8px 0;"><?=csrf_field()?><input type="hidden" name="action" value="partial_sale"><input type="hidden" name="id" value="<?=$r['id']?>">
+      <div style="font-weight:bold; margin-bottom:6px;">Delvis solgt reservation #<?=$r['id']?> (I alt reserveret: <?=$r['quantity']?> stk.)</div>
+      <div class="split">
+        <label>Antal flasker solgt nu *
+          <input type="number" min="1" max="<?=$r['quantity']?>" name="sold_quantity" value="1" required style="max-width:180px;">
+        </label>
+        <div class="muted" style="align-self:center; font-size:0.9rem;">
+          Lageret reduceres med det indtastede antal, og reservationen nedskrives med det samme.
+        </div>
+      </div>
+      <div class="actions" style="margin-top:8px;">
+        <button class="button success">Registrer delvis salg</button>
+        <a class="button secondary" href="reservations.php">Annullér</a>
+      </div>
+    </form>
+  </td>
+</tr>
 <?php else: ?>
 <tr>
   <td><?=h($r['created_at'])?></td>
@@ -92,6 +160,7 @@ if(is_admin() || can('reservations.manage_all')){$rows=$pdo->query("SELECT r.*,p
       <div class="actions">
         <?php if($canManageRes):?>
           <a class="button secondary" href="reservations.php?edit_res=<?=$r['id']?>">Rediger</a>
+          <a class="button secondary" href="reservations.php?partial_res=<?=$r['id']?>">Delvis solgt</a>
           <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="complete"><input type="hidden" name="id" value="<?=$r['id']?>"><button class="success">Solgt</button></form>
         <?php endif;?>
         <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="cancel"><input type="hidden" name="id" value="<?=$r['id']?>"><button class="secondary">Annullér<?=$own&&!is_admin()&&!can('reservations.manage_all')?' min':''?></button></form>
