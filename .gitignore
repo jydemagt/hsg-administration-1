@@ -3,6 +3,7 @@ config.local.php
 .env
 storage/backups/
 storage/data/
+storage/tmp/
 uploads/
 *.log
 *.zip

@@ -1,0 +1,68 @@
+name: Release Build & Validate
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to build (e.g. 10.2.2)'
+        required: true
+        default: '10.2.2'
+
+jobs:
+  build-and-release:
+    name: Build, Validate & Publish Release Asset
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo, pdo_mysql, zip, json, gd, curl
+          coverage: none
+
+      - name: PHP Syntax Check
+        run: |
+          find . -name "*.php" -not -path "*/storage/*" -not -path "*/vendor/*" -exec php -l {} \;
+
+      - name: Run Builder Negative Test
+        run: |
+          php tools/build-release.php --test-negative
+
+      - name: Determine Version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building release for version ${VERSION}"
+
+      - name: Build Clean Release ZIP
+        run: |
+          php tools/build-release.php ${{ steps.get_version.outputs.VERSION }} --output=HSG-Administration-v${{ steps.get_version.outputs.VERSION }}.zip
+
+      - name: Create GitHub Release and Upload Asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="v${{ steps.get_version.outputs.VERSION }}"
+          ZIP_NAME="HSG-Administration-${TAG_NAME}.zip"
+
+          gh release create "${TAG_NAME}" "${ZIP_NAME}" \
+            --title "HSG Administration ${TAG_NAME}" \
+            --notes "Officiel release-pakke for HSG Administration ${TAG_NAME}." \
+            --clobber || \
+          gh release upload "${TAG_NAME}" "${ZIP_NAME}" --clobber

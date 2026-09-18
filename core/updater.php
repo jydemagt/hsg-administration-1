@@ -77,25 +77,16 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
             $rawEntries[]=['index'=>$i,'raw'=>$raw,'rel'=>$rel,'size'=>$size,'dir'=>str_ends_with($raw,'/')];
         }
 
-        // Auto-detect if all files live inside a single top-level directory (e.g. GitHub ZIPs like hsg-administration-1-main/)
+        // Auto-detect if all files live inside a single top-level directory by locating hsg-package.json
         $prefix='';
-        if(!empty($rawEntries)) {
-            $firstParts=explode('/',$rawEntries[0]['rel']);
-            if(count($firstParts)>1) {
-                $candidate=$firstParts[0].'/';
-                $allSharePrefix=true;
-                foreach($rawEntries as $e) {
-                    if(!str_starts_with($e['rel'],$candidate)) {
-                        $allSharePrefix=false;
-                        break;
-                    }
-                }
-                // Only consider it a subfolder wrapper if hsg-package.json is NOT in the root, but IS in candidate
-                $hasRootManifest=false;
-                foreach($rawEntries as $e) { if($e['rel']==='hsg-package.json') { $hasRootManifest=true; break; } }
-                if(!$hasRootManifest && $allSharePrefix) {
-                    $prefix=$candidate;
-                }
+        foreach($rawEntries as $e) {
+            if($e['rel'] === 'hsg-package.json') {
+                $prefix = '';
+                break;
+            }
+            if(str_ends_with($e['rel'], '/hsg-package.json')) {
+                $prefix = substr($e['rel'], 0, -strlen('hsg-package.json'));
+                break;
             }
         }
 
@@ -148,7 +139,7 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
         // Integrity hashes are primarily corruption detection. Package authenticity
         // still depends on the administrator only uploading trusted HSG packages.
         $hashes=(array)($manifest['files']??[]);
-        $ignoredMetaFiles=['.gitignore','.gitattributes','.htaccess','.DS_Store','README.md'];
+        $ignoredMetaFiles=['.gitignore','.gitattributes','.htaccess','.DS_Store','README.md','storage/.htaccess'];
         foreach($entries as $rel=>$entry){
             if(!empty($entry['dir']) || $rel==='hsg-package.json') continue;
             if(in_array($rel,$ignoredMetaFiles,true) && !array_key_exists($rel,$hashes)) continue;
@@ -390,63 +381,49 @@ function hsg_github_http_get(string $url, int &$status = 0): string {
 }
 
 function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administration-1'): array {
-    // Check GitHub Releases first
-    $releaseUrl = "https://api.github.com/repos/{$repo}/releases/latest";
+    // Check GitHub Releases API for published release tags and official asset ZIPs
+    $releasesUrl = "https://api.github.com/repos/{$repo}/releases";
     try {
         $httpStatus = 0;
-        $json = hsg_github_http_get($releaseUrl, $httpStatus);
-        if($httpStatus === 200 && trim($json) !== '') {
-            $data = json_decode($json, true, 32, JSON_THROW_ON_ERROR);
-            $tag = (string)($data['tag_name'] ?? '');
-            $version = ltrim($tag, 'v');
-            $downloadUrl = '';
-            if(!empty($data['assets']) && is_array($data['assets'])) {
-                foreach($data['assets'] as $asset) {
-                    if(str_ends_with(strtolower((string)$asset['name']), '.zip')) {
-                        $downloadUrl = (string)($asset['browser_download_url'] ?? '');
-                        break;
+        $json = hsg_github_http_get($releasesUrl, $httpStatus);
+        if ($httpStatus === 200 && trim($json) !== '') {
+            $releases = json_decode($json, true, 32, JSON_THROW_ON_ERROR);
+            if (is_array($releases)) {
+                foreach ($releases as $relData) {
+                    if (!empty($relData['draft'])) continue;
+                    $tag = trim((string)($relData['tag_name'] ?? ''));
+                    $version = ltrim($tag, 'v');
+                    if (!preg_match('/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/', $version)) continue;
+
+                    $downloadUrl = '';
+                    if (!empty($relData['assets']) && is_array($relData['assets'])) {
+                        foreach ($relData['assets'] as $asset) {
+                            $assetName = strtolower((string)($asset['name'] ?? ''));
+                            if (str_ends_with($assetName, '.zip') && str_contains($assetName, 'hsg-administration')) {
+                                $downloadUrl = (string)($asset['browser_download_url'] ?? '');
+                                break;
+                            }
+                        }
                     }
+                    if ($downloadUrl === '') {
+                        $downloadUrl = (string)($relData['zipball_url'] ?? "https://github.com/{$repo}/archive/refs/tags/{$tag}.zip");
+                    }
+
+                    return [
+                        'tag' => $tag,
+                        'version' => $version,
+                        'current_version' => app_version(),
+                        'has_update' => version_compare($version, app_version(), '>'),
+                        'name' => (string)($relData['name'] ?? $tag),
+                        'notes' => (string)($relData['body'] ?? ''),
+                        'download_url' => $downloadUrl,
+                        'published_at' => (string)($relData['published_at'] ?? ''),
+                    ];
                 }
             }
-            if($downloadUrl === '') {
-                $downloadUrl = (string)($data['zipball_url'] ?? "https://github.com/{$repo}/archive/refs/tags/{$tag}.zip");
-            }
-            return [
-                'tag' => $tag,
-                'version' => $version,
-                'current_version' => app_version(),
-                'has_update' => version_compare($version, app_version(), '>'),
-                'name' => (string)($data['name'] ?? $tag),
-                'notes' => (string)($data['body'] ?? ''),
-                'download_url' => $downloadUrl,
-                'published_at' => (string)($data['published_at'] ?? ''),
-            ];
         }
-    } catch(Throwable $e) {
-        // Fallthrough to main branch check if releases call fails
-    }
-
-    // Direct GitHub main branch check (checks raw hsg-package.json on main)
-    try {
-        $rawManifestUrl = "https://raw.githubusercontent.com/{$repo}/main/hsg-package.json";
-        $manifestStatus = 0;
-        $manifestJson = hsg_github_http_get($rawManifestUrl, $manifestStatus);
-        if($manifestStatus === 200 && trim($manifestJson) !== '') {
-            $manifest = json_decode($manifestJson, true, 32, JSON_THROW_ON_ERROR);
-            $version = (string)($manifest['version'] ?? app_version());
-            return [
-                'tag' => 'main',
-                'version' => $version,
-                'current_version' => app_version(),
-                'has_update' => version_compare($version, app_version(), '>'),
-                'name' => 'GitHub main branch (v'.$version.')',
-                'notes' => (string)($manifest['release_notes'] ?? 'Ny opdatering fra GitHub main branch.'),
-                'download_url' => "https://github.com/{$repo}/archive/refs/heads/main.zip",
-                'published_at' => date('Y-m-d H:i:s'),
-            ];
-        }
-    } catch(Throwable $e) {
-        throw new RuntimeException('Kunne ikke hente oplysninger fra GitHub: '.$e->getMessage(), 0, $e);
+    } catch (Throwable $e) {
+        // Fallthrough if API lookup fails
     }
 
     return [
@@ -455,7 +432,7 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
         'current_version' => app_version(),
         'has_update' => false,
         'name' => 'Ingen GitHub Releases endnu',
-        'notes' => 'Der er endnu ikke oprettet nogen officielle releases eller opdateringer på GitHub-repositoryet.',
+        'notes' => 'Der er endnu ikke oprettet nogen officielle releases på GitHub-repositoryet.',
         'download_url' => '',
         'published_at' => '',
     ];
