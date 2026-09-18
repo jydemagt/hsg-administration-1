@@ -108,7 +108,7 @@ page_header('Opgradering');
   <?php if(is_array($githubRelease) && !empty($githubRelease['download_url'])): ?>
     <div style="padding: 1rem; background: var(--bg-card, #f8f9fa); border: 1px solid var(--border-color, #e0e0e0); border-radius: 6px;">
       <h3>GitHub version: <?=h($githubRelease['version'])?></h3>
-      <p><strong>Status:</strong> <?= $githubRelease['has_update'] ? '<span style="color: green; font-weight: bold;">Ny version tilgængelig!</span>' : '<span style="color: #155eef; font-weight: bold;">Installeret version matcher GitHub main-branch</span>' ?></p>
+      <p><strong>Status:</strong> <?= $githubRelease['has_update'] ? '<span style="color: green; font-weight: bold;">Ny version tilgængelig!</span>' : '<span style="color: #155eef; font-weight: bold;">Installeret version matcher seneste GitHub Release</span>' ?></p>
       <form method="post" style="margin-top: 1rem;">
         <?=csrf_field()?>
         <input type="hidden" name="action" value="stage_github">

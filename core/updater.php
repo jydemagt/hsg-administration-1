@@ -136,39 +136,30 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
             }
         }
 
-        // Integrity hashes are primarily corruption detection. Package authenticity
-        // still depends on the administrator only uploading trusted HSG packages.
-        $hashes=(array)($manifest['files']??[]);
-        $ignoredMetaFiles=['.gitignore','.gitattributes','.htaccess','.DS_Store','README.md','storage/.htaccess'];
+        // Strict integrity hash validation: every file in ZIP must be listed in manifest
+        // and every entry in manifest must exist in ZIP with matching SHA-256 hash.
+        $hashes=(array)($manifest['manifest']??$manifest['files']??[]);
         foreach($entries as $rel=>$entry){
             if(!empty($entry['dir']) || $rel==='hsg-package.json') continue;
-            if(in_array($rel,$ignoredMetaFiles,true) && !array_key_exists($rel,$hashes)) continue;
-            if(!array_key_exists($rel,$hashes)) throw new RuntimeException('Pakken indeholder en fil, som ikke er med i integritetsmanifestet: '.$rel);
+            if(!array_key_exists($rel,$hashes)) {
+                throw new RuntimeException("Opdateringen blev afvist.\n\nUventet fil:\n{$rel}\n\nDenne fil må ikke indgå i en HSG releasepakke.");
+            }
         }
         foreach($hashes as $rel=>$expected){
             $rel=hsg_update_normalize_entry((string)$rel);
             $expected=strtolower(trim((string)$expected));
-            if($rel==='' || !isset($entries[$rel]) || $entries[$rel]['dir']) throw new RuntimeException('Manifestet refererer til en manglende fil: '.$rel);
-            if(!preg_match('/^[a-f0-9]{64}$/',$expected)) throw new RuntimeException('Ugyldig filhash i pakkemanifestet.');
+            if($rel==='' || !isset($entries[$rel]) || $entries[$rel]['dir']) {
+                throw new RuntimeException("Opdateringen blev afvist.\n\nManifestet refererer til en manglende fil:\n{$rel}");
+            }
+            if(!preg_match('/^[a-f0-9]{64}$/',$expected)) throw new RuntimeException('Ugyldig filhash i pakkemanifestet for: '.$rel);
             $contents=$zip->getFromIndex((int)$entries[$rel]['index']);
-            if($contents===false) throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
+            if($contents===false) throw new RuntimeException('Kunne ikke læse fil fra ZIP til integritetskontrol: '.$rel);
             $hash = hash('sha256', $contents);
             if(!hash_equals($expected, $hash)) {
-                if($rel === 'app_version.php' || $rel === 'core/updater.php') {
-                    continue;
-                }
-                $lf = str_replace(["\r\n", "\r"], "\n", $contents);
-                $crlf = str_replace("\n", "\r\n", $lf);
-                $candHashes = [
-                    hash('sha256', $lf),
-                    hash('sha256', $crlf),
-                    hash('sha256', rtrim($lf) . "\n"),
-                    hash('sha256', rtrim($crlf) . "\r\n"),
-                    hash('sha256', trim($lf)),
-                    hash('sha256', trim($contents))
-                ];
-                if(!in_array($expected, $candHashes, true)) {
-                    throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
+                $normalized = str_replace("\r\n", "\n", $contents);
+                $normHash = hash('sha256', $normalized);
+                if(!hash_equals($expected, $normHash)) {
+                    throw new RuntimeException("Opdateringen blev afvist.\n\nFil:\n{$rel}\n\nExpected SHA-256:\n{$expected}\n\nActual SHA-256:\n{$hash}\n\nPackage:\n" . basename($zipPath) . "\n\nRelease:\nv{$target}");
                 }
             }
         }
@@ -392,76 +383,74 @@ function hsg_github_http_get(string $url, int &$status = 0): string {
 }
 
 function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administration-1'): array {
-    $currentVersion = app_version();
-
-    // 1. Direct GitHub main branch check (primary source for HSG Administration updates)
-    try {
-        $rawManifestUrl = "https://raw.githubusercontent.com/{$repo}/main/hsg-package.json";
-        $manifestStatus = 0;
-        $manifestJson = hsg_github_http_get($rawManifestUrl, $manifestStatus);
-        if($manifestStatus === 200 && trim($manifestJson) !== '') {
-            $manifest = json_decode($manifestJson, true, 32, JSON_THROW_ON_ERROR);
-            $mainVersion = (string)($manifest['version'] ?? $currentVersion);
-            if(version_compare($mainVersion, '2.0.0', '>=')) {
-                return [
-                    'tag' => 'main',
-                    'version' => $mainVersion,
-                    'current_version' => $currentVersion,
-                    'has_update' => version_compare($mainVersion, $currentVersion, '>'),
-                    'name' => 'GitHub main branch (v'.$mainVersion.')',
-                    'notes' => (string)($manifest['release_notes'] ?? 'Ny opdatering fra GitHub main branch.'),
-                    'download_url' => "https://github.com/{$repo}/archive/refs/heads/main.zip",
-                    'published_at' => date('Y-m-d H:i:s'),
-                ];
-            }
-        }
-    } catch(Throwable $e) {
-        // Fallthrough to releases API if main branch call fails
-    }
-
-    // 2. Fallback to GitHub Releases API (ignoring legacy releases < v2.0.0)
+    // Check GitHub Releases API for published stable release tags with official ZIP assets
+    $releasesUrl = "https://api.github.com/repos/{$repo}/releases";
     try {
         $releaseUrl = "https://api.github.com/repos/{$repo}/releases/latest";
         $httpStatus = 0;
-        $json = hsg_github_http_get($releaseUrl, $httpStatus);
-        if($httpStatus === 200 && trim($json) !== '') {
-            $data = json_decode($json, true, 32, JSON_THROW_ON_ERROR);
-            $tag = (string)($data['tag_name'] ?? '');
-            $version = ltrim($tag, 'v');
-            if(version_compare($version, '2.0.0', '>=')) {
-                $downloadUrl = '';
-                if(!empty($data['assets']) && is_array($data['assets'])) {
-                    foreach($data['assets'] as $asset) {
-                        if(str_ends_with(strtolower((string)$asset['name']), '.zip')) {
-                            $downloadUrl = (string)($asset['browser_download_url'] ?? '');
-                            break;
+        $json = hsg_github_http_get($releasesUrl, $httpStatus);
+        if ($httpStatus === 200 && trim($json) !== '') {
+            $releases = json_decode($json, true, 32, JSON_THROW_ON_ERROR);
+            if (is_array($releases)) {
+                $bestRelease = null;
+                $highestVersion = '0.0.0';
+
+                foreach ($releases as $relData) {
+                    // Ignore drafts and prereleases
+                    if (!empty($relData['draft']) || !empty($relData['prerelease'])) continue;
+
+                    $tag = trim((string)($relData['tag_name'] ?? ''));
+                    $version = ltrim($tag, 'v');
+
+                    // Strict semver format for stable production releases
+                    if (!preg_match('/^\d+\.\d+\.\d+$/', $version)) continue;
+
+                    // Search for official HSG ZIP asset attached to this release
+                    $downloadUrl = '';
+                    if (!empty($relData['assets']) && is_array($relData['assets'])) {
+                        foreach ($relData['assets'] as $asset) {
+                            $assetName = strtolower((string)($asset['name'] ?? ''));
+                            if (str_ends_with($assetName, '.zip') && str_contains($assetName, 'hsg-administration')) {
+                                $downloadUrl = (string)($asset['browser_download_url'] ?? '');
+                                break;
+                            }
                         }
                     }
+
+                    // Skip releases missing the official ZIP asset
+                    if ($downloadUrl === '') continue;
+
+                    if ($bestRelease === null || version_compare($version, $highestVersion, '>')) {
+                        $highestVersion = $version;
+                        $bestRelease = [
+                            'tag' => $tag,
+                            'version' => $version,
+                            'current_version' => app_version(),
+                            'has_update' => version_compare($version, app_version(), '>'),
+                            'name' => (string)($relData['name'] ?? $tag),
+                            'notes' => (string)($relData['body'] ?? ''),
+                            'download_url' => $downloadUrl,
+                            'published_at' => (string)($relData['published_at'] ?? ''),
+                        ];
+                    }
                 }
-                if($downloadUrl === '') {
-                    $downloadUrl = (string)($data['zipball_url'] ?? "https://github.com/{$repo}/archive/refs/tags/{$tag}.zip");
+
+                if ($bestRelease !== null) {
+                    return $bestRelease;
                 }
-                return [
-                    'tag' => $tag,
-                    'version' => $version,
-                    'current_version' => $currentVersion,
-                    'has_update' => version_compare($version, $currentVersion, '>'),
-                    'name' => (string)($data['name'] ?? $tag),
-                    'notes' => (string)($data['body'] ?? ''),
-                    'download_url' => $downloadUrl,
-                    'published_at' => (string)($data['published_at'] ?? ''),
-                ];
             }
         }
-    } catch(Throwable $e) {}
+    } catch (Throwable $e) {
+        // Fallthrough if API lookup fails
+    }
 
     return [
         'tag' => '',
         'version' => $currentVersion,
         'current_version' => $currentVersion,
         'has_update' => false,
-        'name' => 'Seneste version installeret',
-        'notes' => 'Du kører den nyeste version af HSG Administration.',
+        'name' => 'Ingen GitHub Releases endnu',
+        'notes' => 'Der er endnu ikke oprettet nogen officielle releases på GitHub-repositoryet.',
         'download_url' => '',
         'published_at' => '',
     ];
