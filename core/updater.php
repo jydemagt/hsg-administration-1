@@ -136,13 +136,11 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
             }
         }
 
-        // Integrity hashes are primarily corruption detection. Package authenticity
-        // still depends on the administrator only uploading trusted HSG packages.
-        $hashes=(array)($manifest['files']??[]);
-        $ignoredMetaFiles=['.gitignore','.gitattributes','.htaccess','.DS_Store','README.md','storage/.htaccess'];
+        // Strict integrity hash validation: every file in ZIP must be listed in manifest
+        // and every entry in manifest must exist in ZIP with matching SHA-256 hash.
+        $hashes=(array)($manifest['manifest']??$manifest['files']??[]);
         foreach($entries as $rel=>$entry){
             if(!empty($entry['dir']) || $rel==='hsg-package.json') continue;
-            if(in_array($rel,$ignoredMetaFiles,true) && !array_key_exists($rel,$hashes)) continue;
             if(!array_key_exists($rel,$hashes)) throw new RuntimeException('Pakken indeholder en fil, som ikke er med i integritetsmanifestet: '.$rel);
         }
         foreach($hashes as $rel=>$expected){
@@ -154,7 +152,6 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
             if($contents===false) throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
             $hash = hash('sha256', $contents);
             if(!hash_equals($expected, $hash)) {
-                // If CRLF line endings from Windows/Git caused a hash difference on text/doc files, test LF-normalized content
                 $normalized = str_replace("\r\n", "\n", $contents);
                 if(!hash_equals($expected, hash('sha256', $normalized))) {
                     throw new RuntimeException('Integritetskontrol fejlede for '.$rel.'.');
@@ -405,8 +402,9 @@ function hsg_github_check_latest_release(string $repo = 'jydemagt/hsg-administra
                             }
                         }
                     }
+
                     if ($downloadUrl === '') {
-                        $downloadUrl = (string)($relData['zipball_url'] ?? "https://github.com/{$repo}/archive/refs/tags/{$tag}.zip");
+                        throw new RuntimeException("Officiel release-pakke (HSG-Administration-{$tag}.zip) mangler på GitHub release {$tag}.");
                     }
 
                     return [

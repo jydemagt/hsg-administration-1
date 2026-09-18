@@ -248,27 +248,90 @@ function hsg_build_validate_zip(string $zipPath, array $manifest): void {
 }
 
 function hsg_run_negative_test(): bool {
-    hsg_build_log("Afvikler negativ test (injektion af prohibited fil i build tree)...", 'INFO');
-    $testBuildDir = sys_get_temp_dir() . '/hsg-test-negative-build-' . bin2hex(random_bytes(4));
+    hsg_build_log("Afvikler negativ test suite (prohibited stier, unmanifested filer, manglende/ændrede filer)...", 'INFO');
+    require_once HSG_ROOT . '/functions.php';
+    require_once HSG_ROOT . '/core/updater.php';
+
+    $testsPassed = 0;
+    $totalTests = 5;
+
+    // Test 1: Injected prohibited pdf-cache file
+    $dir1 = sys_get_temp_dir() . '/hsg-neg-1-' . bin2hex(random_bytes(4));
     try {
-        hsg_build_clean_export($testBuildDir);
-        // Inject prohibited pdf-cache file
-        $prohibitedDir = $testBuildDir . '/storage/tmp/pdf-cache';
-        if (!is_dir($prohibitedDir)) {
-            mkdir($prohibitedDir, 0775, true);
-        }
-        file_put_contents($prohibitedDir . '/test-untracked.jpg', 'fake-jpg-content');
-
-        // This call MUST throw a RuntimeException
-        hsg_build_check_prohibited($testBuildDir);
-
-        hsg_build_rrmdir($testBuildDir);
-        hsg_build_log("NEGATIV TEST FEJLEDE: Prohibited fil blev IKKE opdaget af release builder!", 'ERROR');
-        return false;
+        hsg_build_clean_export($dir1);
+        $pDir = $dir1 . '/storage/tmp/pdf-cache';
+        if (!is_dir($pDir)) mkdir($pDir, 0775, true);
+        file_put_contents($pDir . '/test-untracked.jpg', 'fake-jpg');
+        hsg_build_check_prohibited($dir1);
+        hsg_build_log("Test 1 FEJLEDE: Prohibited fil blev ikke afvist!", 'ERROR');
     } catch (RuntimeException $e) {
-        hsg_build_rrmdir($testBuildDir);
-        hsg_build_log("NEGATIV TEST BESTÅET: Release builder afviste korrekt den prohibitede fil: " . $e->getMessage(), 'SUCCESS');
+        $testsPassed++;
+        hsg_build_log("Test 1 BESTÅET: Prohibited fil afvist (" . $e->getMessage() . ")", 'SUCCESS');
+    } finally { hsg_build_rrmdir($dir1); }
+
+    // Test 2: Injected unmanifested file into ZIP
+    $dir2 = sys_get_temp_dir() . '/hsg-neg-2-' . bin2hex(random_bytes(4));
+    $zip2 = sys_get_temp_dir() . '/hsg-neg-2-' . bin2hex(random_bytes(4)) . '.zip';
+    try {
+        hsg_build_clean_export($dir2);
+        $manifest = hsg_build_generate_manifest($dir2, '10.2.2', 'testcommit');
+        // Inject unmanifested extra file AFTER manifest generation
+        file_put_contents($dir2 . '/unmanifested_extra.php', '<?php // extra');
+        hsg_build_zip($dir2, $zip2);
+        hsg_build_validate_zip($zip2, $manifest);
+        hsg_build_log("Test 2 FEJLEDE: Unmanifested fil i ZIP blev ikke opdaget!", 'ERROR');
+    } catch (RuntimeException $e) {
+        $testsPassed++;
+        hsg_build_log("Test 2 BESTÅET: Unmanifested fil afvist (" . $e->getMessage() . ")", 'SUCCESS');
+    } finally { hsg_build_rrmdir($dir2); @unlink($zip2); }
+
+    // Test 3: Altered file hash mismatch
+    $dir3 = sys_get_temp_dir() . '/hsg-neg-3-' . bin2hex(random_bytes(4));
+    $zip3 = sys_get_temp_dir() . '/hsg-neg-3-' . bin2hex(random_bytes(4)) . '.zip';
+    try {
+        hsg_build_clean_export($dir3);
+        $manifest = hsg_build_generate_manifest($dir3, '10.2.2', 'testcommit');
+        // Alter file contents after manifest generation
+        file_put_contents($dir3 . '/app_version.php', '<?php return "99.99.99"; // tampered');
+        hsg_build_zip($dir3, $zip3);
+        hsg_build_validate_zip($zip3, $manifest);
+        hsg_build_log("Test 3 FEJLEDE: Ændret filhash blev ikke opdaget!", 'ERROR');
+    } catch (RuntimeException $e) {
+        $testsPassed++;
+        hsg_build_log("Test 3 BESTÅET: Ændret filhash afvist (" . $e->getMessage() . ")", 'SUCCESS');
+    } finally { hsg_build_rrmdir($dir3); @unlink($zip3); }
+
+    // Test 4: Missing hsg-package.json manifest
+    $dir4 = sys_get_temp_dir() . '/hsg-neg-4-' . bin2hex(random_bytes(4));
+    $zip4 = sys_get_temp_dir() . '/hsg-neg-4-' . bin2hex(random_bytes(4)) . '.zip';
+    try {
+        hsg_build_clean_export($dir4);
+        hsg_build_zip($dir4, $zip4);
+        hsg_update_validate_package($zip4, true);
+        hsg_build_log("Test 4 FEJLEDE: Manglende manifest blev ikke opdaget!", 'ERROR');
+    } catch (RuntimeException $e) {
+        $testsPassed++;
+        hsg_build_log("Test 4 BESTÅET: Manglende manifest afvist (" . $e->getMessage() . ")", 'SUCCESS');
+    } finally { hsg_build_rrmdir($dir4); @unlink($zip4); }
+
+    // Test 5: Injected config.php
+    $dir5 = sys_get_temp_dir() . '/hsg-neg-5-' . bin2hex(random_bytes(4));
+    try {
+        hsg_build_clean_export($dir5);
+        file_put_contents($dir5 . '/config.php', '<?php // secret config');
+        hsg_build_check_prohibited($dir5);
+        hsg_build_log("Test 5 FEJLEDE: Prohibited config.php blev ikke afvist!", 'ERROR');
+    } catch (RuntimeException $e) {
+        $testsPassed++;
+        hsg_build_log("Test 5 BESTÅET: Prohibited config.php afvist (" . $e->getMessage() . ")", 'SUCCESS');
+    } finally { hsg_build_rrmdir($dir5); }
+
+    if ($testsPassed === $totalTests) {
+        hsg_build_log("ALLE {$totalTests} NEGATIVE TESTS BESTÅET SIKKERT!", 'SUCCESS');
         return true;
+    } else {
+        hsg_build_log("KUN {$testsPassed} / {$totalTests} NEGATIVE TESTS BESTÅET!", 'ERROR');
+        return false;
     }
 }
 
