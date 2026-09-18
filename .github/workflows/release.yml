@@ -1,0 +1,96 @@
+name: Release Build & Validate
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-and-release:
+    name: Build, Validate & Publish Release Asset
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo, pdo_mysql, zip, json, gd, curl
+          coverage: none
+
+      - name: PHP Syntax Check
+        run: |
+          find . -name "*.php" -not -path "*/storage/*" -not -path "*/vendor/*" -exec php -l {} \;
+
+      - name: Run Builder Negative Test
+        run: |
+          php tools/build-release.php --test-negative
+
+      - name: Determine Version
+        id: get_version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building release for version ${VERSION}"
+
+      - name: Build Clean Release ZIP
+        run: |
+          php tools/build-release.php ${{ steps.get_version.outputs.VERSION }} --output=HSG-Administration-v${{ steps.get_version.outputs.VERSION }}.zip
+
+      - name: Create GitHub Release and Upload Asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="v${{ steps.get_version.outputs.VERSION }}"
+          ZIP_NAME="HSG-Administration-${TAG_NAME}.zip"
+
+          gh release create "${TAG_NAME}" "${ZIP_NAME}" \
+            --title "HSG Administration ${TAG_NAME}" \
+            --notes "Officiel release-pakke for HSG Administration ${TAG_NAME}." \
+            --clobber || \
+          gh release upload "${TAG_NAME}" "${ZIP_NAME}" --clobber
+
+      - name: Download and Validate Published Release Asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="v${{ steps.get_version.outputs.VERSION }}"
+          ZIP_NAME="HSG-Administration-${TAG_NAME}.zip"
+          DOWNLOAD_DIR="downloaded-release-test"
+          mkdir -p "${DOWNLOAD_DIR}"
+
+          echo "Downloading published asset ${ZIP_NAME} from release ${TAG_NAME} for post-upload QA..."
+          if ! gh release download "${TAG_NAME}" -p "${ZIP_NAME}" -D "${DOWNLOAD_DIR}" --clobber; then
+            echo "ERROR: Download of published release asset ${ZIP_NAME} failed. Cleaning up release and tag ${TAG_NAME}..."
+            gh release delete "${TAG_NAME}" --yes --cleanup-tag || true
+            exit 1
+          fi
+
+          DOWNLOADED_ZIP="${DOWNLOAD_DIR}/${ZIP_NAME}"
+          if [ ! -f "${DOWNLOADED_ZIP}" ]; then
+            echo "ERROR: Downloaded release asset ${DOWNLOADED_ZIP} not found! Cleaning up release and tag ${TAG_NAME}..."
+            gh release delete "${TAG_NAME}" --yes --cleanup-tag || true
+            exit 1
+          fi
+
+          echo "Running strict package validation against downloaded asset..."
+          if ! php -r '
+            require_once "functions.php";
+            require_once "core/updater.php";
+            $zip = $argv[1];
+            echo "Validating downloaded ZIP: " . $zip . "\n";
+            $info = hsg_update_validate_package($zip, true);
+            echo "QA PASS: Downloaded GitHub Release asset passed validation with " . $info["file_count"] . " files.\n";
+          ' "${DOWNLOADED_ZIP}"; then
+            echo "POST-UPLOAD QA FAILED: Downloaded release asset ${ZIP_NAME} failed integrity validation!"
+            echo "Cleaning up invalid GitHub Release and tag ${TAG_NAME}..."
+            gh release delete "${TAG_NAME}" --yes --cleanup-tag || true
+            exit 1
+          fi
