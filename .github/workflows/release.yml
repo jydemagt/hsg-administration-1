@@ -53,8 +53,7 @@ jobs:
 
           gh release create "${TAG_NAME}" "${ZIP_NAME}" \
             --title "HSG Administration ${TAG_NAME}" \
-            --notes "Officiel release-pakke for HSG Administration ${TAG_NAME}." \
-            --clobber || \
+            --notes "Officiel release-pakke for HSG Administration ${TAG_NAME}." || \
           gh release upload "${TAG_NAME}" "${ZIP_NAME}" --clobber
 
       - name: Download and Validate Published Release Asset
