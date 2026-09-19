@@ -112,7 +112,10 @@ page_header('Lager');
       <option value="<?=$l['id']?>" <?=$locFilter===(int)$l['id']?'selected':''?>><?=h($l['name'])?></option>
     <?php endforeach; ?>
   </select>
-  <button>Søg & Filtrér</button>
+  <button type="submit">Søg & Filtrér</button>
+  <?php if($qFilter !== '' || $locFilter || $statusFilter !== 'active'): ?>
+    <a class="button secondary" href="stock.php">Nulstil filtre</a>
+  <?php endif; ?>
 </form>
 
 <?php if(is_admin()): ?>
@@ -143,7 +146,7 @@ page_header('Lager');
           </div>
           <label>Antal<input type="number" min="1" name="quantity" required></label>
           <label>Reference<input name="reference" value="Intern flytning"></label>
-          <button>Flyt lager</button>
+          <button type="submit">Flyt lager</button>
         </form>
       </div>
     </div>
@@ -158,7 +161,7 @@ page_header('Lager');
       <p class="muted" style="margin:4px 0 0;">Ret de fysiske lagerantal direkte i tekstfelterne og tryk Gem. Hver lokation vises overskueligt på samme produktlinje.</p>
     </div>
     <div>
-      <button class="button">Gem alle lagerrettelser</button>
+      <button type="submit" class="button">Gem alle lagerrettelser</button>
     </div>
   </div>
   <div style="margin-bottom:12px; max-width:320px;">
@@ -218,7 +221,11 @@ page_header('Lager');
         </tr>
       <?php endforeach; ?>
       <?php if(!$gridProducts): ?>
-        <tr><td colspan="10" class="muted">Ingen produkter fundet.</td></tr>
+        <tr>
+          <td colspan="12" class="muted" style="text-align:center; padding:24px;">
+            Der blev ikke fundet nogen produkter i lagerstyringen med de valgte filtre. <a class="button secondary small" href="stock.php">Ryd filtre</a>
+          </td>
+        </tr>
       <?php endif; ?>
     </tbody>
   </table>
@@ -273,6 +280,13 @@ page_header('Lager');
           <td style="font-weight:bold;" class="available <?=$totalAvailable<0?'negative':''?>"><?=$totalAvailable?></td>
         </tr>
       <?php endforeach; ?>
+      <?php if(!$gridProducts): ?>
+        <tr>
+          <td colspan="12" class="muted" style="text-align:center; padding:24px;">
+            Der blev ikke fundet nogen produkter i lagerstyringen med de valgte filtre. <a class="button secondary small" href="stock.php">Ryd filtre</a>
+          </td>
+        </tr>
+      <?php endif; ?>
     </tbody>
   </table>
 </div>

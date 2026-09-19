@@ -8,7 +8,7 @@ require_once __DIR__.'/modules.php';
 require_once __DIR__.'/audit.php';
 require_once __DIR__.'/settings.php';
 
-// Global Quick Search AJAX Handler
+// Global Quick Search & Command Palette AJAX Handler
 if (isset($_GET['action']) && $_GET['action'] === 'quick_search') {
     header('Content-Type: application/json; charset=utf-8');
     $q = trim((string)($_GET['q'] ?? ''));
@@ -19,6 +19,32 @@ if (isset($_GET['action']) && $_GET['action'] === 'quick_search') {
 
     $results = [];
     $like = '%' . $q . '%';
+    $lowerQ = mb_strtolower($q);
+
+    // Command Palette Action Shortcuts
+    $actions = [
+        ['q' => ['opret produkt', 'nyt produkt', 'opret'], 'type' => 'Handling', 'title' => 'Opret nyt produkt', 'subtitle' => 'Åbn produktformular', 'url' => 'products.php#new-product'],
+        ['q' => ['åbn lager', 'lager', 'lagerbeholdning'], 'type' => 'Handling', 'title' => 'Åbn lagerstyring', 'subtitle' => 'Oversigt over fysisk og disponibelt lager', 'url' => 'status.php'],
+        ['q' => ['opret reservation', 'ny reservation', 'reservér'], 'type' => 'Handling', 'title' => 'Opret reservation', 'subtitle' => 'Reserver varer til kunde eller smagning', 'url' => 'status.php'],
+        ['q' => ['brugere', 'brugeradgang', 'links'], 'type' => 'Handling', 'title' => 'Administrer brugere & links', 'subtitle' => 'Tildel rettigheder og adgangslinks', 'url' => 'users.php'],
+        ['q' => ['rapporter', 'salg', 'omsætning'], 'type' => 'Handling', 'title' => 'Salgsrapporter & WooCommerce', 'subtitle' => 'Se omsætning og salgsstatistik', 'url' => 'reports.php'],
+        ['q' => ['woocommerce', 'webshop', 'sync'], 'type' => 'Handling', 'title' => 'WooCommerce Indstillinger', 'subtitle' => 'Synkroniser ordrer og test API', 'url' => 'reports.php?tab=settings'],
+        ['q' => ['systemstatus', 'audit', 'aktivitet'], 'type' => 'Handling', 'title' => 'Systemstatus & Auditlog', 'subtitle' => 'Overvåg system og seneste ændringer', 'url' => 'system.php']
+    ];
+
+    foreach ($actions as $act) {
+        foreach ($act['q'] as $keyword) {
+            if (str_contains($keyword, $lowerQ) || str_contains($lowerQ, $keyword)) {
+                $results[] = [
+                    'type' => $act['type'],
+                    'title' => $act['title'],
+                    'subtitle' => $act['subtitle'],
+                    'url' => $act['url'],
+                ];
+                break;
+            }
+        }
+    }
 
     if (can('products.view') || can('inventory.view') || can('catalog.view')) {
         $st = $pdo->prepare("
@@ -70,6 +96,42 @@ if (isset($_GET['action']) && $_GET['action'] === 'quick_search') {
                 'subtitle' => $r['product_name'] . ($r['reference'] ? ' · Ref: ' . $r['reference'] : ''),
                 'url' => 'reservations.php?q=' . urlencode($r['customer_name'] ?: $r['reference']),
             ];
+        }
+    }
+
+    if (is_admin()) {
+        if (db_table_exists($pdo, 'lager_users')) {
+            $stU = $pdo->prepare("SELECT id, name, email FROM lager_users WHERE name LIKE ? OR email LIKE ? ORDER BY name ASC LIMIT 3");
+            $stU->execute([$like, $like]);
+            $users = $stU->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($users as $u) {
+                $results[] = [
+                    'type' => 'Bruger (Link)',
+                    'title' => $u['name'],
+                    'subtitle' => $u['email'] ?: 'Personligt link-adgang',
+                    'url' => 'users.php?q=' . urlencode($u['name']),
+                ];
+            }
+        }
+
+        if (db_table_exists($pdo, 'hsg_woocommerce_orders')) {
+            $stO = $pdo->prepare("
+                SELECT id, order_number, billing_first_name, billing_last_name, status, total
+                FROM hsg_woocommerce_orders
+                WHERE order_number LIKE ? OR billing_first_name LIKE ? OR billing_last_name LIKE ? OR billing_email LIKE ?
+                ORDER BY id DESC LIMIT 3
+            ");
+            $stO->execute([$like, $like, $like, $like]);
+            $orders = $stO->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($orders as $o) {
+                $name = trim($o['billing_first_name'] . ' ' . $o['billing_last_name']);
+                $results[] = [
+                    'type' => 'Ordre',
+                    'title' => 'Ordre #' . ($o['order_number'] ?: $o['id']) . ($name ? ' - ' . $name : ''),
+                    'subtitle' => 'Status: ' . $o['status'] . ' · Total: ' . $o['total'] . ' kr.',
+                    'url' => 'reports.php?q=' . urlencode((string)($o['order_number'] ?: $o['id'])),
+                ];
+            }
         }
     }
 
