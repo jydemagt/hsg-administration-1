@@ -21,18 +21,19 @@ if (isset($_GET['action']) && $_GET['action'] === 'quick_search') {
     $like = '%' . $q . '%';
     $lowerQ = mb_strtolower($q);
 
-    // Command Palette Action Shortcuts
+    // Command Palette Action Shortcuts (Filtered by Server-Side Permissions)
     $actions = [
-        ['q' => ['opret produkt', 'nyt produkt', 'opret'], 'type' => 'Handling', 'title' => 'Opret nyt produkt', 'subtitle' => 'Åbn produktformular', 'url' => 'products.php#new-product'],
-        ['q' => ['åbn lager', 'lager', 'lagerbeholdning'], 'type' => 'Handling', 'title' => 'Åbn lagerstyring', 'subtitle' => 'Oversigt over fysisk og disponibelt lager', 'url' => 'status.php'],
-        ['q' => ['opret reservation', 'ny reservation', 'reservér'], 'type' => 'Handling', 'title' => 'Opret reservation', 'subtitle' => 'Reserver varer til kunde eller smagning', 'url' => 'status.php'],
-        ['q' => ['brugere', 'brugeradgang', 'links'], 'type' => 'Handling', 'title' => 'Administrer brugere & links', 'subtitle' => 'Tildel rettigheder og adgangslinks', 'url' => 'users.php'],
-        ['q' => ['rapporter', 'salg', 'omsætning'], 'type' => 'Handling', 'title' => 'Salgsrapporter & WooCommerce', 'subtitle' => 'Se omsætning og salgsstatistik', 'url' => 'reports.php'],
-        ['q' => ['woocommerce', 'webshop', 'sync'], 'type' => 'Handling', 'title' => 'WooCommerce Indstillinger', 'subtitle' => 'Synkroniser ordrer og test API', 'url' => 'reports.php?tab=settings'],
-        ['q' => ['systemstatus', 'audit', 'aktivitet'], 'type' => 'Handling', 'title' => 'Systemstatus & Auditlog', 'subtitle' => 'Overvåg system og seneste ændringer', 'url' => 'system.php']
+        ['q' => ['opret produkt', 'nyt produkt', 'opret'], 'cap' => fn()=>is_admin() && can('products.view'), 'type' => 'Handling', 'title' => 'Opret nyt produkt', 'subtitle' => 'Åbn produktformular', 'url' => 'products.php#new-product'],
+        ['q' => ['åbn lager', 'lager', 'lagerbeholdning'], 'cap' => fn()=>can('inventory.view'), 'type' => 'Handling', 'title' => 'Åbn lagerstyring', 'subtitle' => 'Oversigt over fysisk og disponibelt lager', 'url' => 'status.php'],
+        ['q' => ['opret reservation', 'ny reservation', 'reservér'], 'cap' => fn()=>can('reservations.create'), 'type' => 'Handling', 'title' => 'Opret reservation', 'subtitle' => 'Reserver varer til kunde eller smagning', 'url' => 'status.php'],
+        ['q' => ['brugere', 'brugeradgang', 'links'], 'cap' => fn()=>is_superadmin() || can('users.manage'), 'type' => 'Handling', 'title' => 'Administrer brugere & links', 'subtitle' => 'Tildel rettigheder og adgangslinks', 'url' => 'users.php'],
+        ['q' => ['rapporter', 'salg', 'omsætning'], 'cap' => fn()=>can('reports.view'), 'type' => 'Handling', 'title' => 'Salgsrapporter & WooCommerce', 'subtitle' => 'Se omsætning og salgsstatistik', 'url' => 'reports.php'],
+        ['q' => ['woocommerce', 'webshop', 'sync'], 'cap' => fn()=>is_admin() && can('reports.view'), 'type' => 'Handling', 'title' => 'WooCommerce Indstillinger', 'subtitle' => 'Synkroniser ordrer og test API', 'url' => 'reports.php?tab=settings'],
+        ['q' => ['systemstatus', 'audit', 'aktivitet'], 'cap' => fn()=>is_admin(), 'type' => 'Handling', 'title' => 'Systemstatus & Auditlog', 'subtitle' => 'Overvåg system og seneste ændringer', 'url' => 'system.php']
     ];
 
     foreach ($actions as $act) {
+        if (!($act['cap'])()) continue; // Server-side permission enforcement
         foreach ($act['q'] as $keyword) {
             if (str_contains($keyword, $lowerQ) || str_contains($lowerQ, $keyword)) {
                 $results[] = [
@@ -100,7 +101,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'quick_search') {
     }
 
     if (is_admin()) {
-        if (db_table_exists($pdo, 'lager_users')) {
+        if (db_table_exists($pdo, 'lager_users') && (is_superadmin() || can('users.manage'))) {
             $stU = $pdo->prepare("SELECT id, name, email FROM lager_users WHERE name LIKE ? OR email LIKE ? ORDER BY name ASC LIMIT 3");
             $stU->execute([$like, $like]);
             $users = $stU->fetchAll(PDO::FETCH_ASSOC);
@@ -114,7 +115,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'quick_search') {
             }
         }
 
-        if (db_table_exists($pdo, 'hsg_woocommerce_orders')) {
+        if (db_table_exists($pdo, 'hsg_woocommerce_orders') && can('reports.view')) {
             $stO = $pdo->prepare("
                 SELECT id, order_number, billing_first_name, billing_last_name, status, total
                 FROM hsg_woocommerce_orders
