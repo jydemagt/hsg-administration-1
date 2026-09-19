@@ -78,7 +78,7 @@ page_header('Billedtjek');
     <form method="post" style="margin-top:12px"><?=csrf_field()?><input type="hidden" name="action" value="save_validation_settings">
       <label>Groq API-nøgle<input type="password" name="groq_api_key" autocomplete="new-password" placeholder="<?=$groqKeySet?'Nøgle er gemt – lad feltet være tomt for at beholde den':'Indsæt Groq API-nøgle'?>"></label>
       <?php if($groqKeySet):?><label class="check"><input type="checkbox" name="remove_groq_api_key" value="1"> Fjern gemt Groq API-nøgle</label><?php endif;?>
-      <div class="actions"><button>Gem valideringsindstillinger</button></div>
+      <div class="actions"><button type="submit">Gem valideringsindstillinger</button></div>
     </form>
   </details>
 </div>
@@ -126,10 +126,14 @@ $readyForManual=$ok&&$vstatus==='verified'&&$vscore!==null&&$vscore>=80;$rowFlag
       <?php if($ok&&!$isApproved&&$readyForManual):?><button type="button" class="success approve-one">Godkend billede</button><?php endif;?>
       <?php if($ok):?><button type="button" class="danger reject-current">Afvis billede</button><?php endif;?>
     </div>
-    <form class="image-url-form"><input type="hidden" name="csrf" value="<?=h(csrf_token())?>"><input type="hidden" name="product_id" value="<?=$r['id']?>"><label>Manuel billed-/produktside-URL<input name="url" placeholder="https://leverandør.dk/produkt... eller ekstern billed-URL"></label><label>Dokumentation fra leverandør <input name="supplier_page_url" placeholder="https://leverandør.dk/produkt..."><small class="muted">Kræves kun hvis selve billedfilen ligger på et andet domæne/CDN. HSG kontrollerer, at leverandørsiden refererer til billedet.</small></label><button>Hent og kontrollér</button></form>
+    <form class="image-url-form"><input type="hidden" name="csrf" value="<?=h(csrf_token())?>"><input type="hidden" name="product_id" value="<?=$r['id']?>"><label>Manuel billed-/produktside-URL<input name="url" placeholder="https://leverandør.dk/produkt... eller ekstern billed-URL"></label><label>Dokumentation fra leverandør <input name="supplier_page_url" placeholder="https://leverandør.dk/produkt..."><small class="muted">Kræves kun hvis selve billedfilen ligger på et andet domæne/CDN. HSG kontrollerer, at leverandørsiden refererer til billedet.</small></label><button type="submit">Hent og kontrollér</button></form>
   </td>
 </tr>
-<?php endforeach;?></tbody></table></div>
+<?php endforeach;?>
+<?php if(!$rows):?>
+<tr><td colspan="7" class="muted" style="text-align:center; padding:24px;">Der blev ikke fundet nogen billeder med det valgte filter. <a class="button secondary small" href="image_check.php">Ryd filtre</a></td></tr>
+<?php endif;?>
+</tbody></table></div>
 
 <div id="imageLightbox" class="image-lightbox" hidden aria-hidden="true">
   <div class="image-lightbox-backdrop" data-lightbox-close></div>
@@ -154,15 +158,39 @@ $readyForManual=$ok&&$vstatus==='verified'&&$vscore!==null&&$vscore>=80;$rowFlag
 </div>
 <script>
 const csrf=<?=json_encode(csrf_token())?>;
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 function methodLabel(){return 'Manuelt tilføjet';}
 function updateValidation(row,v,error=''){
- const cell=row.querySelector('.validation-status'),preview=row.querySelector('.image-preview-button');row.classList.remove('validation-flagged-row');
- const approval=preview?.dataset.approvalStatus||'pending';if(approval!=='approved')row.classList.add('validation-flagged-row');
- if(error){cell.innerHTML='<span class="badge red">Valideringsfejl</span><br><small class="muted validation-note">'+esc(error)+'</small>';if(preview){preview.dataset.validationStatus='error';preview.dataset.validationScore='';}row.classList.add('validation-flagged-row');return;}
- if(!v){cell.innerHTML='<span class="badge">Ikke AI-valideret</span>';if(preview){preview.dataset.validationStatus='';preview.dataset.validationScore='';}return;}
- const score=Number(v.score||0),ok=score>=80&&v.status==='verified';if(preview){preview.dataset.validationStatus=v.status||'';preview.dataset.validationScore=String(score);}
- cell.innerHTML='<span class="badge '+(ok?'green':'red')+'">'+(ok?'AI-match ':'AI FLAGGET ')+score+'%</span>'+(v.note?'<br><small class="muted validation-note">'+esc(v.note)+'</small>':'');
+ const cell=row.querySelector('.validation-status'),preview=row.querySelector('.image-preview-button');
+ row.classList.remove('validation-flagged-row');
+ const approval=preview?.dataset.approvalStatus||'pending';
+ if(approval!=='approved')row.classList.add('validation-flagged-row');
+
+ cell.textContent = '';
+ if(error){
+   const b = document.createElement('span'); b.className = 'badge red'; b.textContent = 'Valideringsfejl';
+   const br = document.createElement('br');
+   const sm = document.createElement('small'); sm.className = 'muted validation-note'; sm.textContent = error;
+   cell.appendChild(b); cell.appendChild(br); cell.appendChild(sm);
+   if(preview){preview.dataset.validationStatus='error';preview.dataset.validationScore='';}
+   row.classList.add('validation-flagged-row');
+   return;
+ }
+ if(!v){
+   const b = document.createElement('span'); b.className = 'badge'; b.textContent = 'Ikke AI-valideret';
+   cell.appendChild(b);
+   if(preview){preview.dataset.validationStatus='';preview.dataset.validationScore='';}
+   return;
+ }
+ const score=Number(v.score||0),ok=score>=80&&v.status==='verified';
+ if(preview){preview.dataset.validationStatus=v.status||'';preview.dataset.validationScore=String(score);}
+ const b = document.createElement('span'); b.className = ok ? 'badge green' : 'badge red';
+ b.textContent = (ok ? 'AI-match ' : 'AI FLAGGET ') + score + '%';
+ cell.appendChild(b);
+ if(v.note){
+   const br = document.createElement('br');
+   const sm = document.createElement('small'); sm.className = 'muted validation-note'; sm.textContent = v.note;
+   cell.appendChild(br); cell.appendChild(sm);
+ }
  if(!ok)row.classList.add('validation-flagged-row');
 }
 async function postImage(id,mode='',url='',supplierPageUrl=''){
@@ -188,8 +216,22 @@ async function fetchImage(id,mode='url',url='',supplierPageUrl=''){
  const data=await postImage(id,mode,url,supplierPageUrl);const row=document.getElementById('row-'+id);
  if(data.candidate_only){document.getElementById('progress').textContent=data.note||('AI fandt '+Number(data.candidate_count||0)+' kandidater til manuel kontrol.');return data;}
  row.dataset.missing='0';row.dataset.hasImage='1';
- const cls=data.method==='ai'?'badge blue':'badge';row.querySelector('.img-status').innerHTML='<span class="badge green">Billede fundet</span><br><span class="'+cls+'">'+methodLabel(data.method,data.confidence)+'</span>';
- const approvalCell=row.querySelector('.approval-status');if(approvalCell)approvalCell.innerHTML='<span class="badge red">Afventer godkendelse</span>';
+ const cls=data.method==='ai'?'badge blue':'badge';
+
+ const statusCell = row.querySelector('.img-status');
+ statusCell.textContent = '';
+ const b1 = document.createElement('span'); b1.className = 'badge green'; b1.textContent = 'Billede fundet';
+ const br = document.createElement('br');
+ const b2 = document.createElement('span'); b2.className = cls; b2.textContent = methodLabel(data.method,data.confidence);
+ statusCell.appendChild(b1); statusCell.appendChild(br); statusCell.appendChild(b2);
+
+ const approvalCell=row.querySelector('.approval-status');
+ if(approvalCell){
+   approvalCell.textContent = '';
+   const b3 = document.createElement('span'); b3.className = 'badge red'; b3.textContent = 'Afventer godkendelse';
+   approvalCell.appendChild(b3);
+ }
+
  if(data.path){const fresh=data.path+'?v='+Date.now();const img=row.querySelector('.image-preview');if(img)img.src=fresh;const previewButton=row.querySelector('.image-preview-button');if(previewButton){previewButton.dataset.fullImage=fresh;previewButton.dataset.approvalStatus='pending';}}
  updateValidation(row,data.validation,data.validation_error||'');return data;
 }
@@ -221,7 +263,7 @@ function openImageLightbox(button){
  lightbox.hidden=false;lightbox.setAttribute('aria-hidden','false');document.body.classList.add('lightbox-open');lightbox.querySelector('.image-lightbox-close')?.focus();
 }
 function closeImageLightbox(){if(lightbox.hidden)return;lightbox.hidden=true;lightbox.setAttribute('aria-hidden','true');lightboxImg.src='';document.body.classList.remove('lightbox-open');lightboxReturnFocus?.focus();lightboxReturnFocus=null;}
-async function approveCurrent(productId,button=null){if(!productId)return;const old=button?.textContent;if(button){button.disabled=true;button.textContent='Godkender…';}try{await postImage(productId,'approve_current');const row=document.getElementById('row-'+productId);if(row){row.querySelector('.approval-status').innerHTML='<span class="badge green">✓ Manuelt godkendt</span>';const preview=row.querySelector('.image-preview-button');if(preview){preview.dataset.approvalStatus='approved';const vs=preview.dataset.validationStatus||'',score=preview.dataset.validationScore!==''?Number(preview.dataset.validationScore):null;if(vs!=='error'&&(score===null||score>=80))row.classList.remove('validation-flagged-row');}}closeImageLightbox();}catch(err){alert(err.message);}finally{if(button){button.disabled=false;button.textContent=old||'Godkend billede';}}}
+async function approveCurrent(productId,button=null){if(!productId)return;const old=button?.textContent;if(button){button.disabled=true;button.textContent='Godkender…';}try{await postImage(productId,'approve_current');const row=document.getElementById('row-'+productId);if(row){const appCell=row.querySelector('.approval-status');if(appCell){appCell.textContent='';const b=document.createElement('span');b.className='badge green';b.textContent='✓ Manuelt godkendt';appCell.appendChild(b);}const preview=row.querySelector('.image-preview-button');if(preview){preview.dataset.approvalStatus='approved';const vs=preview.dataset.validationStatus||'',score=preview.dataset.validationScore!==''?Number(preview.dataset.validationScore):null;if(vs!=='error'&&(score===null||score>=80))row.classList.remove('validation-flagged-row');}}closeImageLightbox();}catch(err){alert(err.message);}finally{if(button){button.disabled=false;button.textContent=old||'Godkend billede';}}}
 async function rejectCurrent(productId,button=null){if(!productId||!confirm('Afvis dette billede? Det fjernes fra produktet.'))return;const old=button?.textContent;if(button){button.disabled=true;button.textContent='Afviser…';}try{await postImage(productId,'reject_current');closeImageLightbox();location.reload();}catch(err){alert(err.message);if(button){button.disabled=false;button.textContent=old||'Afvis billede';}}}
 document.querySelectorAll('.approve-one').forEach(btn=>btn.addEventListener('click',()=>approveCurrent(btn.closest('tr').dataset.product,btn)));
 document.querySelectorAll('.reject-current').forEach(btn=>btn.addEventListener('click',()=>rejectCurrent(btn.closest('tr').dataset.product,btn)));

@@ -99,28 +99,124 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     throw new RuntimeException('Ukendt handling.');
   }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();flash('error',$e->getMessage());redirect('reservations.php'.(!empty($_POST['product_id'])?'?product='.(int)$_POST['product_id']:''));}
 }
-$pid=(int)($_GET['product']??0);$products=$pdo->query("SELECT p.id,p.sku,p.name FROM lager_products p LEFT JOIN (SELECT product_id,SUM(quantity) physical FROM lager_stock GROUP BY product_id) st ON st.product_id=p.id LEFT JOIN (SELECT product_id,SUM(quantity) reserved FROM lager_reservations WHERE status='reserved' GROUP BY product_id) rs ON rs.product_id=p.id WHERE p.status='active' AND COALESCE(st.physical,0)-COALESCE(rs.reserved,0)>0 ORDER BY p.name")->fetchAll();$locs=get_locations($pdo,true);$selected=null;if($pid){$st=$pdo->prepare('SELECT * FROM lager_products WHERE id=?');$st->execute([$pid]);$selected=$st->fetch();}
-if(is_admin() || can('reservations.manage_all')){$rows=$pdo->query("SELECT r.*,p.sku,p.name product_name,l.name location_name,u.name user_name,a.display_name admin_name FROM lager_reservations r JOIN lager_products p ON p.id=r.product_id JOIN lager_locations l ON l.id=r.location_id LEFT JOIN lager_users u ON u.id=r.created_by LEFT JOIN lager_admins a ON a.id=r.created_by_admin ORDER BY r.status='reserved' DESC,r.created_at DESC LIMIT 300")->fetchAll();}else{$st=$pdo->prepare("SELECT r.*,p.sku,p.name product_name,l.name location_name,u.name user_name,a.display_name admin_name FROM lager_reservations r JOIN lager_products p ON p.id=r.product_id JOIN lager_locations l ON l.id=r.location_id LEFT JOIN lager_users u ON u.id=r.created_by LEFT JOIN lager_admins a ON a.id=r.created_by_admin WHERE r.created_by=? ORDER BY r.status='reserved' DESC,r.created_at DESC LIMIT 300");$st->execute([current_link_user_id()]);$rows=$st->fetchAll();}page_header('Reservationer');
+
+$pid=(int)($_GET['product']??0);
+$q=trim((string)($_GET['q']??''));
+$showStatus=trim((string)($_GET['status']??''));
+
+$products=$pdo->query("SELECT p.id,p.sku,p.name FROM lager_products p LEFT JOIN (SELECT product_id,SUM(quantity) physical FROM lager_stock GROUP BY product_id) st ON st.product_id=p.id LEFT JOIN (SELECT product_id,SUM(quantity) reserved FROM lager_reservations WHERE status='reserved' GROUP BY product_id) rs ON rs.product_id=p.id WHERE p.status='active' AND COALESCE(st.physical,0)-COALESCE(rs.reserved,0)>0 ORDER BY p.name")->fetchAll();
+$locs=get_locations($pdo,true);
+$selected=null;if($pid){$st=$pdo->prepare('SELECT * FROM lager_products WHERE id=?');$st->execute([$pid]);$selected=$st->fetch();}
+
+$conditions = [];
+$params = [];
+
+if(!is_admin() && !can('reservations.manage_all')){
+  $conditions[] = "r.created_by = ?";
+  $params[] = current_link_user_id();
+}
+
+if($q !== ''){
+  $conditions[] = "(r.customer_name LIKE ? OR r.reference LIKE ? OR r.note LIKE ? OR p.name LIKE ? OR p.sku LIKE ?)";
+  $like = '%'.$q.'%';
+  $params = array_merge($params, [$like, $like, $like, $like, $like]);
+}
+
+if(in_array($showStatus, ['reserved','completed','cancelled'], true)){
+  $conditions[] = "r.status = ?";
+  $params[] = $showStatus;
+}
+
+$where = $conditions ? 'WHERE '.implode(' AND ', $conditions) : '';
+
+$st = $pdo->prepare("SELECT r.*,p.sku,p.name product_name,l.name location_name,u.name user_name,a.display_name admin_name FROM lager_reservations r JOIN lager_products p ON p.id=r.product_id JOIN lager_locations l ON l.id=r.location_id LEFT JOIN lager_users u ON u.id=r.created_by LEFT JOIN lager_admins a ON a.id=r.created_by_admin $where ORDER BY r.status='reserved' DESC,r.created_at DESC LIMIT 300");
+$st->execute($params);
+$rows = $st->fetchAll();
+
+page_header('Reservationer');
 ?>
-<?php if(can('reservations.create')):?><div class="card"><h2>Reservér produkt</h2><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="create"><div class="split"><label>Produkt<select name="product_id" required><?php foreach($products as $p):?><option value="<?=$p['id']?>" <?=$pid===$p['id']?'selected':''?>><?=h($p['sku'].' – '.$p['name'])?></option><?php endforeach;?></select></label><label>Lokation<select name="location_id" required><?php foreach($locs as $l):?><option value="<?=$l['id']?>"><?=h($l['name'])?></option><?php endforeach;?></select></label></div><div class="three"><label>Antal<input type="number" min="1" name="quantity" value="1" required></label><label>Kunde<input name="customer_name" placeholder="Navn / virksomhed"></label><label>Ordre / reference<input name="reference" placeholder="Fx ordre #1047"></label></div><label>Bemærkning<input name="note"></label><button>Reservér</button></form></div><?php else:?><div class="readonly-note">Du har læseadgang til reservationer, men ikke rettighed til at oprette nye.</div><?php endif;?>
+
+<form class="searchbar" method="get">
+  <input name="q" value="<?=h($q)?>" placeholder="Søg på kunde, reference, produkt eller SKU">
+  <?php if($showStatus):?><input type="hidden" name="status" value="<?=h($showStatus)?>"><?php endif;?>
+  <button type="submit">Søg</button>
+  <?php if($q !== '' || $showStatus !== ''):?>
+    <a class="button secondary" href="reservations.php">Nulstil filtre</a>
+  <?php endif;?>
+</form>
+
+<div class="card">
+  <div class="actions" style="margin-bottom:8px;">
+    <a class="button <?=$showStatus===''?'':'secondary'?>" href="reservations.php<?= $q ? '?q='.urlencode($q) : '' ?>">Alle reservationer</a>
+    <a class="button <?=$showStatus==='reserved'?'':'secondary'?>" href="reservations.php?status=reserved<?= $q ? '&q='.urlencode($q) : '' ?>">Reserverede</a>
+    <a class="button <?=$showStatus==='completed'?'':'secondary'?>" href="reservations.php?status=completed<?= $q ? '&q='.urlencode($q) : '' ?>">Solgt / Afsluttet</a>
+    <a class="button <?=$showStatus==='cancelled'?'':'secondary'?>" href="reservations.php?status=cancelled<?= $q ? '&q='.urlencode($q) : '' ?>">Annulleret</a>
+  </div>
+</div>
+
+<?php if(can('reservations.create')):?>
+<div class="card">
+  <h2>Reservér produkt</h2>
+  <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="create">
+    <div class="split">
+      <label>Produkt *
+        <select name="product_id" required>
+          <?php foreach($products as $p):?>
+            <option value="<?=$p['id']?>" <?=$pid===$p['id']?'selected':''?>><?=h($p['sku'].' – '.$p['name'])?></option>
+          <?php endforeach;?>
+        </select>
+      </label>
+      <label>Lokation *
+        <select name="location_id" required>
+          <?php foreach($locs as $l):?>
+            <option value="<?=$l['id']?>"><?=h($l['name'])?></option>
+          <?php endforeach;?>
+        </select>
+      </label>
+    </div>
+    <div class="three">
+      <label>Antal *<input type="number" min="1" name="quantity" value="1" required></label>
+      <label>Kunde<input name="customer_name" placeholder="Navn / virksomhed"></label>
+      <label>Ordre / reference<input name="reference" placeholder="Fx ordre #1047"></label>
+    </div>
+    <label>Bemærkning<input name="note"></label>
+    <button type="submit">Reservér</button>
+  </form>
+</div>
+<?php else:?>
+<div class="readonly-note">Du har læseadgang til reservationer, men ikke rettighed til at oprette nye.</div>
+<?php endif;?>
+
 <?php
 $editResId = (int)($_GET['edit_res']??0);
 $partialResId = (int)($_GET['partial_res']??0);
 ?>
-<div class="table-wrap"><table><thead><tr><th>Dato</th><th>Produkt</th><th>Lokation</th><th>Antal</th><th>Kunde / reference</th><th>Oprettet af</th><th>Status</th><th></th></tr></thead><tbody><?php foreach($rows as $r):$own=is_link_user() && (int)$r['created_by']===(int)current_link_user_id(); $canManageRes = (is_admin() || can('reservations.manage_all')); $isEditing = ($editResId === (int)$r['id'] && $canManageRes && $r['status'] === 'reserved'); $isPartial = ($partialResId === (int)$r['id'] && $canManageRes && $r['status'] === 'reserved'); ?>
+
+<div class="table-wrap">
+<table>
+<thead>
+  <tr><th>Dato</th><th>Produkt</th><th>Lokation</th><th>Antal</th><th>Kunde / reference</th><th>Oprettet af</th><th>Status</th><th>Handling</th></tr>
+</thead>
+<tbody>
+<?php foreach($rows as $r):
+  $own=is_link_user() && (int)$r['created_by']===(int)current_link_user_id();
+  $canManageRes = (is_admin() || can('reservations.manage_all'));
+  $isEditing = ($editResId === (int)$r['id'] && $canManageRes && $r['status'] === 'reserved');
+  $isPartial = ($partialResId === (int)$r['id'] && $canManageRes && $r['status'] === 'reserved');
+?>
 <?php if($isEditing): ?>
 <tr style="background:#f0f9ff;">
   <td colspan="8">
     <form method="post" style="margin:0; padding:8px 0;"><?=csrf_field()?><input type="hidden" name="action" value="update"><input type="hidden" name="id" value="<?=$r['id']?>">
       <div style="font-weight:bold; margin-bottom:6px;">Rediger reservation #<?=$r['id']?> (<?=h($r['sku'].' – '.$r['product_name'])?> på <?=h($r['location_name'])?>)</div>
       <div class="four">
-        <label>Antal<input type="number" min="1" name="quantity" value="<?=$r['quantity']?>" required></label>
+        <label>Antal *<input type="number" min="1" name="quantity" value="<?=$r['quantity']?>" required></label>
         <label>Kunde<input name="customer_name" value="<?=h($r['customer_name']??'')?>"></label>
         <label>Reference<input name="reference" value="<?=h($r['reference']??'')?>"></label>
         <label>Bemærkning<input name="note" value="<?=h($r['note']??'')?>"></label>
       </div>
       <div class="actions" style="margin-top:8px;">
-        <button class="button">Gem ændringer</button>
+        <button type="submit" class="button">Gem ændringer</button>
         <a class="button secondary" href="reservations.php">Annullér redigering</a>
       </div>
     </form>
@@ -140,7 +236,7 @@ $partialResId = (int)($_GET['partial_res']??0);
         </div>
       </div>
       <div class="actions" style="margin-top:8px;">
-        <button class="button success">Registrer delvis salg</button>
+        <button type="submit" class="button success">Registrer delvis salg</button>
         <a class="button secondary" href="reservations.php">Annullér</a>
       </div>
     </form>
@@ -161,13 +257,24 @@ $partialResId = (int)($_GET['partial_res']??0);
         <?php if($canManageRes):?>
           <a class="button secondary" href="reservations.php?edit_res=<?=$r['id']?>">Rediger</a>
           <a class="button secondary" href="reservations.php?partial_res=<?=$r['id']?>">Delvis solgt</a>
-          <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="complete"><input type="hidden" name="id" value="<?=$r['id']?>"><button class="success">Solgt</button></form>
+          <form method="post" onsubmit="return confirm('Markér reservation #<?=$r['id']?> som solgt? Fysisk lager vil blive nedskrevet.');"><?=csrf_field()?><input type="hidden" name="action" value="complete"><input type="hidden" name="id" value="<?=$r['id']?>"><button type="submit" class="success">Solgt</button></form>
         <?php endif;?>
-        <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="cancel"><input type="hidden" name="id" value="<?=$r['id']?>"><button class="secondary">Annullér<?=$own&&!is_admin()&&!can('reservations.manage_all')?' min':''?></button></form>
+        <form method="post" onsubmit="return confirm('Vil du annullere reservation #<?=$r['id']?>? Reserverede flasker frigives straks til disponibelt lager.');"><?=csrf_field()?><input type="hidden" name="action" value="cancel"><input type="hidden" name="id" value="<?=$r['id']?>"><button type="submit" class="secondary">Annullér<?=$own&&!is_admin()&&!can('reservations.manage_all')?' min':''?></button></form>
       </div>
     <?php endif;?>
   </td>
 </tr>
 <?php endif; ?>
-<?php endforeach;?></tbody></table></div>
+<?php endforeach;?>
+<?php if(!$rows):?>
+<tr>
+  <td colspan="8" class="muted" style="text-align:center; padding:24px;">
+    Der blev ikke fundet nogen reservationer med de valgte filtre/søgning. <a class="button secondary small" href="reservations.php">Ryd filtre</a>
+  </td>
+</tr>
+<?php endif;?>
+</tbody>
+</table>
+</div>
+
 <?php page_footer();

@@ -106,12 +106,12 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         $id=(int)($_POST['id']??0);
         $sku=trim((string)($_POST['sku']??''));
         $callName=trim((string)($_POST['call_name']??''));
-        if($sku==='') throw new RuntimeException('SKU skal udfyldes.');
+        if($sku==='') throw new RuntimeException('SKU / nummer skal udfyldes.');
         $brand=(int)($_POST['brand_id']??0)?:null;
         $status=in_array($_POST['status']??'active',['active','inactive','discontinued'],true)?$_POST['status']:'active';
         $vintage=trim((string)($_POST['vintage_year']??''));
         $vintage=$vintage!==''?(int)$vintage:null;
-        if($vintage!==null && ($vintage<1900 || $vintage>(int)date('Y'))) throw new RuntimeException('Årgang skal være et gyldigt årstal.');
+        if($vintage!==null && ($vintage<1900 || $vintage>(int)date('Y'))) throw new RuntimeException('Årgang skal være et gyldigt årstal (fx 2015).');
         $distillery=trim((string)($_POST['distillery']??''));
         $age=trim((string)($_POST['age_text']??''));
         $abv=parse_decimal($_POST['abv']??'');
@@ -178,7 +178,15 @@ $missingCaskCount=(int)$pdo->query("SELECT COUNT(*) FROM lager_products WHERE st
 $negativeStockCount=(int)$pdo->query("SELECT COUNT(*) FROM lager_products p LEFT JOIN (SELECT product_id,SUM(quantity) physical_total,SUM(CASE WHEN quantity<0 THEN 1 ELSE 0 END) negative_locations FROM lager_stock GROUP BY product_id) st ON st.product_id=p.id WHERE COALESCE(st.physical_total,0)<0 OR COALESCE(st.negative_locations,0)>0")->fetchColumn();
 page_header('Produkter');
 ?>
-<form class="searchbar" method="get"><input name="q" value="<?=h($q)?>" placeholder="Søg produkt, SKU, fadnummer eller brand"><button>Søg</button></form>
+<form class="searchbar" method="get">
+  <input name="q" value="<?=h($q)?>" placeholder="Søg produkt, SKU, fadnummer eller brand">
+  <?php if($showStatus):?><input type="hidden" name="status" value="<?=h($showStatus)?>"><?php endif;?>
+  <button type="submit">Søg</button>
+  <?php if($q !== '' || $subFilter !== ''):?>
+    <a class="button secondary" href="products.php?status=<?=h($showStatus)?>">Nulstil filtre</a>
+  <?php endif;?>
+</form>
+
 <div class="card">
   <div class="actions" style="margin-bottom:8px;">
     <a class="button <?=$showStatus==='active'&&$subFilter===''?'':'secondary'?>" href="products.php?status=active">Aktive</a>
@@ -198,20 +206,20 @@ page_header('Produkter');
     <p class="muted" style="margin-top:8px">Vælg et kildeprodukt, der skal flettes ind i et målprodukt. Kildeproduktets lagerbeholdning overføres til målproduktet, reservationer flyttes, og manglende felter udfyldes automatisk. Kildeproduktet slettes derefter.</p>
     <form method="post" onsubmit="return confirm('Er du sikker på, at du vil flette disse to produkter? Kildeproduktet vil blive slettet og lageret lagt sammen med målproduktet.');"><?=csrf_field()?><input type="hidden" name="action" value="merge_products">
       <div class="split">
-        <label>Kildeprodukt (Slettes efter fletning)
+        <label>Kildeprodukt (Slettes efter fletning) *
           <select name="source_id" required>
             <option value="">– Vælg kildeprodukt –</option>
             <?php foreach($products as $p):?><option value="<?=$p['id']?>"><?=h($p['sku'].' · '.$p['name'].(!empty($p['cask_number'])?' · #'.$p['cask_number']:''))?></option><?php endforeach;?>
           </select>
         </label>
-        <label>Målprodukt (Beholdes og opdateres)
+        <label>Målprodukt (Beholdes og opdateres) *
           <select name="target_id" required>
             <option value="">– Vælg målprodukt –</option>
             <?php foreach($products as $p):?><option value="<?=$p['id']?>"><?=h($p['sku'].' · '.$p['name'].(!empty($p['cask_number'])?' · #'.$p['cask_number']:''))?></option><?php endforeach;?>
           </select>
         </label>
       </div>
-      <button class="button">Flet varenumre og saml lager</button>
+      <button type="submit" class="button">Flet varenumre og saml lager</button>
     </form>
   </details>
 </div>
@@ -224,7 +232,7 @@ page_header('Produkter');
   <div id="enrichAllStatus" class="muted" style="margin-top:8px"></div>
 </div>
 
-<div class="card"><h2><?=$edit?'Rediger produkt':'Nyt produkt'?></h2>
+<div class="card" id="new-product"><h2><?=$edit?'Rediger produkt':'Nyt produkt'?></h2>
 <form method="post" id="productForm"><?=csrf_field()?><input type="hidden" name="id" value="<?=$edit['id']??0?>">
 <div class="three"><label>SKU / nummer *<input name="sku" required value="<?=h($edit['sku']??'')?>"></label><label>Produktnavn / varetekst (Automatisk sammensat)<input name="name" id="product_name_input" readonly tabindex="-1" style="background-color:#f3f4f6;cursor:not-allowed;" value="<?=h($edit?hsg_catalog_product_title($edit):'')?>"></label><label>Kaldenavn (Valgfri underoverskrift)<input name="call_name" value="<?=h($edit['call_name']??'')?>" placeholder="fx The Chain - Chapter 2"></label></div>
 <div class="product-assistant-box">
@@ -241,7 +249,7 @@ page_header('Produkter');
 <div class="three"><label>Status<select name="status"><?php foreach(['active'=>'Aktiv','inactive'=>'Inaktiv','discontinued'=>'Udgået'] as $k=>$v):?><option value="<?=$k?>" <?=($edit['status']??'active')===$k?'selected':''?>><?=$v?></option><?php endforeach;?></select></label><label class="check"><input type="checkbox" name="is_new" value="1" <?=!$edit||!empty($edit['is_new'])?'checked':''?>> Nyhed</label><label class="check"><input type="checkbox" name="show_in_catalog" value="1" <?=!$edit||!empty($edit['show_in_catalog'])?'checked':''?>> Vis i katalog</label></div>
 <label>Noter<textarea name="notes"><?=h($edit['notes']??'')?></textarea></label>
 <?php if($edit && !empty($edit['data_enriched_at'])):?><div class="flash success"><strong>Senest analyseret:</strong> <?=h($edit['data_enriched_at'])?> · <?=h($edit['data_enrichment_source']??'')?> · score <?=intval($edit['data_enrichment_score']??0)?>%<?php if($edit['data_enrichment_note']):?><br><span class="muted"><?=h($edit['data_enrichment_note'])?></span><?php endif;?></div><?php endif;?>
-<div class="actions"><button>Gem produkt</button><?php if($edit):?><a class="button secondary" href="products.php">Nyt produkt</a><a class="button secondary" href="image_check.php?product=<?=$edit['id']?>">Billede</a><?php endif;?></div>
+<div class="actions"><button type="submit">Gem produkt</button><?php if($edit):?><a class="button secondary" href="products.php">Nyt produkt</a><a class="button secondary" href="image_check.php?product=<?=$edit['id']?>">Billede</a><?php endif;?></div>
 </form></div>
 <?php endif;?>
 
@@ -256,7 +264,7 @@ page_header('Produkter');
   <td><strong><?=h($p['sku'])?></strong></td>
   <td>
     <div class="product-row">
-      <img class="product-thumb" src="<?=h(product_image_url($p['image_path']))?>">
+      <img class="product-thumb" src="<?=h(product_image_url($p['image_path']))?>" alt="<?=h($p['name'])?>">
       <div>
         <div class="product-title"><?=h($p['name'])?><?php if(!empty($p['call_name'])):?> <small class="muted">(<?=h($p['call_name'])?>)</small><?php endif;?></div>
         <span class="product-meta"><?=h($p['distillery'])?><?=!empty($p['vintage_year'])?' · '.intval($p['vintage_year']):''?><?=!empty($p['age_text'])?' · '.h($p['age_text']):''?><?=($p['abv']!==null?' · '.h(rtrim(rtrim(number_format((float)$p['abv'],2,',',''),'0'),',')).'%':'')?><?=!empty($p['cask_number'])?' · Fad #'.h($p['cask_number']):' · Fadnr. mangler'?></span>
@@ -285,6 +293,13 @@ page_header('Produkter');
   <?php endif;?>
 </tr>
 <?php endforeach;?>
+<?php if(!$products):?>
+<tr>
+  <td colspan="<?=is_admin()?9:8?>" class="muted" style="text-align:center; padding:24px;">
+    Der blev ikke fundet nogen produkter med de valgte filtre/søgning. <a class="button secondary small" href="products.php">Ryd filtre</a>
+  </td>
+</tr>
+<?php endif;?>
 </tbody></table></div>
 
 <?php if(is_admin()):?>
@@ -334,7 +349,7 @@ document.getElementById('enrichProductBtn')?.addEventListener('click',async()=>{
     const j=await enrichRequest(fd),f=j.result.fields||{};let n=0;
     for(const k of ['distillery','country','age_text','vintage_year','abv','bottle_size_cl','cask_type','cask_number','category'])if(setIfEmpty(k,f[k]))n++;
     if(setBrandIfMatch(f.brand_name))n++;
-    statusEl.innerHTML='<strong>'+n+' felt(er) foreslået</strong> · score '+Number(j.result.confidence||0)+'% · '+String(j.result.source||'')+(j.result.reason?' · '+String(j.result.reason).replace(/[&<>]/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[s])):'');
+    statusEl.textContent=n+' felt(er) foreslået · score '+Number(j.result.confidence||0)+'% · '+String(j.result.source||'')+(j.result.reason?' · '+String(j.result.reason):'');
   }catch(e){statusEl.textContent='Kunne ikke analysere: '+e.message;}finally{btn.disabled=false;}
 });
 
