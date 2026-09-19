@@ -20,7 +20,7 @@
     ],
     "release_notes": "HSG Administration version 10.4.0 release package.",
     "commit": "testcommit",
-    "created_at": "2026-09-19 17:22:24",
+    "created_at": "2026-09-19 17:55:38",
     "manifest": {
         ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",
         ".github/workflows/release.yml": "077298507d6d905aa8529abeabb999b0cb7ea50472a0a899462eee0a77aa46ab",
