@@ -52,9 +52,7 @@ function page_header(string $title): void {
   $platformName='HSG Administration';
   if(isset($GLOBALS['pdo']) && function_exists('setting_get')) $platformName=setting_get($GLOBALS['pdo'],'platform_name','HSG Administration') ?: 'HSG Administration';
   echo '<!doctype html><html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#ffffff"><title>'.h($title).' · HSG Whisky</title><link rel="stylesheet" href="assets/style.css?v='.rawurlencode(app_version()).'"></head><body>';
-  echo '<header class="top"><a class="brand" href="'.h(actor_home_url()).'"><span class="brandmark">🥃</span><span><strong>HSG Whisky</strong><small>'.h($platformName).'</small></span></a>';
-  echo '<div class="global-search-wrap"><input type="search" id="globalSearchInput" placeholder="🔍 Søg produkt, SKU, brand, ref..." autocomplete="off"><div id="globalSearchResults" class="global-search-dropdown" hidden></div></div>';
-  echo '<div class="top-actions">';
+  echo '<header class="top"><a class="brand" href="'.h(actor_home_url()).'"><span class="brandmark">🥃</span><span><strong>HSG Whisky</strong><small>'.h($platformName).'</small></span></a><div class="top-actions">';
   if(!$admin && (!function_exists('hsg_module_is_enabled') || hsg_module_is_enabled('catalog')) && can('catalog.view')) echo '<a class="catalog-top" href="catalog.php">Katalog</a>';
   if($admin) echo '<span class="access-badge admin">Admin</span><a class="admin-link" href="admin-account.php">'.h($user).'</a>';
   else echo '<span class="access-badge readonly">Personligt link</span><span class="user">'.h($user).'</span><a class="admin-link" href="admin-login.php">Admin-login</a>';
@@ -102,40 +100,7 @@ function page_footer(): void {
     if((!function_exists('hsg_module_is_enabled') || hsg_module_is_enabled('catalog')) && can('catalog.view')) echo '<a href="catalog.php">▤<span>Katalog</span></a>';
     if(can('dashboard.view')) echo '<a href="index.php">⌂<span>Overblik</span></a>';
   }
-  echo '</nav><footer>HSG Whisky · Administration '.h(app_version()).'</footer>';
-  echo '<script>
-  (function(){
-    var inp = document.getElementById("globalSearchInput");
-    var box = document.getElementById("globalSearchResults");
-    if(!inp || !box) return;
-    var timer = null;
-    inp.addEventListener("input", function(){
-      clearTimeout(timer);
-      var q = inp.value.trim();
-      if(q.length < 2) { box.hidden = true; box.innerHTML = ""; return; }
-      timer = setTimeout(function(){
-        fetch("core/bootstrap.php?action=quick_search&q=" + encodeURIComponent(q))
-          .then(function(res){ return res.json(); })
-          .then(function(data){
-            if(!data.results || !data.results.length) {
-              box.innerHTML = "<div class=\"global-search-item muted\">Ingen resultater fundet</div>";
-              box.hidden = false;
-              return;
-            }
-            var html = "";
-            data.results.forEach(function(r){
-              html += "<a class=\"global-search-item\" href=\"" + r.url + "\"><span class=\"badge blue\">" + r.type + "</span> <strong>" + r.title + "</strong><small>" + r.subtitle + "</small></a>";
-            });
-            box.innerHTML = html;
-            box.hidden = false;
-          }).catch(function(){ box.hidden = true; });
-      }, 200);
-    });
-    document.addEventListener("click", function(e){
-      if(!inp.contains(e.target) && !box.contains(e.target)) box.hidden = true;
-    });
-  })();
-  </script></body></html>';
+  echo '</nav><footer>HSG Whisky · Administration '.h(app_version()).'</footer></body></html>';
 }
 
 function create_reservation(PDO $pdo,int $pid,int $lid,int $qty,string $customer,string $ref,string $note,?int $userId,?int $adminId=null): void {

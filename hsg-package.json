@@ -1,9 +1,9 @@
 {
     "name": "hsg-administration",
     "product": "HSG Administration",
-    "version": "10.3.0",
+    "version": "10.2.2",
     "package_type": "distribution",
-    "release_notes": "HSG Administration 10.3.0 med forbedret dashboard, mobil UX, request-level caching, og udvidede rapporter.",
+    "release_notes": "HSG Administration version 10.2.2 release-pakke med automatisk release-builder, clean source export og integritetsvalidering.",
     "min_php": "8.1.0",
     "manifest": {
         ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",

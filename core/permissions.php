@@ -2,20 +2,15 @@
 declare(strict_types=1);
 
 function hsg_link_module_access(string $moduleId): array {
-    static $cache = [];
     if(!is_link_user() || !isset($GLOBALS['pdo']) || !($GLOBALS['pdo'] instanceof PDO)) return ['view'=>false,'operate'=>false];
-    $uid=current_link_user_id(); if(!$uid) return ['view'=>false,'operate'=>false];
-    $cacheKey = $uid . ':' . $moduleId;
-    if(isset($cache[$cacheKey])) return $cache[$cacheKey];
-    $pdo=$GLOBALS['pdo'];
+    $pdo=$GLOBALS['pdo']; $uid=current_link_user_id(); if(!$uid) return ['view'=>false,'operate'=>false];
     if(!function_exists('db_table_exists') || !db_table_exists($pdo,'hsg_user_module_access')){
         $defaults=['dashboard'=>[true,false],'inventory'=>[true,false],'reservations'=>[true,true],'catalog'=>[true,false]];
-        $d=$defaults[$moduleId]??[false,false];
-        return $cache[$cacheKey] = ['view'=>$d[0],'operate'=>$d[1]];
+        $d=$defaults[$moduleId]??[false,false]; return ['view'=>$d[0],'operate'=>$d[1]];
     }
     $st=$pdo->prepare('SELECT can_view,can_operate FROM hsg_user_module_access WHERE user_id=? AND module_id=?');$st->execute([$uid,$moduleId]);$r=$st->fetch();
-    if(!$r) return $cache[$cacheKey] = ['view'=>false,'operate'=>false];
-    return $cache[$cacheKey] = ['view'=>(bool)$r['can_view'],'operate'=>(bool)$r['can_operate']];
+    if(!$r) return ['view'=>false,'operate'=>false];
+    return ['view'=>(bool)$r['can_view'],'operate'=>(bool)$r['can_operate']];
 }
 
 function hsg_link_can_view_module(string $moduleId): bool { return hsg_link_module_access($moduleId)['view']; }
@@ -33,11 +28,8 @@ function hsg_admin_can_view_module(string $moduleId): bool {
 }
 
 function hsg_capabilities(): array {
-    static $cache = null;
-    if ($cache !== null) return $cache;
-
     if (is_admin()) {
-        if (is_superadmin()) return $cache = ['*'];
+        if (is_superadmin()) return ['*'];
         $caps = []; // Almindelige login-brugere har IKKE adgang til brugestyring (users.manage)
         $modules = function_exists('hsg_module_manifests') ? hsg_module_manifests() : [];
         foreach ($modules as $modId => $m) {
@@ -54,7 +46,7 @@ function hsg_capabilities(): array {
         $caps[] = 'reservations.view';
         $caps[] = 'reservations.create';
         $caps[] = 'catalog.view';
-        return $cache = array_values(array_unique($caps));
+        return array_values(array_unique($caps));
     }
     if (!is_link_user()) return [];
     $caps=[];
