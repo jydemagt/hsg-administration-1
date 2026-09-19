@@ -156,12 +156,45 @@ function openProduct(id){
   p.locations.forEach(l => {
     const row = document.createElement('div');
     row.className = 'product-stock-detail';
-    row.innerHTML = '<span>'+l.name+'</span><span>'+l.physical+' fysisk</span><span>'+l.reserved+' reserveret</span><strong>'+l.available+' disponible</strong>';
+
+    const sName = document.createElement('span');
+    sName.textContent = l.name;
+
+    const sPhys = document.createElement('span');
+    sPhys.textContent = l.physical + ' fysisk';
+
+    const sRes = document.createElement('span');
+    sRes.textContent = l.reserved + ' reserveret';
+
+    const sAvail = document.createElement('strong');
+    sAvail.textContent = l.available + ' disponible';
+
+    row.appendChild(sName);
+    row.appendChild(sPhys);
+    row.appendChild(sRes);
+    row.appendChild(sAvail);
     stockBox.appendChild(row);
   });
+
   const totRow = document.createElement('div');
   totRow.className = 'product-stock-detail total';
-  totRow.innerHTML = '<span>I alt</span><span>'+p.physical+' fysisk</span><span>'+p.reserved+' reserveret</span><strong>'+p.available+' disponible</strong>';
+
+  const tName = document.createElement('span');
+  tName.textContent = 'I alt';
+
+  const tPhys = document.createElement('span');
+  tPhys.textContent = p.physical + ' fysisk';
+
+  const tRes = document.createElement('span');
+  tRes.textContent = p.reserved + ' reserveret';
+
+  const tAvail = document.createElement('strong');
+  tAvail.textContent = p.available + ' disponible';
+
+  totRow.appendChild(tName);
+  totRow.appendChild(tPhys);
+  totRow.appendChild(tRes);
+  totRow.appendChild(tAvail);
   stockBox.appendChild(totRow);
 
   const nw=document.getElementById('productModalNotesWrap');

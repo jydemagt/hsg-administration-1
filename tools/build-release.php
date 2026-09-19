@@ -221,7 +221,6 @@ function hsg_build_generate_manifest(string $buildDir, string $version, string $
     }
 
     file_put_contents($buildDir . '/hsg-package.json', $json);
-    file_put_contents(HSG_ROOT . '/hsg-package.json', $json);
     return $manifest;
 }
 
