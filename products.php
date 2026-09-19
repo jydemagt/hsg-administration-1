@@ -267,7 +267,7 @@ page_header('Produkter');
       <div class="mobile-stock-line"><span>Fysisk / Reserveret</span><span><?=$phys?> / <?=$resQty?></span></div>
       <div class="mobile-stock-line"><span>Pris (Engros/Udsalg)</span><span><?=money_dkk($p['wholesale_price'])?> / <?=money_dkk($p['retail_price'])?></span></div>
       <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
-        <span class="badge"><?=$p['status']==='active'?'green':($p['status']==='inactive'?'blue':'')?>"><?=h(product_status_label($p['status']))?></span>
+        <span class="badge <?=$p['status']==='active'?'green':($p['status']==='inactive'?'blue':'')?>"><?=h(product_status_label($p['status']))?></span>
         <?php if($p['is_new']):?><span class="badge red">NYHED</span><?php endif;?>
       </div>
       <?php if(is_admin()):?>
