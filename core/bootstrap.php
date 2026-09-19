@@ -73,6 +73,42 @@ if (isset($_GET['action']) && $_GET['action'] === 'quick_search') {
         }
     }
 
+    if (is_admin()) {
+        if (db_table_exists($pdo, 'lager_users')) {
+            $stU = $pdo->prepare("SELECT id, name, email FROM lager_users WHERE name LIKE ? OR email LIKE ? ORDER BY name ASC LIMIT 3");
+            $stU->execute([$like, $like]);
+            $users = $stU->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($users as $u) {
+                $results[] = [
+                    'type' => 'Bruger (Link)',
+                    'title' => $u['name'],
+                    'subtitle' => $u['email'] ?: 'Personligt link-adgang',
+                    'url' => 'users.php?q=' . urlencode($u['name']),
+                ];
+            }
+        }
+
+        if (db_table_exists($pdo, 'hsg_woocommerce_orders')) {
+            $stO = $pdo->prepare("
+                SELECT id, order_number, billing_first_name, billing_last_name, status, total
+                FROM hsg_woocommerce_orders
+                WHERE order_number LIKE ? OR billing_first_name LIKE ? OR billing_last_name LIKE ? OR billing_email LIKE ?
+                ORDER BY id DESC LIMIT 3
+            ");
+            $stO->execute([$like, $like, $like, $like]);
+            $orders = $stO->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($orders as $o) {
+                $name = trim($o['billing_first_name'] . ' ' . $o['billing_last_name']);
+                $results[] = [
+                    'type' => 'Ordre',
+                    'title' => 'Ordre #' . ($o['order_number'] ?: $o['id']) . ($name ? ' - ' . $name : ''),
+                    'subtitle' => 'Status: ' . $o['status'] . ' · Total: ' . $o['total'] . ' kr.',
+                    'url' => 'reports.php?q=' . urlencode((string)($o['order_number'] ?: $o['id'])),
+                ];
+            }
+        }
+    }
+
     echo json_encode(['results' => $results]);
     exit;
 }

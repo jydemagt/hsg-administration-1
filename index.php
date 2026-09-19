@@ -49,10 +49,18 @@ page_header('Overblik');
   <h2>⚡ Hurtige handlinger</h2>
   <div class="actions">
     <?php if(can('inventory.view')):?><a class="button" href="status.php">📦 Åbn lager</a><?php endif;?>
-    <?php if(can('reservations.view')):?><a class="button" href="reservations.php">🔖 Reservationer</a><?php endif;?>
+    <?php if(can('products.view')):?><a class="button secondary" href="products.php">🍾 Se produkter</a><?php endif;?>
+    <?php if(is_admin() && can('products.view')):?><a class="button secondary" href="products.php#new-product">➕ Opret produkt</a><?php endif;?>
+    <?php if(can('reservations.view')):?><a class="button secondary" href="reservations.php">🔖 Se reservationer</a><?php endif;?>
+    <?php if(can('reservations.create')):?><a class="button secondary" href="status.php">📝 Opret reservation</a><?php endif;?>
     <?php if(can('catalog.view')):?><a class="button secondary" href="catalog.php">📖 Katalog</a><?php endif;?>
-    <?php if(can('products.view')):?><a class="button secondary" href="products.php">🍾 Produkter</a><?php endif;?>
-    <?php if(is_admin()):?><a class="button secondary" href="import_center.php">📥 Import / Upload</a><a class="button secondary" href="reports.php">📊 Rapporter</a><a class="button secondary" href="admin.php">⚙️ Administration</a><?php endif;?>
+    <?php if(is_admin()):?>
+      <a class="button secondary" href="import_center.php">📥 Import / Upload</a>
+      <a class="button secondary" href="reports.php">📊 Rapporter</a>
+      <a class="button secondary" href="reports.php?tab=settings">🛒 WooCommerce</a>
+      <a class="button secondary" href="users.php">👥 Brugere</a>
+      <a class="button secondary" href="admin.php">⚙️ Systemstatus</a>
+    <?php endif;?>
   </div>
 </div>
 

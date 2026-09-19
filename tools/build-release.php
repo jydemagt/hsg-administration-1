@@ -221,6 +221,7 @@ function hsg_build_generate_manifest(string $buildDir, string $version, string $
     }
 
     file_put_contents($buildDir . '/hsg-package.json', $json);
+    file_put_contents(HSG_ROOT . '/hsg-package.json', $json);
     return $manifest;
 }
 
@@ -317,7 +318,7 @@ function hsg_run_negative_test(): bool {
     $zipB = sys_get_temp_dir() . '/hsg-neg-B-' . bin2hex(random_bytes(4)) . '.zip';
     try {
         hsg_build_clean_export($dirB);
-        $manifest = hsg_build_generate_manifest($dirB, '10.2.2', 'testcommit');
+        $manifest = hsg_build_generate_manifest($dirB, '10.4.0', 'testcommit');
         file_put_contents($dirB . '/unmanifested_extra.php', '<?php // extra');
         hsg_build_zip($dirB, $zipB);
         hsg_build_validate_zip($zipB, $manifest);
@@ -332,7 +333,7 @@ function hsg_run_negative_test(): bool {
     $zipC = sys_get_temp_dir() . '/hsg-neg-C-' . bin2hex(random_bytes(4)) . '.zip';
     try {
         hsg_build_clean_export($dirC);
-        $manifest = hsg_build_generate_manifest($dirC, '10.2.2', 'testcommit');
+        $manifest = hsg_build_generate_manifest($dirC, '10.4.0', 'testcommit');
         file_put_contents($dirC . '/app_version.php', '<?php return "99.99.99"; // tampered');
         hsg_build_zip($dirC, $zipC);
         hsg_build_validate_zip($zipC, $manifest);
@@ -347,6 +348,9 @@ function hsg_run_negative_test(): bool {
     $zipD = sys_get_temp_dir() . '/hsg-neg-D-' . bin2hex(random_bytes(4)) . '.zip';
     try {
         hsg_build_clean_export($dirD);
+        if (file_exists($dirD . '/hsg-package.json')) {
+            @unlink($dirD . '/hsg-package.json');
+        }
         hsg_build_zip($dirD, $zipD);
         hsg_update_validate_package($zipD, true);
         hsg_build_log("Test D FEJLEDE: Manglende manifest blev ikke opdaget!", 'ERROR');
@@ -367,25 +371,25 @@ function hsg_run_negative_test(): bool {
         hsg_build_log("Test E BESTÅET: Prohibited config.php afvist (" . $e->getMessage() . ")", 'SUCCESS');
     } finally { hsg_build_rrmdir($dirE); }
 
-    // Test F: Version mismatch (Git tag v10.2.2 vs app_version.php 10.2.1)
+    // Test F: Version mismatch (Git tag vs app_version.php)
     $dirF = sys_get_temp_dir() . '/hsg-neg-F-' . bin2hex(random_bytes(4));
     try {
         hsg_build_clean_export($dirF);
         file_put_contents($dirF . '/app_version.php', '<?php return "10.2.1";');
-        hsg_build_check_version_consistency($dirF, '10.2.2');
+        hsg_build_check_version_consistency($dirF, '10.4.0');
         hsg_build_log("Test F FEJLEDE: Version mismatch mellem tag og app_version.php blev ikke opdaget!", 'ERROR');
     } catch (RuntimeException $e) {
         $testsPassed++;
         hsg_build_log("Test F BESTÅET: Version mismatch afvist (" . $e->getMessage() . ")", 'SUCCESS');
     } finally { hsg_build_rrmdir($dirF); }
 
-    // Test G: Manifest version 10.2.2 vs ZIP source app_version.php 10.2.1
+    // Test G: Manifest version vs ZIP source app_version.php
     $dirG = sys_get_temp_dir() . '/hsg-neg-G-' . bin2hex(random_bytes(4));
     try {
         hsg_build_clean_export($dirG);
-        file_put_contents($dirG . '/hsg-package.json', json_encode(['version' => '10.2.2']));
+        file_put_contents($dirG . '/hsg-package.json', json_encode(['version' => '10.4.0']));
         file_put_contents($dirG . '/app_version.php', '<?php return "10.2.1";');
-        hsg_build_check_version_consistency($dirG, '10.2.2');
+        hsg_build_check_version_consistency($dirG, '10.4.0');
         hsg_build_log("Test G FEJLEDE: Manifest version vs app_version.php blev ikke afvist!", 'ERROR');
     } catch (RuntimeException $e) {
         $testsPassed++;
@@ -410,7 +414,7 @@ if ($isNegativeTest) {
     exit($passed ? 0 : 1);
 }
 
-$version = '10.2.2';
+$version = trim((string)(require HSG_ROOT . '/app_version.php'));
 $outputPath = null;
 
 foreach ($args as $arg) {
