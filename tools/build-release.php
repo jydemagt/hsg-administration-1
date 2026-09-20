@@ -295,6 +295,7 @@ function hsg_run_negative_test(): bool {
     require_once HSG_ROOT . '/functions.php';
     require_once HSG_ROOT . '/core/updater.php';
 
+    $currentVersion = trim((string)(require HSG_ROOT . '/app_version.php'));
     $testsPassed = 0;
     $totalTests = 7;
 
@@ -317,7 +318,7 @@ function hsg_run_negative_test(): bool {
     $zipB = sys_get_temp_dir() . '/hsg-neg-B-' . bin2hex(random_bytes(4)) . '.zip';
     try {
         hsg_build_clean_export($dirB);
-        $manifest = hsg_build_generate_manifest($dirB, '10.4.0', 'testcommit');
+        $manifest = hsg_build_generate_manifest($dirB, $currentVersion, 'testcommit');
         file_put_contents($dirB . '/unmanifested_extra.php', '<?php // extra');
         hsg_build_zip($dirB, $zipB);
         hsg_build_validate_zip($zipB, $manifest);
@@ -332,7 +333,7 @@ function hsg_run_negative_test(): bool {
     $zipC = sys_get_temp_dir() . '/hsg-neg-C-' . bin2hex(random_bytes(4)) . '.zip';
     try {
         hsg_build_clean_export($dirC);
-        $manifest = hsg_build_generate_manifest($dirC, '10.4.0', 'testcommit');
+        $manifest = hsg_build_generate_manifest($dirC, $currentVersion, 'testcommit');
         file_put_contents($dirC . '/app_version.php', '<?php return "99.99.99"; // tampered');
         hsg_build_zip($dirC, $zipC);
         hsg_build_validate_zip($zipC, $manifest);
@@ -375,7 +376,7 @@ function hsg_run_negative_test(): bool {
     try {
         hsg_build_clean_export($dirF);
         file_put_contents($dirF . '/app_version.php', '<?php return "10.2.1";');
-        hsg_build_check_version_consistency($dirF, '10.4.0');
+        hsg_build_check_version_consistency($dirF, $currentVersion);
         hsg_build_log("Test F FEJLEDE: Version mismatch mellem tag og app_version.php blev ikke opdaget!", 'ERROR');
     } catch (RuntimeException $e) {
         $testsPassed++;
@@ -386,9 +387,9 @@ function hsg_run_negative_test(): bool {
     $dirG = sys_get_temp_dir() . '/hsg-neg-G-' . bin2hex(random_bytes(4));
     try {
         hsg_build_clean_export($dirG);
-        file_put_contents($dirG . '/hsg-package.json', json_encode(['version' => '10.4.0']));
+        file_put_contents($dirG . '/hsg-package.json', json_encode(['version' => $currentVersion]));
         file_put_contents($dirG . '/app_version.php', '<?php return "10.2.1";');
-        hsg_build_check_version_consistency($dirG, '10.4.0');
+        hsg_build_check_version_consistency($dirG, $currentVersion);
         hsg_build_log("Test G FEJLEDE: Manifest version vs app_version.php blev ikke afvist!", 'ERROR');
     } catch (RuntimeException $e) {
         $testsPassed++;

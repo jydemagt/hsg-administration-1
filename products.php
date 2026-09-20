@@ -223,9 +223,7 @@ page_header('Produkter');
     </form>
   </details>
 </div>
-<?php endif;?>
 
-<?php if(is_admin()):?>
 <div class="card">
   <div class="page-title" style="margin-bottom:8px"><div><h2 style="margin:0">Produktdata-assistent</h2><p class="muted" style="margin:5px 0 0">Aflæser vareteksten og udfylder manglende ABV, alder, årgang, destilleri, kategori, flaskestørrelse, fadtype og eksplicit fadnummer. Sikre mønstre læses lokalt; Groq bruges kun som ekstra hjælp, hvis en API-nøgle er sat op.</p></div></div>
   <div class="actions"><button type="button" class="secondary" id="enrichAllBtn">Udfyld manglende data på alle (<?=count($missingIds)?>)</button></div>
@@ -234,7 +232,7 @@ page_header('Produkter');
 
 <div class="card" id="new-product"><h2><?=$edit?'Rediger produkt':'Nyt produkt'?></h2>
 <form method="post" id="productForm"><?=csrf_field()?><input type="hidden" name="id" value="<?=$edit['id']??0?>">
-<div class="three"><label>SKU / nummer *<input name="sku" required value="<?=h($edit['sku']??'')?>"></label><label>Produktnavn / varetekst (Automatisk sammensat)<input name="name" id="product_name_input" readonly tabindex="-1" style="background-color:#f3f4f6;cursor:not-allowed;" value="<?=h($edit?hsg_catalog_product_title($edit):'')?>"></label><label>Kaldenavn (Valgfri underoverskrift)<input name="call_name" value="<?=h($edit['call_name']??'')?>" placeholder="fx The Chain - Chapter 2"></label></div>
+<div class="three"><label>SKU / nummer *<input name="sku" required value="<?=h($edit['sku']??'')?>"></label><label>Produktnavn / varetekst (Automatisk sammensat)<input name="name" id="product_name_input" readonly tabindex="-1" style="background-color:var(--bg-body,#f3f4f6);cursor:not-allowed;" value="<?=h($edit?hsg_catalog_product_title($edit):'')?>"></label><label>Kaldenavn (Valgfri underoverskrift)<input name="call_name" value="<?=h($edit['call_name']??'')?>" placeholder="fx The Chain - Chapter 2"></label></div>
 <div class="product-assistant-box">
   <div class="actions"><button type="button" id="enrichProductBtn">✨ Udfyld fra varetekst</button><label class="check" style="margin:0"><input type="checkbox" id="enrichUseAi" checked> Brug AI til usikre/manglende felter</label></div>
   <div id="enrichProductStatus" class="muted" style="margin-top:8px">Eksisterende værdier overskrives ikke automatisk.</div>
@@ -253,7 +251,37 @@ page_header('Produkter');
 </form></div>
 <?php endif;?>
 
-<div class="table-wrap"><table><thead><tr><th>SKU</th><th>Produkt</th><th>Brand</th><th>Lager (Fysisk / Res / Disp)</th><th>Priser</th><th>Nyhed</th><th>Katalog</th><th>Status</th><?php if(is_admin()):?><th></th><?php endif;?></tr></thead><tbody>
+<div class="mobile-list">
+<?php foreach($products as $p):
+  $phys=(int)$p['physical_total'];
+  $resQty=(int)($p['reserved_total']??0);
+  $avail=$phys - $resQty;
+?>
+<article class="mobile-product">
+  <div class="mobile-product-main">
+    <img src="<?=h(product_image_url($p['image_path']))?>" alt="<?=h($p['name'])?>">
+    <div>
+      <h3><?=h($p['name'])?></h3>
+      <div class="sku"><?=h($p['sku'])?><?=!empty($p['brand_name'])?' · '.h($p['brand_name']):''?></div>
+      <div class="mobile-stock-line"><span>Disponibelt</span><strong class="available"><?=$avail?> stk.</strong></div>
+      <div class="mobile-stock-line"><span>Fysisk / Reserveret</span><span><?=$phys?> / <?=$resQty?></span></div>
+      <div class="mobile-stock-line"><span>Pris (Engros/Udsalg)</span><span><?=money_dkk($p['wholesale_price'])?> / <?=money_dkk($p['retail_price'])?></span></div>
+      <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
+        <span class="badge <?=$p['status']==='active'?'green':($p['status']==='inactive'?'blue':'')?>"><?=h(product_status_label($p['status']))?></span>
+        <?php if($p['is_new']):?><span class="badge red">NYHED</span><?php endif;?>
+      </div>
+      <?php if(is_admin()):?>
+        <div class="actions" style="margin-top:8px;">
+          <a class="button secondary small" href="?edit=<?=$p['id']?>">Rediger</a>
+        </div>
+      <?php endif;?>
+    </div>
+  </div>
+</article>
+<?php endforeach;?>
+</div>
+
+<div class="table-wrap desktop-only"><table><thead><tr><th>SKU</th><th>Produkt</th><th>Brand</th><th>Lager (Fysisk / Res / Disp)</th><th>Priser</th><th>Nyhed</th><th>Katalog</th><th>Status</th><?php if(is_admin()):?><th></th><?php endif;?></tr></thead><tbody>
 <?php foreach($products as $p):
   $phys=(int)$p['physical_total'];
   $resQty=(int)($p['reserved_total']??0);

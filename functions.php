@@ -60,30 +60,49 @@ function page_header(string $title): void {
   echo '<!doctype html><html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#ffffff"><title>'.h($title).' · HSG Whisky</title><link rel="stylesheet" href="assets/style.css?v='.rawurlencode(app_version()).'"></head><body>';
   echo '<a class="skip-link" href="#main-content">Spring til hovedindhold</a>';
   echo '<header class="top"><a class="brand" href="'.h(actor_home_url()).'"><span class="brandmark" aria-hidden="true">🥃</span><span><strong>HSG Whisky</strong><small>'.h($platformName).'</small></span></a>';
-  echo '<div class="global-search-wrap"><input type="search" id="globalSearchInput" placeholder="🔍 Søg produkt, SKU, brand, ref... (Ctrl+K)" aria-label="Global søgning" autocomplete="off"><div id="globalSearchResults" class="global-search-dropdown" hidden></div></div>';
+  echo '<div class="global-search-wrap"><input type="search" id="globalSearchInput" placeholder="🔍 Søg produkt, SKU, brand, ref... (Ctrl+K)" aria-label="Global søgning / Command Palette" autocomplete="off"><div id="globalSearchResults" class="global-search-dropdown" hidden></div></div>';
   echo '<div class="top-actions">';
+  echo '<button type="button" class="theme-toggle" id="themeToggleBtn" title="Skift tema (Lys / Mørk)" aria-label="Skift tema">🌓</button>';
   if(!$admin && (!function_exists('hsg_module_is_enabled') || hsg_module_is_enabled('catalog')) && can('catalog.view')) echo '<a class="catalog-top" href="catalog.php">Katalog</a>';
   if($admin) echo '<span class="access-badge admin">Admin</span><a class="admin-link" href="admin-account.php">'.h($user).'</a>';
   else echo '<span class="access-badge readonly">Personligt link</span><span class="user">'.h($user).'</span><a class="admin-link" href="admin-login.php">Admin-login</a>';
   echo '</div></header>';
   echo '<aside class="sidebar" aria-label="Hovednavigation"><nav>';
   if($admin){
-    $allNav=[
-      'dashboard'=>['index.php','⌂','Overblik'],
-      'stock'=>['status.php','▦','Lager'],
-      'products'=>['products.php','◇','Produkter'],
-      'catalog'=>['catalog.php','▤','Katalog'],
-      'reports'=>['reports.php','📊','Rapporter'],
-      'supplier_upload'=>['import_center.php','⇅','Import / Upload'],
-      'system'=>['admin.php','⚙','Administration']
+    $sections = [
+      'OVERBLIK' => [
+        'dashboard'=>['index.php','⌂','Overblik'],
+        'activity'=>['system.php?tab=activity','📈','Aktivitet']
+      ],
+      'SALG' => [
+        'reservations'=>['reservations.php','▣','Reservationer'],
+        'orders'=>['reports.php?tab=builder','🛒','Ordrer & Salg']
+      ],
+      'PRODUKTER' => [
+        'stock'=>['status.php','▦','Lager'],
+        'products'=>['products.php','◇','Produkter'],
+        'catalog'=>['catalog.php','▤','Katalog']
+      ],
+      'RAPPORTER' => [
+        'reports'=>['reports.php','📊','Rapporter']
+      ],
+      'ADMINISTRATION' => [
+        'supplier_upload'=>['import_center.php','⇅','Import / Upload'],
+        'users'=>['users.php','👥','Brugere'],
+        'system'=>['admin.php','⚙','Systemstatus']
+      ]
     ];
     $current=basename($_SERVER['SCRIPT_NAME']??'');
-    $adminFiles=['admin.php','brands.php','locations.php','image_check.php','quality.php','users.php','user_permissions.php','backup.php','update.php','system.php','admin-account.php','stock.php'];
+    $adminFiles=['admin.php','brands.php','locations.php','image_check.php','quality.php','user_permissions.php','backup.php','update.php','system.php','admin-account.php','stock.php'];
     $importFiles=['import_center.php','import.php','supplier_upload.php','export.php'];
-    foreach($allNav as $mId=>[$href,$icon,$name]){
-      if(!is_superadmin() && function_exists('hsg_admin_can_view_module') && !hsg_admin_can_view_module($mId)) continue;
-      $active=($current===basename($href)) || ($href==='status.php' && $current==='reservations.php') || ($href==='admin.php' && in_array($current,$adminFiles,true)) || ($href==='import_center.php' && in_array($current,$importFiles,true));
-      echo '<a class="'.($active?'active':'').'" '.($active?'aria-current="page"':'').' href="'.h($href).'">'.h($icon).' <span>'.h($name).'</span></a>';
+
+    foreach($sections as $secName => $navItems){
+      echo '<div class="nav-section-label">'.h($secName).'</div>';
+      foreach($navItems as $mId => [$href,$icon,$name]){
+        if(!is_superadmin() && function_exists('hsg_admin_can_view_module') && !hsg_admin_can_view_module($mId) && !in_array($mId, ['dashboard','activity','orders'], true)) continue;
+        $active=($current===basename($href)) || ($href==='status.php' && $current==='reservations.php') || ($href==='admin.php' && in_array($current,$adminFiles,true)) || ($href==='import_center.php' && in_array($current,$importFiles,true));
+        echo '<a class="'.($active?'active':'').'" '.($active?'aria-current="page"':'').' href="'.h($href).'">'.h($icon).' <span>'.h($name).'</span></a>';
+      }
     }
   } elseif(function_exists('hsg_visible_modules')){
     foreach(hsg_visible_modules() as $module){
@@ -101,19 +120,33 @@ function page_footer(): void {
   $current=basename($_SERVER['SCRIPT_NAME']??'');
   echo '</main><nav class="mobile-nav" aria-label="Mobilnavigation">';
   if(is_admin()){
-    if(can('inventory.view')) echo '<a href="status.php" '.($current==='status.php'?'aria-current="page"':'').'>▦<span>Lager</span></a>';
-    if(can('reservations.view')) echo '<a href="reservations.php" '.($current==='reservations.php'?'aria-current="page"':'').'>▣<span>Reservér</span></a>';
-    if((!function_exists('hsg_module_is_enabled') || hsg_module_is_enabled('catalog')) && can('catalog.view')) echo '<a href="catalog.php" '.($current==='catalog.php'?'aria-current="page"':'').'>▤<span>Katalog</span></a>';
-    echo '<a href="admin.php" '.($current==='admin.php'?'aria-current="page"':'').'>•••<span>Mere</span></a>';
+    echo '<a href="status.php" '.($current==='status.php'?'aria-current="page" class="active"':'').'>▦<span>Lager</span></a>';
+    echo '<a href="reservations.php" '.($current==='reservations.php'?'aria-current="page" class="active"':'').'>▣<span>Reservér</span></a>';
+    echo '<a href="catalog.php" '.($current==='catalog.php'?'aria-current="page" class="active"':'').'>▤<span>Katalog</span></a>';
+    echo '<a href="index.php" '.($current==='index.php'?'aria-current="page" class="active"':'').'>⌂<span>Overblik</span></a>';
+    echo '<a href="admin.php" '.($current==='admin.php'?'aria-current="page" class="active"':'').'>•••<span>Mere</span></a>';
   }else{
-    if(can('inventory.view')) echo '<a href="status.php" '.($current==='status.php'?'aria-current="page"':'').'>▦<span>Lager</span></a>';
-    if(can('reservations.view')) echo '<a href="reservations.php" '.($current==='reservations.php'?'aria-current="page"':'').'>▣<span>Reservér</span></a>';
-    if((!function_exists('hsg_module_is_enabled') || hsg_module_is_enabled('catalog')) && can('catalog.view')) echo '<a href="catalog.php" '.($current==='catalog.php'?'aria-current="page"':'').'>▤<span>Katalog</span></a>';
-    if(can('dashboard.view')) echo '<a href="index.php" '.($current==='index.php'?'aria-current="page"':'').'>⌂<span>Overblik</span></a>';
+    if(can('inventory.view')) echo '<a href="status.php" '.($current==='status.php'?'aria-current="page" class="active"':'').'>▦<span>Lager</span></a>';
+    if(can('reservations.view')) echo '<a href="reservations.php" '.($current==='reservations.php'?'aria-current="page" class="active"':'').'>▣<span>Reservér</span></a>';
+    if((!function_exists('hsg_module_is_enabled') || hsg_module_is_enabled('catalog')) && can('catalog.view')) echo '<a href="catalog.php" '.($current==='catalog.php'?'aria-current="page" class="active"':'').'>▤<span>Katalog</span></a>';
+    if(can('dashboard.view')) echo '<a href="index.php" '.($current==='index.php'?'aria-current="page" class="active"':'').'>⌂<span>Overblik</span></a>';
   }
   echo '</nav><footer>HSG Whisky · Administration '.h(app_version()).'</footer>';
   echo '<script>
   (function(){
+    // Theme toggle
+    var themeBtn = document.getElementById("themeToggleBtn");
+    var savedTheme = localStorage.getItem("hsg_theme");
+    if(savedTheme) document.documentElement.setAttribute("data-theme", savedTheme);
+    if(themeBtn){
+      themeBtn.addEventListener("click", function(){
+        var cur = document.documentElement.getAttribute("data-theme") || "light";
+        var next = cur === "dark" ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", next);
+        localStorage.setItem("hsg_theme", next);
+      });
+    }
+
     // Double submit protection
     document.addEventListener("submit", function(e){
       var form = e.target;
@@ -136,7 +169,7 @@ function page_footer(): void {
       }
     });
 
-    // Global Quick Search
+    // Global Quick Search / Command Palette
     var inp = document.getElementById("globalSearchInput");
     var box = document.getElementById("globalSearchResults");
     if(!inp || !box) return;
