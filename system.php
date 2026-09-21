@@ -3,6 +3,11 @@ declare(strict_types=1);
 require __DIR__.'/auth.php';
 require_admin();
 
+$tab = (string)($_GET['tab'] ?? 'settings');
+if (!in_array($tab, ['settings', 'modules', 'audit', 'activity'], true)) {
+    $tab = 'settings';
+}
+
 if($_SERVER['REQUEST_METHOD']==='POST'){
     $action=(string)($_POST['action']??'settings');
     try {
@@ -24,14 +29,46 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     } catch(Throwable $e){
         flash('error',$e->getMessage());
     }
-    redirect('system.php');
+    redirect('system.php?tab='.$tab);
 }
 
 $modules=hsg_module_manifests();
 $states=hsg_module_state($pdo);
-$audits=$pdo->query("SELECT * FROM hsg_audit_log ORDER BY created_at DESC,id DESC LIMIT 80")->fetchAll();
-page_header('System');
+
+$qLog = trim((string)($_GET['q'] ?? ''));
+$entityLog = trim((string)($_GET['entity'] ?? ''));
+
+$logConds = [];
+$logParams = [];
+
+if ($qLog !== '') {
+    $logConds[] = "(action LIKE ? OR actor_name LIKE ? OR details_json LIKE ?)";
+    $like = '%' . $qLog . '%';
+    $logParams = [$like, $like, $like];
+}
+if ($entityLog !== '') {
+    $logConds[] = "entity_type = ?";
+    $logParams[] = $entityLog;
+}
+
+$logWhereSql = $logConds ? 'WHERE ' . implode(' AND ', $logConds) : '';
+
+$audits = $pdo->prepare("SELECT * FROM hsg_audit_log {$logWhereSql} ORDER BY created_at DESC, id DESC LIMIT 150");
+$audits->execute($logParams);
+$auditRows = $audits->fetchAll(PDO::FETCH_ASSOC);
+
+page_header('System & Auditlog');
 ?>
+
+<div class="simple-tabs" style="margin-bottom:1rem;">
+  <a class="button <?=$tab==='settings'?'':'secondary'?>" href="system.php?tab=settings">⚙️ Indstillinger</a>
+  <a class="button <?=$tab==='modules'?'':'secondary'?>" href="system.php?tab=modules">🧩 Moduler</a>
+  <a class="button <?=$tab==='audit'?'':'secondary'?>" href="system.php?tab=audit">📜 Auditlog</a>
+  <a class="button <?=$tab==='activity'?'':'secondary'?>" href="system.php?tab=activity">📈 Aktivitetsside</a>
+</div>
+
+<?php if($tab === 'settings'): ?>
+
 <div class="grid">
   <div class="card metric"><strong><?=h(app_version())?></strong><span>Platformversion</span></div>
   <div class="card metric"><strong><?=count($modules)?></strong><span>Installerede moduler</span></div>
@@ -47,13 +84,15 @@ page_header('System');
       <label>Systemnavn<input name="platform_name" value="<?=h(setting_get($pdo,'platform_name','HSG Administration'))?>"></label>
       <label>Virksomhed<input name="company_name" value="<?=h(setting_get($pdo,'company_name','HSG Whisky ApS'))?>"></label>
     </div>
-    <button>Gem indstillinger</button>
+    <button type="submit">Gem indstillinger</button>
   </form>
 </div>
 
+<?php elseif($tab === 'modules'): ?>
+
 <div class="card">
   <h2>Moduler</h2>
-  <p class="muted">Nye forretningsområder installeres som selvstændige moduler med eget versionsnummer og egne databaseændringer. Lagerdata behøver ikke ændres, når fx indkøb, kunder eller events tilføjes.</p>
+  <p class="muted">Nye forretningsområder installeres som selvstændige moduler med eget versionsnummer og egne databaseændringer.</p>
   <div class="table-wrap"><table><thead><tr><th>Modul</th><th>Version</th><th>Type</th><th>Status</th><th>Handling</th></tr></thead><tbody>
   <?php foreach($modules as $id=>$m): $state=$states[$id]??[];$installed=$state['version']??$m['version'];$enabled=hsg_module_is_enabled($id);$core=!empty($m['core']); ?>
     <tr>
@@ -63,42 +102,52 @@ page_header('System');
       <td><?=$enabled?'<span class="badge green">Aktiv</span>':'<span class="badge">Deaktiveret</span>'?></td>
       <td>
         <?php if($core):?><span class="muted">Altid aktiv</span>
-        <?php else:?><form method="post" style="display:inline"><?=csrf_field()?><input type="hidden" name="action" value="toggle_module"><input type="hidden" name="module_id" value="<?=h($id)?>"><input type="hidden" name="enabled" value="<?=$enabled?'0':'1'?>"><button class="secondary"><?=$enabled?'Deaktivér':'Aktivér'?></button></form><?php endif;?>
+        <?php else:?><form method="post" style="display:inline"><?=csrf_field()?><input type="hidden" name="action" value="toggle_module"><input type="hidden" name="module_id" value="<?=h($id)?>"><input type="hidden" name="enabled" value="<?=$enabled?'0':'1'?>"><button type="submit" class="secondary"><?=$enabled?'Deaktivér':'Aktivér'?></button></form><?php endif;?>
       </td>
     </tr>
   <?php endforeach;?>
   </tbody></table></div>
 </div>
 
-<div class="card">
-  <h2>Platformfundament</h2>
-  <div class="three">
-    <div><strong>Fælles kerne</strong><p class="muted">Sikkert admin-login, direkte lagerlinks, rettigheder, indstillinger, audit-log og modulstyring deles af hele platformen.</p></div>
-    <div><strong>Adskilte moduler</strong><p class="muted">Hvert forretningsområde har egne filer og kan have egne tabeller og migrations. Et nyt modul skal derfor ikke omskrive lagerdelen.</p></div>
-    <div><strong>Opgraderbar</strong><p class="muted">Platformen og hvert modul har versionsnumre. Databaseændringer køres automatisk ved opdatering, mens eksisterende data bevares.</p></div>
-  </div>
-</div>
+<?php elseif($tab === 'audit' || $tab === 'activity'): ?>
 
 <div class="card">
-  <h2>Mulige næste HSG-moduler</h2>
-  <p class="muted">Disse er ikke aktiveret endnu, men platformen er nu struktureret til at de kan tilføjes separat:</p>
-  <div class="three">
-    <div><strong>Indkøb & leverandører</strong><p class="muted">Outturn-lister, indkøbsordrer, kostpriser, afgifter, forventet avance og varemodtagelse.</p></div>
-    <div><strong>Kunder & salg</strong><p class="muted">Kunder, tilbud, reservationer, salgsordrer og evt. synkronisering med WooCommerce.</p></div>
-    <div><strong>Fade & anparter</strong><p class="muted">Fade, anpartshavere, hjemtagelse, betaling, flaskefordeling og historik.</p></div>
-    <div><strong>Events</strong><p class="muted">Smagninger, deltagere, flaskeforbrug, økonomi og partnerbesøg.</p></div>
-    <div><strong>Økonomi</strong><p class="muted">Dækningsbidrag, lagerbinding, prisberegning og integration til økonomisystem/datasæt.</p></div>
-    <div><strong>Rapporter</strong><p class="muted">Salg, lageromsætning, reservationer, indkøb og ledelsesoverblik på tværs af moduler.</p></div>
-  </div>
-</div>
+  <h2><?=$tab === 'activity' ? '📈 Aktivitetsside' : '📜 System Auditlog'?></h2>
+  <p class="muted">Kronologisk overblik over ændringer af produkter, lager, reservationer og brugere.</p>
 
-<div class="card">
-  <h2>Audit-log</h2>
-  <div class="table-wrap"><table><thead><tr><th>Dato</th><th>Bruger</th><th>Handling</th><th>Objekt</th><th>Detaljer</th></tr></thead><tbody>
-  <?php foreach($audits as $a):?>
-    <tr><td><?=h($a['created_at'])?></td><td><?=h($a['actor_name'])?><br><span class="muted"><?=h($a['actor_type'])?></span></td><td><?=h($a['action'])?></td><td><?=h($a['entity_type'])?><?=($a['entity_id']!==null?' #'.h($a['entity_id']):'')?></td><td><small><?=h($a['details_json']??'')?></small></td></tr>
+  <form class="searchbar" method="get">
+    <input type="hidden" name="tab" value="<?=h($tab)?>">
+    <input name="q" value="<?=h($qLog)?>" placeholder="Søg på handling, bruger eller detaljer...">
+    <select name="entity">
+      <option value="">Alle entiteter</option>
+      <option value="product" <?=$entityLog==='product'?'selected':''?>>Produkter</option>
+      <option value="stock" <?=$entityLog==='stock'?'selected':''?>>Lager</option>
+      <option value="reservation" <?=$entityLog==='reservation'?'selected':''?>>Reservationer</option>
+      <option value="user" <?=$entityLog==='user'?'selected':''?>>Brugere</option>
+      <option value="system" <?=$entityLog==='system'?'selected':''?>>System</option>
+    </select>
+    <button type="submit">Søg i log</button>
+    <?php if($qLog !== '' || $entityLog !== ''):?>
+      <a class="button secondary" href="system.php?tab=<?=h($tab)?>">Nulstil filtre</a>
+    <?php endif;?>
+  </form>
+
+  <div class="table-wrap"><table><thead><tr><th>Tidspunkt</th><th>Bruger</th><th>Handling</th><th>Entitet</th><th>Detaljer</th></tr></thead><tbody>
+  <?php foreach($auditRows as $a):?>
+    <tr>
+      <td><?=h($a['created_at'])?></td>
+      <td><strong><?=h($a['actor_name']?:'System')?></strong><br><small class="muted"><?=h($a['actor_type'])?></small></td>
+      <td><span class="badge blue"><?=h($a['action'])?></span></td>
+      <td><?=h($a['entity_type'])?><?=($a['entity_id']!==null?' #'.h($a['entity_id']):'')?></td>
+      <td><small><?=h($a['details_json']??'')?></small></td>
+    </tr>
   <?php endforeach;?>
-  <?php if(!$audits):?><tr><td colspan="5" class="muted">Der er endnu ingen logposter.</td></tr><?php endif;?>
+  <?php if(!$auditRows):?>
+    <tr><td colspan="5" class="muted" style="text-align:center; padding:24px;">Ingen logposter fundet med de valgte filtre. <a class="button secondary small" href="system.php?tab=<?=h($tab)?>">Ryd filtre</a></td></tr>
+  <?php endif;?>
   </tbody></table></div>
 </div>
+
+<?php endif; ?>
+
 <?php page_footer();
