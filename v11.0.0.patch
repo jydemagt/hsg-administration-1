@@ -1,0 +1,1189 @@
+diff --git a/admin.php b/admin.php
+index faa192c..98bab24 100644
+--- a/admin.php
++++ b/admin.php
+@@ -1,10 +1,24 @@
+ <?php
+ declare(strict_types=1);
+ require __DIR__.'/auth.php';require_admin();
++
+ $activeLinks=(int)$pdo->query('SELECT COUNT(*) FROM lager_users WHERE active=1')->fetchColumn();
+ $pendingImages=(int)$pdo->query("SELECT COUNT(*) FROM lager_products WHERE image_path IS NOT NULL AND image_path<>'' AND COALESCE(image_approval_status,'pending')<>'approved'")->fetchColumn();
+ $negative=(int)$pdo->query("SELECT COUNT(*) FROM lager_products p WHERE (SELECT COALESCE(SUM(s.quantity),0) FROM lager_stock s WHERE s.product_id=p.id)<0")->fetchColumn();
+-page_header('Administration');
++
++// Diagnostics checks
++$dbOk = true;
++$phpOk = version_compare(PHP_VERSION, '8.1.0', '>=');
++$storageWritable = is_writable(dirname(__DIR__).'/storage/tmp') || is_writable(dirname(__DIR__));
++$extZip = extension_loaded('zip');
++$extGd = extension_loaded('gd');
++$extPdo = extension_loaded('pdo');
++
++$wcConfigured = trim((string)setting_get($pdo, 'woocommerce_shop_url', '')) !== '';
++$wcLastStatus = setting_get($pdo, 'wc_last_sync_status', 'not_configured');
++
++page_header('Administration & Systemstatus');
++
+ $groups=[
+  'Daglig drift'=>[
+    ['Reservationer','Se og administrér reservationer.','reservations.php','▣'],
+@@ -28,6 +42,38 @@ $groups=[
+  ],
+ ];
+ ?>
++
++<div class="card" style="margin-bottom:20px;">
++  <h2>🖥️ Systemdiagnostik & Status</h2>
++  <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top:12px;">
++    <div class="card metric" style="padding:10px;">
++      <span class="badge green">✓ Forbundet</span>
++      <strong>Database</strong>
++      <small class="muted">MySQL / MariaDB PDO</small>
++    </div>
++    <div class="card metric" style="padding:10px;">
++      <span class="badge <?=$phpOk?'green':'amber'?>"><?=$phpOk?'✓ OK':'⚠ ' . PHP_VERSION?></span>
++      <strong>PHP <?=PHP_VERSION?></strong>
++      <small class="muted">Krav: PHP 8.1+</small>
++    </div>
++    <div class="card metric" style="padding:10px;">
++      <span class="badge <?=$storageWritable?'green':'red'?>"><?=$storageWritable?'✓ Skrivbar':'🔴 Låst'?></span>
++      <strong>Lagermappe</strong>
++      <small class="muted">storage/tmp/</small>
++    </div>
++    <div class="card metric" style="padding:10px;">
++      <span class="badge <?=($extZip&&$extGd&&$extPdo)?'green':'red'?>"><?=($extZip&&$extGd&&$extPdo)?'✓ Alle aktiveret':'🔴 Mangler moduler'?></span>
++      <strong>PHP Udvisninger</strong>
++      <small class="muted">Zip, GD, PDO</small>
++    </div>
++    <div class="card metric" style="padding:10px;">
++      <span class="badge <?=$wcConfigured?'green':'blue'?>"><?=$wcConfigured?($wcLastStatus==='error'?'⚠ Fejl':'✓ Klar'):'Ej oprettet'?></span>
++      <strong>WooCommerce API</strong>
++      <small class="muted"><?=$wcConfigured?'Webshop opsat':'Konfigurér i rapporter'?></small>
++    </div>
++  </div>
++</div>
++
+ <p class="muted admin-intro">De daglige funktioner ligger i hovedmenuen. Her er de funktioner, du normalt kun bruger ved opsætning, kontrol eller vedligeholdelse.</p>
+ <?php foreach($groups as $title=>$items):?>
+ <section class="admin-hub-section"><h2><?=h($title)?></h2><div class="admin-hub-grid">
+diff --git a/app_version.php b/app_version.php
+index 644adfc..bc1e23e 100644
+--- a/app_version.php
++++ b/app_version.php
+@@ -1 +1 @@
+-<?php return '10.4.0';
++<?php return '11.0.0';
+diff --git a/assets/style.css b/assets/style.css
+index d636b5a..1396658 100644
+--- a/assets/style.css
++++ b/assets/style.css
+@@ -1,113 +1,230 @@
+ [hidden]{display:none !important}
+-:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#182230;background:#f7f8fa;--blue:#155eef;--line:#e5e7eb;--green:#067647;--red:#b42318;--amber:#b54708}*{box-sizing:border-box}body{margin:0;background:#f7f8fa}.top{height:68px;position:fixed;z-index:20;top:0;left:0;right:0;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 24px}.brand{display:flex;gap:10px;align-items:center;color:#111827;text-decoration:none}.brandmark{font-size:26px}.brand strong,.brand small{display:block}.brand small{font-size:11px;color:#667085;font-weight:500}.top-actions{display:flex;align-items:center;gap:16px}.catalog-top{background:var(--blue);color:white;text-decoration:none;padding:9px 14px;border-radius:8px;font-weight:700}.user{font-size:13px;color:#475467}.sidebar{position:fixed;top:68px;left:0;bottom:0;width:210px;background:#fff;border-right:1px solid var(--line);padding:18px 12px;z-index:10}.sidebar nav{display:flex;flex-direction:column;gap:4px}.sidebar a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:#344054;text-decoration:none;font-weight:650;font-size:14px}.sidebar a.active,.sidebar a:hover{background:#eff4ff;color:#1849a9}.content{margin-left:210px;padding:92px 24px 70px;max-width:1500px}.page-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.page-title h1{font-size:25px;margin:0}.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 1px 2px rgba(16,24,40,.03)}.narrow{max-width:620px;margin:60px auto}.public{padding:30px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.metric strong{display:block;font-size:28px}.metric span{color:#667085;font-size:13px}.split{display:grid;grid-template-columns:1fr 1fr;gap:16px}.three{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.table-wrap{overflow:auto;background:#fff;border:1px solid var(--line);border-radius:12px}table{border-collapse:collapse;width:100%;min-width:760px}th,td{text-align:left;padding:11px 12px;border-bottom:1px solid #eef0f2;font-size:14px}th{background:#f9fafb;color:#475467;white-space:nowrap;font-size:12px;text-transform:uppercase;letter-spacing:.02em}tr:last-child td{border-bottom:0}label{display:block;font-size:13px;font-weight:700;color:#344054;margin:10px 0}input,select,textarea{display:block;width:100%;padding:10px 11px;margin-top:6px;border:1px solid #d0d5dd;border-radius:8px;background:#fff;color:#101828;font:inherit}textarea{min-height:110px;resize:vertical}button,.button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:8px;padding:10px 14px;background:var(--blue);color:#fff;text-decoration:none;font-weight:750;cursor:pointer;font:inherit}.button.secondary,button.secondary{background:#fff;color:#344054;border:1px solid #d0d5dd}.button.danger,button.danger{background:#d92d20}.button.success,button.success{background:#067647}button:disabled,.button:disabled,input[type="submit"]:disabled{opacity:0.65;cursor:not-allowed;pointer-events:none}.actions{display:flex;gap:8px;flex-wrap:wrap}.inline{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.inline>label{min-width:170px;flex:1}.flash{padding:12px 14px;border-radius:9px;margin-bottom:14px;border:1px solid transparent}.flash.success{background:#ecfdf3;color:#067647;border-color:#abefc6}.flash.error,.flash.danger{background:#fef3f2;color:#b42318;border-color:#fecdca}.flash.warning{background:#fffaeb;color:#b54708;border-color:#fedf89}.badge{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#f2f4f7;font-size:12px;font-weight:700}.badge.green{background:#ecfdf3;color:#067647}.badge.red{background:#fef3f2;color:#b42318}.badge.blue{background:#eff4ff;color:#1849a9}.muted{color:#667085;font-size:13px}.global-search-wrap{position:relative;flex:1;max-width:340px;margin:0 16px}.global-search-wrap input{margin:0;padding:8px 12px;font-size:13px;border-radius:20px;background:#f2f4f7;border:1px solid #d0d5dd}.global-search-dropdown{position:absolute;top:100%;left:0;right:0;margin-top:6px;background:#fff;border:1px solid #d0d5dd;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.12);max-height:360px;overflow-y:auto;z-index:500}.global-search-item{display:block;padding:10px 12px;border-bottom:1px solid #f2f4f7;text-decoration:none;color:#101828;font-size:13px}.global-search-item:hover,.global-search-item.active{background:#f8faff;outline:0}.global-search-item strong{display:block;font-size:13px}.global-search-item small{display:block;color:#667085;font-size:11px}
+-.searchbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}.searchbar input,.searchbar select{margin:0}.searchbar input{flex:1;min-width:200px}
+-@media(max-width:700px){.global-search-wrap{position:relative;flex:1;max-width:340px;margin:0 16px}.global-search-wrap input{margin:0;padding:8px 12px;font-size:13px;border-radius:20px;background:#f2f4f7;border:1px solid #d0d5dd}.global-search-dropdown{position:absolute;top:100%;left:0;right:0;margin-top:6px;background:#fff;border:1px solid #d0d5dd;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.12);max-height:360px;overflow-y:auto;z-index:500}.global-search-item{display:block;padding:10px 12px;border-bottom:1px solid #f2f4f7;text-decoration:none;color:#101828;font-size:13px}.global-search-item:hover,.global-search-item.active{background:#f8faff}.global-search-item strong{display:block;font-size:13px}.global-search-item small{display:block;color:#667085;font-size:11px}
+-.searchbar{display:flex;flex-direction:column;align-items:stretch;gap:10px}.searchbar input,.searchbar select,.searchbar button{width:100%!important;min-width:0;box-sizing:border-box}}.available{color:var(--green);font-weight:800}.negative{color:var(--red)}.check{display:flex;align-items:center;gap:8px;font-weight:650}.check input{width:auto;margin:0}.product-row{display:grid;grid-template-columns:60px 1fr auto;gap:12px;align-items:center}.product-thumb{width:54px;height:74px;object-fit:contain;background:#fff;border-radius:8px}.product-title{font-weight:800}.product-meta{font-size:12px;color:#667085}.mobile-list{display:none}.location-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}.loc-pill{background:#f9fafb;border:1px solid #eaecf0;border-radius:10px;padding:10px}.loc-pill strong{display:block;font-size:20px}.loc-pill span{font-size:12px;color:#667085}.reserve-panel{background:#f8faff;border:1px solid #d1e0ff;border-radius:12px;padding:14px}.brand-editor textarea{min-height:150px}.catalog-options{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.brand-section{margin-bottom:26px}.brand-intro{display:grid;grid-template-columns:100px 1fr;gap:18px;align-items:start}.brand-logo{width:90px;height:90px;object-fit:contain}.catalog-products{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.catalog-card{position:relative;border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff}.catalog-card img{width:100%;height:190px;object-fit:contain}.new-ribbon{position:absolute;top:10px;left:10px;background:#d92d20;color:#fff;font-size:11px;font-weight:900;padding:5px 8px;border-radius:999px}.image-status{display:flex;gap:10px;align-items:center}.image-preview{width:80px;height:110px;object-fit:contain;border:1px solid #eaecf0;border-radius:8px;background:#fff}.mobile-nav{display:none}footer{text-align:center;color:#98a2b3;font-size:12px;padding:20px;margin-left:210px}
+-@media(max-width:900px){.sidebar{display:none}.content{margin-left:0;padding:84px 12px 88px}.top{height:62px;padding:0 13px}.top-actions .user{display:none}.catalog-top{display:none}.grid{grid-template-columns:repeat(2,1fr)}.split,.three{grid-template-columns:1fr}.desktop-only{display:none!important}.mobile-list{display:block}.table-wrap.mobile-hide{display:none}.mobile-nav{position:fixed;z-index:30;left:0;right:0;bottom:0;height:68px;padding-bottom:env(safe-area-inset-bottom);background:#fff;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(4,1fr)}.mobile-nav a{display:flex;flex-direction:column;align-items:center;justify-content:center;text-decoration:none;color:#475467;font-size:20px;gap:2px}.mobile-nav span{font-size:10px;font-weight:700}.mobile-product{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:9px}.mobile-product-main{display:grid;grid-template-columns:52px 1fr;gap:10px}.mobile-product img{width:50px;height:80px;object-fit:contain}.mobile-product h3{font-size:14px;margin:2px 0 2px}.mobile-product .sku{font-size:11px;color:#667085}.mobile-stock-line{display:grid;grid-template-columns:1fr auto;font-size:12px;padding:2px 0}.mobile-stock-line.total{margin-top:5px;padding-top:5px;border-top:1px solid #eef0f2;font-weight:800}.mobile-actions{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:9px}.mobile-actions select{margin:0}.mobile-actions .button{padding:9px 14px}.quick-reserve{display:grid;grid-template-columns:1fr 68px auto;gap:6px;margin-top:8px}.quick-reserve select,.quick-reserve input{margin:0;padding:8px}.brand-intro{grid-template-columns:70px 1fr}.brand-logo{width:64px;height:64px}.catalog-products{grid-template-columns:1fr}.catalog-card{display:grid;grid-template-columns:90px 1fr;gap:10px}.catalog-card img{height:130px}.page-title h1{font-size:21px}footer{display:none}}
+-@media(max-width:480px){.grid{grid-template-columns:1fr 1fr}.metric strong{font-size:22px}.card{padding:13px}.searchbar{position:sticky;top:66px;z-index:4;background:#f7f8fa;padding:4px 0}.quick-reserve{grid-template-columns:1fr 62px auto}}
+-.access-badge{display:inline-flex;align-items:center;padding:5px 9px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap}.access-badge.admin{background:#ecfdf3;color:#067647}.access-badge.readonly{background:#fffaeb;color:#b54708}.admin-link{font-size:13px;font-weight:750;color:#344054;text-decoration:none}.admin-link:hover{text-decoration:underline}.readonly-note{padding:11px 13px;border:1px solid #fedf89;background:#fffaeb;color:#7a2e0e;border-radius:10px;margin-bottom:14px;font-size:13px}
+-@media(max-width:900px){.access-badge{display:none}.top-actions .admin-link{font-size:12px}.readonly-note{font-size:12px;padding:9px 10px}}
+-/* Billedtjek: klikbart stort billede */
+-.image-preview-button{display:inline-flex;align-items:center;justify-content:center;width:76px;height:94px;padding:4px;border:1px solid #eaecf0;border-radius:99px;background:#fff;cursor:zoom-in;transition:border-color .15s,box-shadow .15s,transform .15s}
+-.image-preview-button:hover,.image-preview-button:focus-visible{border-color:#84adff;box-shadow:0 0 0 3px #eff4ff;outline:0;transform:translateY(-1px)}
+-.image-preview-button .image-preview{display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain}
+-body.lightbox-open{overflow:hidden}
+-.image-lightbox[hidden]{display:none}
+-.image-lightbox{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:24px}
+-.image-lightbox-backdrop{position:absolute;inset:0;background:rgba(16,24,40,.82);backdrop-filter:blur(2px);cursor:zoom-out}
+-.image-lightbox-dialog{position:relative;z-index:1;width:min(920px,calc(100vw - 40px));max-height:calc(100vh - 40px);background:#fff;border-radius:16px;box-shadow:0 24px 80px rgba(0,0,0,.35);padding:18px;display:flex;flex-direction:column}
+-.image-lightbox-stage{min-height:260px;max-height:calc(100vh - 130px);display:flex;align-items:center;justify-content:center;overflow:auto;background:#f9fafb;border-radius:12px;padding:16px}
+-.image-lightbox-stage img{display:block;max-width:100%;max-height:calc(100vh - 170px);width:auto;height:auto;object-fit:contain}
+-.image-lightbox-title{padding:12px 42px 0 4px;font-weight:800;color:#101828}
+-.image-lightbox-close{position:absolute;top:10px;right:10px;z-index:2;width:38px;height:38px;padding:0;border-radius:999px;background:#fff;color:#344054;border:1px solid #d0d5dd;font-size:25px;line-height:1}
+-.image-lightbox-close:hover,.image-lightbox-close:focus-visible{background:#f2f4f7;color:#101828}
+-@media(max-width:700px){.image-preview-button{width:66px;height:84px}.image-lightbox{padding:10px}.image-lightbox-dialog{width:calc(100vw - 20px);max-height:calc(100vh - 20px);border-radius:12px;padding:12px}.image-lightbox-stage{min-height:220px;max-height:calc(100vh - 105px);padding:10px}.image-lightbox-stage img{max-height:calc(100vh - 135px)}.image-lightbox-title{font-size:14px;padding-top:9px}}
+-
+-/* v1.2.8 image validation */
+-.validation-flagged-row td{background:rgba(180,35,35,.055)}
+-.validation-status{min-width:180px}
+-.validation-note{display:inline-block;max-width:360px;margin-top:5px;line-height:1.35}
+-.product-assistant-box{margin:12px 0 16px;padding:12px 14px;border:1px solid #b2ccff;background:#f5f8ff;border-radius:10px}.assistant-filled{outline:3px solid #abefc6!important;border-color:#17b26a!important;transition:outline .2s}
+-
+-/* v1.3.1 – AI candidates and richer image overlay */
+-.candidate-row td{background:#fbfcfe;padding:14px}
+-.candidate-section{border:1px dashed #b2ccff;border-radius:12px;padding:12px;background:#f8faff}
+-.candidate-section-head{display:flex;align-items:center;gap:10px;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap}
+-.candidate-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:10px}
+-.candidate-card{display:grid;grid-template-columns:88px 1fr;gap:10px;align-items:start;border:1px solid #d0d5dd;border-radius:10px;padding:10px;background:#fff}
+-.candidate-card.candidate-flagged{border-color:#fda29b;background:#fff7f6}
+-.candidate-card.candidate-strong{border-color:#75e0a7;background:#f6fef9}
+-.candidate-card .candidate-preview{width:82px;height:108px}
+-.candidate-info{display:flex;flex-direction:column;gap:7px;min-width:0}.candidate-info small{line-height:1.3}.candidate-info .actions{margin-top:auto}
+-.candidate-no-image{width:82px;height:108px;display:flex;align-items:center;justify-content:center;text-align:center;border:1px dashed #d0d5dd;border-radius:8px;color:#667085;font-size:11px;background:#f9fafb}
+-.image-lightbox-dialog{width:min(1120px,calc(100vw - 40px))}
+-.image-lightbox-content{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:18px;min-height:0}
+-.image-lightbox-stage{max-height:calc(100vh - 80px)}
+-.image-lightbox-stage img{max-height:calc(100vh - 120px)}
+-.image-lightbox-meta{padding:12px 6px 8px 0;display:flex;flex-direction:column;gap:10px;overflow:auto}
+-.image-lightbox-meta h2{font-size:20px;line-height:1.25;margin:0 36px 4px 0;color:#101828}
+-.lightbox-meta-row{display:grid;grid-template-columns:90px 1fr;gap:8px;padding:8px 0;border-bottom:1px solid #eef0f2;font-size:13px}.lightbox-meta-row span{color:#667085}.lightbox-meta-row strong{color:#101828;overflow-wrap:anywhere}
+-.lightbox-flag{padding:10px 12px;border-radius:9px;background:#fef3f2;color:#b42318;border:1px solid #fecdca;font-weight:850;font-size:12px}
+-.image-lightbox-meta .button,.image-lightbox-meta button{width:100%}
+-@media(max-width:760px){.candidate-grid{grid-template-columns:1fr}.candidate-card{grid-template-columns:76px 1fr}.candidate-card .candidate-preview,.candidate-no-image{width:70px;height:96px}.image-lightbox-content{grid-template-columns:1fr;overflow:auto}.image-lightbox-stage{min-height:300px;max-height:58vh}.image-lightbox-stage img{max-height:54vh}.image-lightbox-meta{padding:0 2px 4px}.image-lightbox-meta h2{font-size:17px}.image-lightbox-dialog{overflow:hidden}.lightbox-meta-row{grid-template-columns:80px 1fr}}
+-
+-/* v1.4.2 – lagerstatus popups og klikbare produktdetaljer */
++:root{
++  font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
++  --bg-body:#f7f8fa;
++  --bg-card:#ffffff;
++  --bg-sidebar:#ffffff;
++  --bg-topbar:#ffffff;
++  --text-main:#182230;
++  --text-muted:#667085;
++  --text-heading:#101828;
++  --line:#e5e7eb;
++  --line-strong:#d0d5dd;
++  --blue:#155eef;
++  --blue-hover:#1849a9;
++  --blue-light:#eff4ff;
++  --green:#067647;
++  --green-light:#ecfdf3;
++  --red:#b42318;
++  --red-light:#fef3f2;
++  --amber:#b54708;
++  --amber-light:#fffaeb;
++  --shadow-sm:0 1px 2px rgba(16,24,40,.04);
++  --shadow-md:0 4px 16px rgba(16,24,40,.08);
++  --radius-sm:6px;
++  --radius-md:10px;
++  --radius-lg:14px;
++  --radius-pill:999px;
++  --touch-min:44px;
++}
++
++[data-theme="dark"]{
++  --bg-body:#0f172a;
++  --bg-card:#1e293b;
++  --bg-sidebar:#0f172a;
++  --bg-topbar:#1e293b;
++  --text-main:#f1f5f9;
++  --text-muted:#94a3b8;
++  --text-heading:#ffffff;
++  --line:#334155;
++  --line-strong:#475569;
++  --blue:#38bdf8;
++  --blue-hover:#0284c7;
++  --blue-light:#0f2744;
++  --green:#4ade80;
++  --green-light:#052e16;
++  --red:#f87171;
++  --red-light:#450a0a;
++  --amber:#fbbf24;
++  --amber-light:#451a03;
++  --shadow-sm:0 1px 3px rgba(0,0,0,.3);
++  --shadow-md:0 6px 20px rgba(0,0,0,.4);
++}
++
++@media (prefers-color-scheme: dark){
++  :root:not([data-theme="light"]){
++    --bg-body:#0f172a;
++    --bg-card:#1e293b;
++    --bg-sidebar:#0f172a;
++    --bg-topbar:#1e293b;
++    --text-main:#f1f5f9;
++    --text-muted:#94a3b8;
++    --text-heading:#ffffff;
++    --line:#334155;
++    --line-strong:#475569;
++    --blue:#38bdf8;
++    --blue-hover:#0284c7;
++    --blue-light:#0f2744;
++    --green:#4ade80;
++    --green-light:#052e16;
++    --red:#f87171;
++    --red-light:#450a0a;
++    --amber:#fbbf24;
++    --amber-light:#451a03;
++  }
++}
++
++*{box-sizing:border-box}
++body{margin:0;background:var(--bg-body);color:var(--text-main);line-height:1.5;-webkit-text-size-adjust:100%}
++
++.top{height:68px;position:fixed;z-index:20;top:0;left:0;right:0;background:var(--bg-topbar);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 24px}
++.brand{display:flex;gap:10px;align-items:center;color:var(--text-heading);text-decoration:none;min-height:var(--touch-min)}
++.brandmark{font-size:26px}
++.brand strong,.brand small{display:block}
++.brand small{font-size:11px;color:var(--text-muted);font-weight:500}
++.top-actions{display:flex;align-items:center;gap:12px}
++.catalog-top{background:var(--blue);color:#fff;text-decoration:none;padding:9px 14px;border-radius:var(--radius-md);font-weight:700;display:inline-flex;align-items:center;min-height:var(--touch-min)}
++
++.sidebar{position:fixed;top:68px;left:0;bottom:0;width:230px;background:var(--bg-sidebar);border-right:1px solid var(--line);padding:18px 12px;z-index:10;overflow-y:auto}
++.sidebar nav{display:flex;flex-direction:column;gap:4px}
++.nav-section-label{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:12px 12px 4px 12px;margin-top:6px}
++.sidebar a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);color:var(--text-main);text-decoration:none;font-weight:650;font-size:14px;min-height:var(--touch-min)}
++.sidebar a.active,.sidebar a:hover{background:var(--blue-light);color:var(--blue)}
++
++.content{margin-left:230px;padding:92px 24px 70px;max-width:1500px}
++.page-title{display:flex;align-items:center;justify-space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px}
++.page-title h1{font-size:25px;margin:0;color:var(--text-heading)}
++
++.card{background:var(--bg-card);border:1px solid var(--line);border-radius:var(--radius-lg);padding:18px;margin-bottom:16px;box-shadow:var(--shadow-sm)}
++.narrow{max-width:620px;margin:60px auto}
++.public{padding:30px}
++.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
++.metric strong{display:block;font-size:28px;color:var(--text-heading)}
++.metric span{color:var(--text-muted);font-size:13px}
++.split{display:grid;grid-template-columns:1fr 1fr;gap:16px}
++.three{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
++.four{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
++
++.table-wrap{overflow:auto;background:var(--bg-card);border:1px solid var(--line);border-radius:var(--radius-lg)}
++table{border-collapse:collapse;width:100%;min-width:720px}
++th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);font-size:14px;color:var(--text-main)}
++th{background:var(--bg-body);color:var(--text-muted);white-space:nowrap;font-size:12px;text-transform:uppercase;letter-spacing:.02em;font-weight:700}
++tr:last-child td{border-bottom:0}
++
++label{display:block;font-size:13px;font-weight:700;color:var(--text-main);margin:10px 0}
++input,select,textarea{display:block;width:100%;padding:10px 12px;margin-top:6px;border:1px solid var(--line-strong);border-radius:var(--radius-md);background:var(--bg-card);color:var(--text-main);font:inherit;min-height:var(--touch-min)}
++textarea{min-height:110px;resize:vertical}
++
++button,.button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:var(--radius-md);padding:10px 16px;background:var(--blue);color:#fff;text-decoration:none;font-weight:750;cursor:pointer;font:inherit;min-height:var(--touch-min);touch-action:manipulation}
++.button.secondary,button.secondary{background:var(--bg-card);color:var(--text-main);border:1px solid var(--line-strong)}
++.button.danger,button.danger{background:var(--red);color:#fff}
++.button.success,button.success{background:var(--green);color:#fff}
++.button.small,button.small{padding:6px 10px;min-height:36px;font-size:12px}
++button:disabled,.button:disabled,input[type="submit"]:disabled{opacity:0.65;cursor:not-allowed;pointer-events:none}
++
++.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
++.inline{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
++.inline>label{min-width:170px;flex:1}
++
++.flash{padding:12px 14px;border-radius:var(--radius-md);margin-bottom:14px;border:1px solid transparent;font-weight:600}
++.flash.success{background:var(--green-light);color:var(--green);border-color:var(--green)}
++.flash.error,.flash.danger{background:var(--red-light);color:var(--red);border-color:var(--red)}
++.flash.warning{background:var(--amber-light);color:var(--amber);border-color:var(--amber)}
++
++.badge{display:inline-flex;align-items:center;padding:4px 8px;border-radius:var(--radius-pill);background:var(--bg-body);color:var(--text-muted);font-size:12px;font-weight:700}
++.badge.green{background:var(--green-light);color:var(--green)}
++.badge.red{background:var(--red-light);color:var(--red)}
++.badge.blue{background:var(--blue-light);color:var(--blue)}
++.badge.amber{background:var(--amber-light);color:var(--amber)}
++
++.muted{color:var(--text-muted);font-size:13px}
++
++/* Command Palette & Search */
++.global-search-wrap{position:relative;flex:1;max-width:380px;margin:0 16px}
++.global-search-wrap input{margin:0;padding:8px 14px;font-size:13px;border-radius:var(--radius-pill);background:var(--bg-body);border:1px solid var(--line-strong)}
++.global-search-dropdown{position:absolute;top:100%;left:0;right:0;margin-top:6px;background:var(--bg-card);border:1px solid var(--line-strong);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);max-height:380px;overflow-y:auto;z-index:500}
++.global-search-item{display:block;padding:10px 14px;border-bottom:1px solid var(--line);text-decoration:none;color:var(--text-main);font-size:13px;min-height:var(--touch-min)}
++.global-search-item:hover,.global-search-item.active{background:var(--blue-light);color:var(--blue);outline:0}
++.global-search-item strong{display:block;font-size:13px}
++.global-search-item small{display:block;color:var(--text-muted);font-size:11px}
++
++.searchbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
++.searchbar input,.searchbar select{margin:0}
++.searchbar input{flex:1;min-width:200px}
++
++/* Theme Toggle Button */
++.theme-toggle{background:transparent;border:1px solid var(--line-strong);color:var(--text-main);padding:6px 10px;border-radius:var(--radius-md);cursor:pointer;font-size:16px;min-height:var(--touch-min);display:inline-flex;align-items:center;justify-content:center}
++
++/* Accessibility Skip Link */
++.skip-link{position:absolute;top:-100px;left:10px;z-index:9999;padding:10px 16px;background:var(--blue);color:#fff;font-weight:700;border-radius:var(--radius-md);text-decoration:none;transition:top .15s ease}
++.skip-link:focus{top:10px;outline:3px solid var(--amber)}
++
++/* Mobile Navigation */
++.mobile-nav{display:none}
++
++/* Breakpoint 1024px+ (Desktop) */
++@media(min-width:1024px){
++  .sidebar{display:block}
++}
++
++/* Breakpoint 768px–1023px (Tablet) */
++@media(max-width:1023px){
++  .sidebar{display:none}
++  .content{margin-left:0;padding:84px 16px 88px}
++  .top{padding:0 16px}
++  .grid{grid-template-columns:repeat(2,1fr)}
++  .split,.three,.four{grid-template-columns:1fr}
++}
++
++/* Breakpoints Mobile: 430px, 390px, 375px, 320px */
++@media(max-width:767px){
++  .top{height:62px;padding:0 12px}
++  .content{margin-left:0;padding:78px 12px 84px}
++  .grid{grid-template-columns:1fr 1fr}
++  .split,.three,.four{grid-template-columns:1fr}
++  .desktop-only{display:none!important}
++
++  .searchbar{display:flex;flex-direction:column;align-items:stretch;gap:10px}
++  .searchbar input,.searchbar select,.searchbar button{width:100%!important;min-width:0}
++
++  .mobile-nav{position:fixed;z-index:30;left:0;right:0;bottom:0;height:68px;padding-bottom:env(safe-area-inset-bottom);background:var(--bg-topbar);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr)}
++  .mobile-nav a{display:flex;flex-direction:column;align-items:center;justify-content:center;text-decoration:none;color:var(--text-muted);font-size:18px;gap:2px;min-height:var(--touch-min)}
++  .mobile-nav a.active,.mobile-nav a[aria-current="page"]{color:var(--blue)}
++  .mobile-nav span{font-size:10px;font-weight:700}
++
++  .mobile-product{background:var(--bg-card);border:1px solid var(--line);border-radius:var(--radius-lg);padding:14px;margin-bottom:10px;box-shadow:var(--shadow-sm)}
++  .mobile-product-main{display:grid;grid-template-columns:56px 1fr;gap:12px;align-items:start}
++  .mobile-product img{width:52px;height:82px;object-fit:contain}
++  .mobile-product h3{font-size:15px;margin:0 0 4px;color:var(--text-heading)}
++  .mobile-product .sku{font-size:12px;color:var(--text-muted)}
++  .mobile-stock-line{display:grid;grid-template-columns:1fr auto;font-size:13px;padding:3px 0}
++  .mobile-stock-line.total{margin-top:6px;padding-top:6px;border-top:1px solid var(--line);font-weight:800}
++
++  footer{display:none}
++}
++
++@media(max-width:390px){
++  .grid{grid-template-columns:1fr}
++  .metric strong{font-size:24px}
++  .card{padding:14px}
++}
++
++/* Modal Windows */
+ body.modal-open{overflow:hidden}
+-.hsg-modal[hidden]{display:none}.hsg-modal{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:20px}.hsg-modal-backdrop{position:absolute;inset:0;background:rgba(16,24,40,.72);backdrop-filter:blur(2px)}.hsg-modal-dialog{position:relative;z-index:1;width:min(720px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;background:#fff;border-radius:16px;box-shadow:0 24px 70px rgba(16,24,40,.35);padding:20px}.hsg-modal-close{position:absolute;top:10px;right:10px;width:38px;height:38px;padding:0;border:1px solid #d0d5dd;border-radius:50%;background:#fff;color:#344054;font-size:24px;z-index:3}.hsg-modal-head{padding-right:42px}.hsg-modal-head h2{margin:4px 0 2px;font-size:23px}.modal-kicker{font-size:12px;font-weight:800;color:#155eef;text-transform:uppercase;letter-spacing:.04em}.reserve-modal-dialog{max-width:520px}.reserve-modal-dialog textarea{min-height:100px}.reserve-submit{width:100%;margin-top:8px;padding:13px}.qty-stepper{display:grid;grid-template-columns:46px 1fr 46px;gap:7px;margin-top:6px}.qty-stepper input{margin:0;text-align:center;font-size:18px;font-weight:800}.qty-stepper button{padding:0;font-size:22px}.product-row-button,.mobile-product-main{appearance:none;border:0;background:transparent;color:inherit;text-align:left;padding:0;margin:0;width:100%;cursor:pointer;font:inherit}.product-row-button:hover strong,.product-row-button:focus-visible strong,.mobile-product-main:hover h3,.mobile-product-main:focus-visible h3{color:#155eef;text-decoration:underline}.mobile-product-main:focus-visible,.product-row-button:focus-visible{outline:2px solid #84adff;outline-offset:3px;border-radius:8px}.product-detail-hint{display:inline-block;margin-top:5px;color:#155eef;font-size:10px;font-weight:700}.reserve-list-button{width:100%;margin-top:10px}.product-modal-dialog{width:min(920px,calc(100vw - 32px))}.product-modal-layout{display:grid;grid-template-columns:220px 1fr;gap:24px}.product-modal-image{background:#f9fafb;border:1px solid #eef0f2;border-radius:12px;display:flex;align-items:center;justify-content:center;min-height:330px;padding:16px}.product-modal-image img{width:100%;max-height:330px;object-fit:contain}.product-modal-body{min-width:0}.product-modal-titleline{display:flex;gap:14px;justify-content:space-between;align-items:flex-start;padding-right:40px}.product-modal-titleline h2{font-size:23px;line-height:1.22;margin:5px 0 3px}.product-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 20px;margin-top:16px;border-top:1px solid #eef0f2}.product-detail-fact{display:grid;grid-template-columns:115px 1fr;gap:8px;padding:9px 0;border-bottom:1px solid #eef0f2;font-size:13px}.product-detail-fact span{color:#667085}.product-detail-fact strong{overflow-wrap:anywhere}.product-stock-details h3,.product-notes h3{font-size:14px;margin:18px 0 7px}.product-stock-detail{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:8px;padding:7px 0;border-bottom:1px solid #eef0f2;font-size:12px}.product-stock-detail span:not(:first-child){color:#667085}.product-stock-detail strong{color:#067647}.product-stock-detail.total{font-weight:800;border-top:1px solid #d0d5dd}.product-notes p{white-space:pre-wrap;background:#f9fafb;border-radius:8px;padding:10px;margin:0;font-size:13px}
+-@media(max-width:700px){.hsg-modal{padding:8px;align-items:end}.hsg-modal-dialog{width:100%;max-height:92dvh;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}.reserve-modal-dialog{max-width:none}.hsg-modal-head h2{font-size:20px}.reserve-modal-dialog label{font-size:14px}.reserve-modal-dialog textarea{font-size:16px}.reserve-modal-dialog select,.reserve-modal-dialog input{font-size:16px}.product-modal-dialog{width:100%}.product-modal-layout{grid-template-columns:100px 1fr;gap:13px}.product-modal-image{min-height:160px;padding:8px;align-self:start}.product-modal-image img{max-height:180px}.product-modal-titleline{display:block;padding-right:35px}.product-modal-titleline h2{font-size:18px}.product-modal-titleline #productModalReserve{width:100%;margin-top:10px}.product-detail-grid{grid-template-columns:1fr;grid-column:1/-1}.product-detail-fact{grid-template-columns:100px 1fr}.product-stock-details,.product-notes{grid-column:1/-1}.product-stock-detail{grid-template-columns:1.3fr 1fr;gap:4px 8px}.product-stock-detail span:nth-child(2),.product-stock-detail span:nth-child(3){font-size:11px}.mobile-product{padding:11px}.mobile-product-main{grid-template-columns:52px 1fr}.reserve-list-button{padding:11px}}
+-
+-/* v1.4.3 mobile lager hotfix: produktkort er ikke knapper */
+-.mobile-product-main{background:#fff!important;color:#101828!important;border:0!important;box-shadow:none!important;border-radius:10px;touch-action:manipulation;-webkit-tap-highlight-color:rgba(21,94,239,.08)}
+-.mobile-product-main h3{color:#101828!important}.mobile-product-main .sku{color:#667085!important}.mobile-product-main .product-detail-hint{color:#155eef!important}
+-.mobile-product-main:hover,.mobile-product-main:active{background:#f8faff!important}.mobile-product-main:focus-visible{outline:2px solid #84adff;outline-offset:2px}
+-.reserve-list-button{background:#155eef;color:#fff;touch-action:manipulation}
+-@media(max-width:700px){.mobile-product{background:#fff;border:1px solid #e4e7ec;box-shadow:0 1px 2px rgba(16,24,40,.04)}.mobile-product-main{padding:2px!important}.reserve-list-button{width:100%!important;margin-top:10px!important;border-radius:10px;padding:12px 14px!important}.mobile-product h3{font-size:15px;line-height:1.28}.mobile-stock-line{font-size:13px}.product-detail-hint{font-size:11px}}
+-
+-/* v1.5 product quality center */
+-.quality-card-link{display:flex;text-decoration:none;color:inherit;transition:transform .12s ease,box-shadow .12s ease}.quality-card-link:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(16,24,40,.08)}
+-.quality-field-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}.quality-field-item{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.quality-inline-form{display:inline;margin:0}.quality-required-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin:14px 0}.quality-product-card{border-left:4px solid #d0d5dd}.quality-product-card:has(.badge.red){border-left-color:#d92d20}.quality-approved-line{margin-top:10px}.quality-exemptions{margin-top:12px}.small{padding:6px 9px;font-size:12px}@media(max-width:700px){.quality-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.quality-product-card .page-title{align-items:flex-start}.quality-product-card .actions{width:100%}.quality-product-card .actions .button,.quality-product-card .actions button{flex:1}}
+-
+-/* v1.5.1 – kataloglayout inspireret af HSG-kataloget maj 2026 */
+-.catalog-document-preview{max-width:900px;margin:18px auto;display:grid;gap:26px}
+-.catalog-cover-preview,.catalog-brand-page,.catalog-product-page{background:#fff;border:1px solid #e4e7ec;box-shadow:0 6px 24px rgba(16,24,40,.06);padding:34px 36px;min-height:620px;position:relative}
+-.catalog-cover-preview{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:12px}
+-.catalog-cover-preview>img{width:min(260px,60%);height:auto;margin-bottom:34px}
+-.catalog-cover-preview h1{font-size:44px;font-weight:500;margin:0 0 12px}.catalog-cover-preview h2{font-size:28px;font-weight:500;margin:0}.catalog-cover-preview p{font-size:20px;margin:0}.catalog-cover-preview small{margin-top:90px;font-size:14px}
+-.catalog-doc-header{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:18px}.catalog-doc-header h2{font-size:26px;font-weight:500;margin:0}.catalog-doc-header img{width:110px;height:auto}
+-.catalog-brand-page{display:flex;flex-direction:column}.catalog-brand-main-logo{display:block;max-width:78%;max-height:290px;object-fit:contain;margin:45px auto 36px}.catalog-brand-description{font-size:17px;line-height:1.55;max-width:95%;margin:0}
+-.catalog-product-page hr{border:0;border-top:1px solid #555;margin:26px 0}.catalog-doc-product{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(230px,.95fr);gap:34px;align-items:center;min-height:285px}.catalog-doc-product.reverse{grid-template-columns:minmax(230px,.95fr) minmax(0,1.05fr)}.catalog-doc-product.reverse .catalog-doc-info{order:2}.catalog-doc-product.reverse .catalog-doc-image-wrap{order:1}
+-.catalog-doc-info h3{font-family:Georgia,'Times New Roman',serif;font-size:20px;font-weight:500;margin:0 0 18px}.catalog-doc-info table{width:100%;border-collapse:collapse;background:#fff}.catalog-doc-info th,.catalog-doc-info td{border:1px solid #555;padding:8px 10px;text-align:left;vertical-align:top;font-size:14px}.catalog-doc-info th{width:52%;font-weight:800}.catalog-doc-image-wrap{position:relative;display:flex;align-items:center;justify-content:center;min-height:270px}.catalog-doc-bottle{max-width:100%;max-height:285px;object-fit:contain}.catalog-new-sticker{position:absolute;left:-10px;top:-10px;width:120px;height:120px;object-fit:contain;z-index:2}
+-@media(max-width:700px){.catalog-document-preview{margin:12px 0;gap:16px}.catalog-cover-preview,.catalog-brand-page,.catalog-product-page{min-height:0;padding:22px 16px;border-radius:14px}.catalog-cover-preview{min-height:540px}.catalog-cover-preview h1{font-size:34px}.catalog-cover-preview h2{font-size:24px}.catalog-doc-header h2{font-size:21px}.catalog-doc-header img{width:86px}.catalog-brand-main-logo{max-width:90%;max-height:210px;margin:30px auto}.catalog-brand-description{font-size:15px}.catalog-doc-product,.catalog-doc-product.reverse{grid-template-columns:1fr;gap:12px}.catalog-doc-product.reverse .catalog-doc-info,.catalog-doc-product.reverse .catalog-doc-image-wrap{order:initial}.catalog-doc-image-wrap{min-height:220px;order:1!important}.catalog-doc-info{order:2!important}.catalog-doc-bottle{max-height:240px}.catalog-doc-info h3{font-size:18px}.catalog-doc-info th,.catalog-doc-info td{font-size:13px;padding:7px}.catalog-new-sticker{width:90px;height:90px}}
+-/* v1.5.2 catalog fidelity hotfix */
+-.catalog-document-preview{max-width:900px}
+-.catalog-cover-preview,.catalog-brand-page,.catalog-product-page,.catalog-toc-page{width:100%;aspect-ratio:210/297;min-height:0;padding:44px 36px;overflow:hidden;position:relative;background:#fff;border:1px solid #e4e7ec;box-shadow:0 6px 24px rgba(16,24,40,.06)}
+-.catalog-toc-list{margin-top:20px;display:flex;flex-direction:column;gap:5px}
+-html{scroll-behavior:smooth}
+-a.catalog-toc-item{display:flex;align-items:baseline;gap:8px;font-size:13.5px;text-decoration:none;color:inherit;margin-top:2px;transition:color .12s}
+-a.catalog-toc-item:hover{color:#155eef}
+-a.catalog-toc-item.family{font-weight:700;font-size:15.5px;margin-top:18px;margin-bottom:2px}
+-a.catalog-toc-item.product{padding-left:22px;font-size:13px;color:#344054}
+-a.catalog-toc-item:hover .catalog-toc-dots{border-bottom-color:#155eef}
+-.catalog-toc-dots{flex:1;border-bottom:1px dotted #98a2b3;margin:0 4px;position:relative;top:-3px}
+-.catalog-toc-page-no{font-weight:600;min-width:24px;text-align:right}
+-.catalog-page-number{position:absolute;right:36px;bottom:24px;font-size:13px;color:#475467;font-weight:600}
+-.catalog-doc-header{margin-bottom:12px}.catalog-doc-header h2{font-size:27px}.catalog-doc-header img{width:132px}
+-.catalog-product-page hr{margin:22px 0}
+-.catalog-doc-product{grid-template-columns:minmax(0,1.02fr) minmax(210px,.98fr);gap:34px;align-items:center;min-height:485px}
+-.catalog-doc-product.reverse{grid-template-columns:minmax(210px,.98fr) minmax(0,1.02fr)}
+-.catalog-doc-info{min-width:0}.catalog-doc-info h3{font-size:22px;line-height:1.15;margin:0 0 18px}
+-.catalog-doc-info table{width:100%;min-width:0!important;max-width:100%;table-layout:fixed;border-collapse:collapse;border:2px solid #555!important;outline:1px solid #555;outline-offset:-1px}
+-.catalog-doc-info th,.catalog-doc-info td{white-space:normal;overflow-wrap:anywhere;word-break:normal}
+-.catalog-doc-info th{width:52%}.catalog-doc-image-wrap{min-width:0;min-height:400px}
+-.catalog-doc-bottle{max-width:100%;width:auto;max-height:430px;object-fit:contain;display:block}
+-.catalog-preview-pending{position:absolute;left:50%;bottom:4px;transform:translateX(-50%);padding:4px 7px;border-radius:999px;background:#fffaeb;color:#b54708;border:1px solid #fedf89;font-size:10px;font-weight:800;white-space:nowrap}
+-@media(max-width:700px){.catalog-cover-preview,.catalog-brand-page,.catalog-product-page{aspect-ratio:auto;overflow:visible}.catalog-doc-product{min-height:0}.catalog-doc-image-wrap{min-height:240px}.catalog-doc-bottle{max-height:300px}}
+-
+-/* v1.6.0 – simplere adminstruktur */
+-.admin-intro{font-size:14px;max-width:850px;margin-top:-2px;margin-bottom:20px}.admin-hub-section{margin:0 0 28px}.admin-hub-section h2{font-size:17px;margin:0 0 10px}.admin-hub-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.admin-hub-card{display:grid;grid-template-columns:42px 1fr auto;gap:12px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;color:#182230;text-decoration:none;box-shadow:0 1px 2px rgba(16,24,40,.03);transition:border-color .15s,box-shadow .15s,transform .15s}.admin-hub-card:hover{border-color:#b2ccff;box-shadow:0 6px 18px rgba(16,24,40,.07);transform:translateY(-1px)}.admin-hub-icon{width:42px;height:42px;border-radius:10px;background:#f2f4f7;display:grid;place-items:center;font-size:19px;font-weight:800;color:#344054}.admin-hub-card strong{display:block;font-size:15px;margin-bottom:3px}.admin-hub-card small{display:block;color:#667085;font-size:12px;line-height:1.4}.admin-hub-arrow{color:#98a2b3;font-size:28px}.import-hub{grid-template-columns:repeat(3,minmax(0,1fr))}.overview-primary{grid-template-columns:repeat(5,minmax(0,1fr))}.overview-alerts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.overview-alert{display:block;padding:14px;border:1px solid var(--line);border-radius:10px;background:#fff;text-decoration:none;color:inherit}.overview-alert strong{display:block;font-size:21px}.overview-alert span{font-size:12px;color:#667085}.overview-alert.warning{border-color:#fedf89;background:#fffcf5}.overview-alert.danger{border-color:#fecdca;background:#fff8f7}.link-address-wrap{display:flex;gap:7px;align-items:center;min-width:340px}.link-address{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;min-width:270px;margin:0;padding:8px 9px}.copy-link{white-space:nowrap}.link-unavailable{display:block;max-width:360px;color:#b54708;font-size:12px;line-height:1.35}.simple-tabs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}.simple-tabs .button{padding:8px 11px}.collapsible-summary{cursor:pointer;font-weight:750;color:#344054}.collapsible-summary::marker{color:#98a2b3}
+-@media(max-width:1100px){.overview-primary{grid-template-columns:repeat(3,minmax(0,1fr))}.import-hub{grid-template-columns:1fr}.overview-alerts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+-@media(max-width:700px){.admin-hub-grid{grid-template-columns:1fr}.admin-hub-card{padding:13px}.overview-primary{grid-template-columns:repeat(2,minmax(0,1fr))}.overview-alerts{grid-template-columns:1fr 1fr}.link-address-wrap{min-width:0;flex-direction:column;align-items:stretch}.link-address{min-width:0;width:100%;font-size:11px}.copy-link{width:100%}.sidebar{display:none}}
+-
+-/* Accessibility & Skip link */
+-.skip-link{position:absolute;top:-100px;left:10px;z-index:9999;padding:10px 16px;background:#155eef;color:#fff;font-weight:700;border-radius:8px;text-decoration:none;transition:top .15s ease}
+-.skip-link:focus{top:10px;outline:3px solid #fffaeb}
++.hsg-modal[hidden]{display:none}
++.hsg-modal{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:16px}
++.hsg-modal-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.75);backdrop-filter:blur(3px)}
++.hsg-modal-dialog{position:relative;z-index:1;width:min(720px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;background:var(--bg-card);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);padding:20px;border:1px solid var(--line)}
++.hsg-modal-close{position:absolute;top:10px;right:10px;width:40px;height:40px;padding:0;border:1px solid var(--line-strong);border-radius:50%;background:var(--bg-card);color:var(--text-main);font-size:24px;z-index:3;cursor:pointer;display:grid;place-items:center}
++
++@media(max-width:700px){
++  .hsg-modal{padding:0;align-items:end}
++  .hsg-modal-dialog{width:100%;max-height:92dvh;border-radius:20px 20px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom))}
++}
++
++/* Image Lightbox */
++.image-preview-button{display:inline-flex;align-items:center;justify-content:center;width:76px;height:94px;padding:4px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--bg-card);cursor:zoom-in;transition:border-color .15s,box-shadow .15s,transform .15s}
++.image-preview-button:hover,.image-preview-button:focus-visible{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-light);outline:0}
++.image-preview-button .image-preview{display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain}
++
++footer{text-align:center;color:var(--text-muted);font-size:12px;padding:24px;margin-left:230px}
+diff --git a/core/bootstrap.php b/core/bootstrap.php
+index 5b4c1b3..b42703d 100644
+--- a/core/bootstrap.php
++++ b/core/bootstrap.php
+@@ -8,7 +8,7 @@ require_once __DIR__.'/modules.php';
+ require_once __DIR__.'/audit.php';
+ require_once __DIR__.'/settings.php';
+
+-// Global Quick Search AJAX Handler
++// Global Quick Search & Command Palette AJAX Handler
+ if (isset($_GET['action']) && $_GET['action'] === 'quick_search') {
+     header('Content-Type: application/json; charset=utf-8');
+     $q = trim((string)($_GET['q'] ?? ''));
+@@ -19,6 +19,33 @@ if (isset($_GET['action']) && $_GET['action'] === 'quick_search') {
+
+     $results = [];
+     $like = '%' . $q . '%';
++    $lowerQ = mb_strtolower($q);
++
++    // Command Palette Action Shortcuts (Filtered by Server-Side Permissions)
++    $actions = [
++        ['q' => ['opret produkt', 'nyt produkt', 'opret'], 'cap' => fn()=>is_admin() && can('products.view'), 'type' => 'Handling', 'title' => 'Opret nyt produkt', 'subtitle' => 'Åbn produktformular', 'url' => 'products.php#new-product'],
++        ['q' => ['åbn lager', 'lager', 'lagerbeholdning'], 'cap' => fn()=>can('inventory.view'), 'type' => 'Handling', 'title' => 'Åbn lagerstyring', 'subtitle' => 'Oversigt over fysisk og disponibelt lager', 'url' => 'status.php'],
++        ['q' => ['opret reservation', 'ny reservation', 'reservér'], 'cap' => fn()=>can('reservations.create'), 'type' => 'Handling', 'title' => 'Opret reservation', 'subtitle' => 'Reserver varer til kunde eller smagning', 'url' => 'status.php'],
++        ['q' => ['brugere', 'brugeradgang', 'links'], 'cap' => fn()=>is_superadmin() || can('users.manage'), 'type' => 'Handling', 'title' => 'Administrer brugere & links', 'subtitle' => 'Tildel rettigheder og adgangslinks', 'url' => 'users.php'],
++        ['q' => ['rapporter', 'salg', 'omsætning'], 'cap' => fn()=>can('reports.view'), 'type' => 'Handling', 'title' => 'Salgsrapporter & WooCommerce', 'subtitle' => 'Se omsætning og salgsstatistik', 'url' => 'reports.php'],
++        ['q' => ['woocommerce', 'webshop', 'sync'], 'cap' => fn()=>is_admin() && can('reports.view'), 'type' => 'Handling', 'title' => 'WooCommerce Indstillinger', 'subtitle' => 'Synkroniser ordrer og test API', 'url' => 'reports.php?tab=settings'],
++        ['q' => ['systemstatus', 'audit', 'aktivitet'], 'cap' => fn()=>is_admin(), 'type' => 'Handling', 'title' => 'Systemstatus & Auditlog', 'subtitle' => 'Overvåg system og seneste ændringer', 'url' => 'system.php']
++    ];
++
++    foreach ($actions as $act) {
++        if (!($act['cap'])()) continue; // Server-side permission enforcement
++        foreach ($act['q'] as $keyword) {
++            if (str_contains($keyword, $lowerQ) || str_contains($lowerQ, $keyword)) {
++                $results[] = [
++                    'type' => $act['type'],
++                    'title' => $act['title'],
++                    'subtitle' => $act['subtitle'],
++                    'url' => $act['url'],
++                ];
++                break;
++            }
++        }
++    }
+
+     if (can('products.view') || can('inventory.view') || can('catalog.view')) {
+         $st = $pdo->prepare("
+@@ -74,7 +101,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'quick_search') {
+     }
+
+     if (is_admin()) {
+-        if (db_table_exists($pdo, 'lager_users')) {
++        if (db_table_exists($pdo, 'lager_users') && (is_superadmin() || can('users.manage'))) {
+             $stU = $pdo->prepare("SELECT id, name, email FROM lager_users WHERE name LIKE ? OR email LIKE ? ORDER BY name ASC LIMIT 3");
+             $stU->execute([$like, $like]);
+             $users = $stU->fetchAll(PDO::FETCH_ASSOC);
+@@ -88,7 +115,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'quick_search') {
+             }
+         }
+
+-        if (db_table_exists($pdo, 'hsg_woocommerce_orders')) {
++        if (db_table_exists($pdo, 'hsg_woocommerce_orders') && can('reports.view')) {
+             $stO = $pdo->prepare("
+                 SELECT id, order_number, billing_first_name, billing_last_name, status, total
+                 FROM hsg_woocommerce_orders
+diff --git a/functions.php b/functions.php
+index 319cfea..9d8bbd9 100644
+--- a/functions.php
++++ b/functions.php
+@@ -60,30 +60,49 @@ function page_header(string $title): void {
+   echo '<!doctype html><html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#ffffff"><title>'.h($title).' · HSG Whisky</title><link rel="stylesheet" href="assets/style.css?v='.rawurlencode(app_version()).'"></head><body>';
+   echo '<a class="skip-link" href="#main-content">Spring til hovedindhold</a>';
+   echo '<header class="top"><a class="brand" href="'.h(actor_home_url()).'"><span class="brandmark" aria-hidden="true">🥃</span><span><strong>HSG Whisky</strong><small>'.h($platformName).'</small></span></a>';
+-  echo '<div class="global-search-wrap"><input type="search" id="globalSearchInput" placeholder="🔍 Søg produkt, SKU, brand, ref... (Ctrl+K)" aria-label="Global søgning" autocomplete="off"><div id="globalSearchResults" class="global-search-dropdown" hidden></div></div>';
++  echo '<div class="global-search-wrap"><input type="search" id="globalSearchInput" placeholder="🔍 Søg produkt, SKU, brand, ref... (Ctrl+K)" aria-label="Global søgning / Command Palette" autocomplete="off"><div id="globalSearchResults" class="global-search-dropdown" hidden></div></div>';
+   echo '<div class="top-actions">';
++  echo '<button type="button" class="theme-toggle" id="themeToggleBtn" title="Skift tema (Lys / Mørk)" aria-label="Skift tema">🌓</button>';
+   if(!$admin && (!function_exists('hsg_module_is_enabled') || hsg_module_is_enabled('catalog')) && can('catalog.view')) echo '<a class="catalog-top" href="catalog.php">Katalog</a>';
+   if($admin) echo '<span class="access-badge admin">Admin</span><a class="admin-link" href="admin-account.php">'.h($user).'</a>';
+   else echo '<span class="access-badge readonly">Personligt link</span><span class="user">'.h($user).'</span><a class="admin-link" href="admin-login.php">Admin-login</a>';
+   echo '</div></header>';
+   echo '<aside class="sidebar" aria-label="Hovednavigation"><nav>';
+   if($admin){
+-    $allNav=[
+-      'dashboard'=>['index.php','⌂','Overblik'],
+-      'stock'=>['status.php','▦','Lager'],
+-      'products'=>['products.php','◇','Produkter'],
+-      'catalog'=>['catalog.php','▤','Katalog'],
+-      'reports'=>['reports.php','📊','Rapporter'],
+-      'supplier_upload'=>['import_center.php','⇅','Import / Upload'],
+-      'system'=>['admin.php','⚙','Administration']
++    $sections = [
++      'OVERBLIK' => [
++        'dashboard'=>['index.php','⌂','Overblik'],
++        'activity'=>['system.php?tab=activity','📈','Aktivitet']
++      ],
++      'SALG' => [
++        'reservations'=>['reservations.php','▣','Reservationer'],
++        'orders'=>['reports.php?tab=builder','🛒','Ordrer & Salg']
++      ],
++      'PRODUKTER' => [
++        'stock'=>['status.php','▦','Lager'],
++        'products'=>['products.php','◇','Produkter'],
++        'catalog'=>['catalog.php','▤','Katalog']
++      ],
++      'RAPPORTER' => [
++        'reports'=>['reports.php','📊','Rapporter']
++      ],
++      'ADMINISTRATION' => [
++        'supplier_upload'=>['import_center.php','⇅','Import / Upload'],
++        'users'=>['users.php','👥','Brugere'],
++        'system'=>['admin.php','⚙','Systemstatus']
++      ]
+     ];
+     $current=basename($_SERVER['SCRIPT_NAME']??'');
+-    $adminFiles=['admin.php','brands.php','locations.php','image_check.php','quality.php','users.php','user_permissions.php','backup.php','update.php','system.php','admin-account.php','stock.php'];
++    $adminFiles=['admin.php','brands.php','locations.php','image_check.php','quality.php','user_permissions.php','backup.php','update.php','system.php','admin-account.php','stock.php'];
+     $importFiles=['import_center.php','import.php','supplier_upload.php','export.php'];
+-    foreach($allNav as $mId=>[$href,$icon,$name]){
+-      if(!is_superadmin() && function_exists('hsg_admin_can_view_module') && !hsg_admin_can_view_module($mId)) continue;
+-      $active=($current===basename($href)) || ($href==='status.php' && $current==='reservations.php') || ($href==='admin.php' && in_array($current,$adminFiles,true)) || ($href==='import_center.php' && in_array($current,$importFiles,true));
+-      echo '<a class="'.($active?'active':'').'" '.($active?'aria-current="page"':'').' href="'.h($href).'">'.h($icon).' <span>'.h($name).'</span></a>';
++
++    foreach($sections as $secName => $navItems){
++      echo '<div class="nav-section-label">'.h($secName).'</div>';
++      foreach($navItems as $mId => [$href,$icon,$name]){
++        if(!is_superadmin() && function_exists('hsg_admin_can_view_module') && !hsg_admin_can_view_module($mId) && !in_array($mId, ['dashboard','activity','orders'], true)) continue;
++        $active=($current===basename($href)) || ($href==='status.php' && $current==='reservations.php') || ($href==='admin.php' && in_array($current,$adminFiles,true)) || ($href==='import_center.php' && in_array($current,$importFiles,true));
++        echo '<a class="'.($active?'active':'').'" '.($active?'aria-current="page"':'').' href="'.h($href).'">'.h($icon).' <span>'.h($name).'</span></a>';
++      }
+     }
+   } elseif(function_exists('hsg_visible_modules')){
+     foreach(hsg_visible_modules() as $module){
+@@ -101,19 +120,33 @@ function page_footer(): void {
+   $current=basename($_SERVER['SCRIPT_NAME']??'');
+   echo '</main><nav class="mobile-nav" aria-label="Mobilnavigation">';
+   if(is_admin()){
+-    if(can('inventory.view')) echo '<a href="status.php" '.($current==='status.php'?'aria-current="page"':'').'>▦<span>Lager</span></a>';
+-    if(can('reservations.view')) echo '<a href="reservations.php" '.($current==='reservations.php'?'aria-current="page"':'').'>▣<span>Reservér</span></a>';
+-    if((!function_exists('hsg_module_is_enabled') || hsg_module_is_enabled('catalog')) && can('catalog.view')) echo '<a href="catalog.php" '.($current==='catalog.php'?'aria-current="page"':'').'>▤<span>Katalog</span></a>';
+-    echo '<a href="admin.php" '.($current==='admin.php'?'aria-current="page"':'').'>•••<span>Mere</span></a>';
++    echo '<a href="status.php" '.($current==='status.php'?'aria-current="page" class="active"':'').'>▦<span>Lager</span></a>';
++    echo '<a href="reservations.php" '.($current==='reservations.php'?'aria-current="page" class="active"':'').'>▣<span>Reservér</span></a>';
++    echo '<a href="catalog.php" '.($current==='catalog.php'?'aria-current="page" class="active"':'').'>▤<span>Katalog</span></a>';
++    echo '<a href="index.php" '.($current==='index.php'?'aria-current="page" class="active"':'').'>⌂<span>Overblik</span></a>';
++    echo '<a href="admin.php" '.($current==='admin.php'?'aria-current="page" class="active"':'').'>•••<span>Mere</span></a>';
+   }else{
+-    if(can('inventory.view')) echo '<a href="status.php" '.($current==='status.php'?'aria-current="page"':'').'>▦<span>Lager</span></a>';
+-    if(can('reservations.view')) echo '<a href="reservations.php" '.($current==='reservations.php'?'aria-current="page"':'').'>▣<span>Reservér</span></a>';
+-    if((!function_exists('hsg_module_is_enabled') || hsg_module_is_enabled('catalog')) && can('catalog.view')) echo '<a href="catalog.php" '.($current==='catalog.php'?'aria-current="page"':'').'>▤<span>Katalog</span></a>';
+-    if(can('dashboard.view')) echo '<a href="index.php" '.($current==='index.php'?'aria-current="page"':'').'>⌂<span>Overblik</span></a>';
++    if(can('inventory.view')) echo '<a href="status.php" '.($current==='status.php'?'aria-current="page" class="active"':'').'>▦<span>Lager</span></a>';
++    if(can('reservations.view')) echo '<a href="reservations.php" '.($current==='reservations.php'?'aria-current="page" class="active"':'').'>▣<span>Reservér</span></a>';
++    if((!function_exists('hsg_module_is_enabled') || hsg_module_is_enabled('catalog')) && can('catalog.view')) echo '<a href="catalog.php" '.($current==='catalog.php'?'aria-current="page" class="active"':'').'>▤<span>Katalog</span></a>';
++    if(can('dashboard.view')) echo '<a href="index.php" '.($current==='index.php'?'aria-current="page" class="active"':'').'>⌂<span>Overblik</span></a>';
+   }
+   echo '</nav><footer>HSG Whisky · Administration '.h(app_version()).'</footer>';
+   echo '<script>
+   (function(){
++    // Theme toggle
++    var themeBtn = document.getElementById("themeToggleBtn");
++    var savedTheme = localStorage.getItem("hsg_theme");
++    if(savedTheme) document.documentElement.setAttribute("data-theme", savedTheme);
++    if(themeBtn){
++      themeBtn.addEventListener("click", function(){
++        var cur = document.documentElement.getAttribute("data-theme") || "light";
++        var next = cur === "dark" ? "light" : "dark";
++        document.documentElement.setAttribute("data-theme", next);
++        localStorage.setItem("hsg_theme", next);
++      });
++    }
++
+     // Double submit protection
+     document.addEventListener("submit", function(e){
+       var form = e.target;
+@@ -136,7 +169,7 @@ function page_footer(): void {
+       }
+     });
+
+-    // Global Quick Search
++    // Global Quick Search / Command Palette
+     var inp = document.getElementById("globalSearchInput");
+     var box = document.getElementById("globalSearchResults");
+     if(!inp || !box) return;
+diff --git a/hsg-package.json b/hsg-package.json
+index 2217c5e..5b9265f 100644
+--- a/hsg-package.json
++++ b/hsg-package.json
+@@ -2,7 +2,7 @@
+     "product": "HSG Administration",
+     "name": "hsg-administration",
+     "package_type": "distribution",
+-    "version": "10.4.0",
++    "version": "11.0.0",
+     "min_php": "8.1.0",
+     "required_extensions": [
+         "pdo",
+@@ -18,7 +18,7 @@
+         "migrations.php",
+         "core/modules.php"
+     ],
+-    "release_notes": "HSG Administration version 10.4.0 release package.",
++    "release_notes": "HSG Administration version 11.0.0 release package.",
+     "commit": "d0099f7473942c922125f24db27b80276b542e44",
+     "created_at": "2026-09-19 17:55:38",
+     "manifest": {
+@@ -196,189 +196,6 @@
+         "stock.php": "3221733e73a6925409ed37e4ffe28ab176b508e922fcc9b7ee0e125b38c22bb0",
+         "supplier_upload.php": "87f0f716a6142f3325e8fdeba74fa15ec9fb7bee964c41abe3c1b1af91ec042b",
+         "system.php": "aff882ede35a17219bc5d610de7953904e345628e869247313213c74069dd487",
+-        "tools/build-release.php": "18cfc7a72d17c7ce312b9d860e0a58eeb0579be405370fbfba894a4c442491a9",
+-        "tools/restore-standalone.php": "00ab77e3320c1e81e841c2ce3a9a671aef4c4094633a3d9dffb2f1febf8aa328",
+-        "update.php": "8b37131eff1f386b32f8f97820b65605bd023862ed2546cf0752b62c87c9e895",
+-        "user_permissions.php": "1b3676fbe7f2809e3b09281fec15304bad040549c261aa5c2a613c0c2cd4a976",
+-        "users.php": "f3571f51005b80eaa0a06c28ec984cf3a1e382bbfbccee026adacbfdb8fdf287",
+-        "xlsx_tools.php": "b27a362c4be18b98e19e0640a6dca060290f25a2373987d9d7c224b052027751"
+-    },
+-    "files": {
+-        ".gitattributes": "d15f690358d3d0204617428d7bea98f473200a4f1998e4e4868e99e4321cc5f6",
+-        ".gitignore": "63d01d02bfadc4d1eb02fa4d985fe4b6ac0d304cf3dba9ecb55faa89d3458ed0",
+-        ".htaccess": "5c8e8866bdbbd4d2ae7455d1a106ee62390fcb37cbe60a364827a50ae00fcc69",
+-        "JULES-HANDOFF/HSG_Jules_Handoff.md": "fae978b46ea3604ba2862339215ed527ab9c56d8a8eb014651adb140e966352c",
+-        "JULES-HANDOFF/HSG_Jules_Handoff.txt": "fae978b46ea3604ba2862339215ed527ab9c56d8a8eb014651adb140e966352c",
+-        "README.txt": "6fb9a25f0a8ee4651fcf953ddf3635c127c79484d33891d3def0b6633d9696cb",
+-        "admin-account.php": "a359357703b3293b926e97e39cab025fc7a27186b8e5f591e9f576abb15ff816",
+-        "admin-login.php": "cee1d3761019d19608371a645730be37937a282befa0c703515260338ba401e7",
+-        "admin-setup.php": "323ecd555ca2f7b4e920c482736e53829c14e7ef0ef400e7421872f2b954e8d2",
+-        "admin.php": "e0ab785ffc6f69eea80462fd663709c43c88fe3b7b95ce4318107163aaed7dbc",
+-        "app_version.php": "0905269549605407797364c3907e7619d55ea1baf4e3c8e008ef660c3a1e2622",
+-        "assets/bottle-placeholder.svg": "bb77203924ece9b630dce344f4d700e017028398787a1bdb1612b9a70b9599f4",
+-        "assets/style.css": "9d9050965d5ed2e259e8756314f2e6ee5aa9a174f85e49817ea2a3f7422ddc39",
+-        "auth.php": "a34d291e367c49c6163dd3220624d8202c57b028bd6fa5d1db95e29cac66c556",
+-        "backup.php": "09c86b582e0b3e42e6f00e05a68492219811a763f1f8bd52647c197c57c20a4a",
+-        "brands.php": "acbe3009add9e72e69cff2b9b787e0402889cb6aa640f1df4c58c4c132720dbe",
+-        "catalog.php": "98c1a48958b6449d5fadefeb1e1dbf0a769ac4403ffa36f938de6b6f709d7eac",
+-        "catalog_pdf.php": "853ff6bb0892e31d028a4431f4443e3a0c15e8afb9100d57f404001a1c8d7506",
+-        "core/access_links.php": "622ae0e81c3e238013773cf1ef2b64efbde45afe1c28fc6c00568f2ce3be582c",
+-        "core/ai.php": "2dc25882570d3a70a989adc261968620554180b36a98a72b880cb1a9f5668906",
+-        "core/audit.php": "eb27cb5e80e33e8e390efd8a39e76852af65b92457dff33cb73ad9ed7672ac97",
+-        "core/backup.php": "b25ffcbc473c23666a123810fe7f97838697fb622ae0fec8721c7ea127f154b0",
+-        "core/bootstrap.php": "bdad099be2df930c2c10b001d9326e1383bd4eeaa4ddc5e7b233a7fbe4fec5ff",
+-        "core/catalog_image_seed.php": "62cff74ebf2055600bc09874551d6c61071f813e77b3949897c79de6eb1a137d",
+-        "core/catalog_layout.php": "2bf2afd1cac55190388a1cebe39bb1967f4bf50d262b6266fcbe57b0f341c642",
+-        "core/groq.php": "b88e8871334eef79a961a92e66da259ef8ae02ceffcdac89ff4a1e97de863da6",
+-        "core/hooks.php": "dc88344871aa714a65831b8670ab5af5628a9701f594fd16ff1c69aea6ddbc05",
+-        "core/modules.php": "9f1015c915d5f5656fdd1b8a195e9cb3dd38720a49126c5c568fba50bbe429c8",
+-        "core/onedrive.php": "70d35e26f4a3a1d1dc4186b219cabb66551f62e2e0544df6252ef975926c0611",
+-        "core/openai.php": "2700909198a19ffb62d676500261e005eabe2b1715e72056d3373e64da1e65f7",
+-        "core/permissions.php": "d2187f9349f770c7450dd2d1764626bc7eb497c189b3009f99488b8e23ed8570",
+-        "core/product_enrichment.php": "f0b906fe51a522da790523f75a5f7168870b3acbfbc9263bcbb73add3efc5cf7",
+-        "core/quality.php": "c03c9d65d27ead354d2f1daa6424df0c2a8f9c7f53942c91c1f3df41f46aec96",
+-        "core/settings.php": "336cf98889429188e7beeeeb27df61a2be10d8a576307137f8fa55307b96e5fa",
+-        "core/supplier_import.php": "77f8c8296873e7e52aebc4c516d4856f87217e9aa078e8652e5a1ec8153b732a",
+-        "core/updater.php": "f5a049866dd2e6dcaeed20ddbc29ebb7e861a60253d7f66fb941b6fea17ec4aa",
+-        "core/woocommerce_sync.php": "bcd11486c1269b054b1f7dee92197d3b56b7f2ed6fcae6527f7d5b90041cbf01",
+-        "cron/backup.php": "3908e23adbb3eb539305521d1d0c1986af535fd6953fb7059e1de623fddc5be1",
+-        "db.php": "e4613d2c99a3fdfb315f4d510242f06d4761d938da8262e9d967e4c7d2ad4d7e",
+-        "developer/module-template/README.md": "f749f06c6b4629667625c08c1578b75a88d2527a593d35651043400d8e4d2cf8",
+-        "developer/module-template/hooks.php.example": "10d53bdd7f8a23378266dd63a77c832dcb8523dd1edd0ee2a5384b2665268298",
+-        "developer/module-template/migrations.php.example": "1a216feefea6376051b72ad86654ec089be418965013f29baee80073e926ae5e",
+-        "developer/module-template/module.php.example": "1065864c55bd400361603e0d77dfad647f08ebdc44d2a475f3106811d14f6f67",
+-        "docs/AI-IMAGE-SEARCH.md": "781b354af70dbf4a3d72c455e76710eb22dc10a067c9d7bbee931cfaa6c45cce",
+-        "docs/ARCHITECTURE.md": "18de8d6170f787e78b0d42cbc7d70da9143ed5ac40501da9ccb8b50467632f22",
+-        "docs/BACKUP-RESTORE.md": "94d3752f32fe53e3e9fc2519a102926db68346efabb5799ae8c79ccc78d92ca0",
+-        "docs/ONEDRIVE-SETUP.md": "6986f40b9ce5d26e2a2a0885a8351ccb99623fc74666cbb0bc8ba9377482de6c",
+-        "docs/PRODUCT-DATA-ASSISTANT.md": "ad1252636f62f9a456caeb26b2c3a532e63dccd3444598d1fb4c050c74c5d14a",
+-        "docs/SUPPLIER-UPLOAD.md": "d9d63afa02479c3455caecfb106f3869552b6037290949af1ce68a1b7d5be014",
+-        "eksempel-lager.csv": "a4f2d723f6b0909d893e536768043a2114e640fc5d222d730abd1f7356a51f3d",
+-        "export.php": "416ae8e4bc204a41e5d4b46815ac800e7b1eb4f5667df33ca4076ef72536acfd",
+-        "functions.php": "fb6f6fb6a13d09c73367ec968f7d934bbecfa20a48aefbbf371309f3edbf26fa",
+-        "image_action.php": "342f9eb395e1464d9a0049676483f3bfae6e28db22ed5c81088f792336cc7f93",
+-        "image_check.php": "14f25b3a4fdfdb7ccbfd6eef5df0cdfae3d1ddfe7d7809919f18a2ea129bb889",
+-        "image_tools.php": "2cdeda63001a6341f367edcaaa9cb320b76eccdf1aaed7a7def7af9743d68fca",
+-        "import.php": "27b80a62bdb8eca9263ed69ad3093d65dca7137ea787b3b2501b18f27f6f86db",
+-        "import_center.php": "c518b6208980815473cb13be551a6b99039853c2b52fd70c41c4fdc46166ccc8",
+-        "index.php": "ea06870038841ccf12bf8ec2dff5b736bbfd1faeeed2c7aaae64d6023d8c1c58",
+-        "initial-stock.json": "ed37826ef22a1fd9544829adb5893cca3a10a9372016ca0092ecd5f42e3586ea",
+-        "install.php": "6b1d46bdf3f8ed080393e4fe7a43c6aeb24a206b27928560d5882b1c180bac2b",
+-        "locations.php": "d62cdfdc6e1f60e70630365dd38a1452733bc6ab3fdbe6cf2ecdd215b8fb6602",
+-        "logout.php": "b316e0f65b89c9b7ee92095cf1bf66882841ff4fa6592f28cdf7d50be3dc17f3",
+-        "migrations.php": "744e6503233425a0a81ae7d466be8ec0326885a6602fdc1c414489921b2b0db9",
+-        "modules/access/module.php": "da2317012631e4570ddb4a9c36d7ef108db5d8e76246bf26a217d1aa6a48bf02",
+-        "modules/backup/module.php": "4261384f521c7756d28d17774828269789ad49d3d24f9dee9c27137c0af446a4",
+-        "modules/brands/module.php": "376eee232c1cb30ec95370c12cb2d373166d73fe753fb458c1551942366b7b2f",
+-        "modules/catalog/module.php": "d84da4b23939716522e7a334bdae23d910aeaa637f994f8a23d07b0148b423be",
+-        "modules/dashboard/module.php": "1f2c1ddbcd6b378fbecb5f0f1f4befe3433c4f1a0a6ff1678552497fbd354d30",
+-        "modules/images/module.php": "cdd4290d7ae68e05344584296b1c9f875b9c93d81ae145841f2021c8ec5f42cf",
+-        "modules/import_export/module.php": "89c84d4b3aee691877b816a99edac11d26b34003756f9582d9ec787ff5e500c3",
+-        "modules/inventory/module.php": "edb772eb299c2ac4aae420d1cf2604f763f3aa32e071100f6c38420e77227e50",
+-        "modules/locations/module.php": "dae25ca87930ef006ef47257561d2adf34129d5d8cb7ab18598aba16bf87d815",
+-        "modules/products/module.php": "1c419b1df23624386e108b5552fdf6d50ae7f3601ae33ef634dd1c6cfd01223c",
+-        "modules/quality/module.php": "40a193aeb97f49d6ec3d8fe84b02a6cd2855a12bb8d13a54a268b5040d45717b",
+-        "modules/reports/migrations.php": "20a08094a179ccfa9b3ceef5d2929a369d4ca1f1a10899d4fc998f1b30a174e0",
+-        "modules/reports/module.php": "8a4e5b9e95b8b46f5209b0f73261e3ce07f280a75052d8938a654a338d3e869a",
+-        "modules/reservations/module.php": "86e824a7a00f0290d810df66e250515c0322336c604e84970f35507699fce7e9",
+-        "modules/stock/module.php": "3156a7ba973f8dcbf78ff682a29fc2c8657b4cb58d89f22b2cd5bf4fa07bef26",
+-        "modules/supplier_upload/module.php": "4e5c8ed09164ad0e4c21bf9e41f39420f28118df1969dcb5a2976b9cb6fb85e9",
+-        "modules/system/migrations.php": "b5fb878e849d10bcbd1b734143e36cf7e7e42481b6d3a56f4c67dc4c287ce653",
+-        "modules/system/module.php": "e6b72bdf784b07b97cfef3a5d9a2e64a752811dfb71ee241990d344673b538a8",
+-        "modules/updater/module.php": "eb4248a21df1b68155dc822acad2f1481e8c2adf5e769ba9eacb2a1bf54b1246",
+-        "pdf_simple.php": "81dcf8ce93b4d0fd718445251fef9b6ccf09318a5f5fe1f07006c2cd17beecb6",
+-        "product_enrich.php": "b103ed127f61bfeb0523dcd9c2427829befc068868da150f011a825ff36db153",
+-        "products.php": "4cb3720760f3fc0d0fafe723522fa37e5c6ed5c427027c0f18aa05bd8ddaf772",
+-        "quality.php": "769fb82e1d7ccdbf9c06a648540a8c963208d5b0c6539a8a5f9a2e39bf83aa07",
+-        "reports.php": "a4ac9d91f4fa3ea5f18df792af2e1d35f7954072b3a3694ab7e5c735245e0df3",
+-        "reservations.php": "3391d1ea0edbc8be8ed01d812239f1503c407883ee07908b88eb34a1794273df",
+-        "schema.sql": "acc0bf113a1fe8532561ae98e0cb56b1fc6ee2bf5a27655a26ce7244c31ddca9",
+-        "seed/catalog-images.json": "c9f798dbc96e35012c8e4ad557c3dd639830c7cbf034a09363b6a369ca04a876",
+-        "seed/catalog-images/catalog-01.jpg": "b2ca496d66709f388c9b23914b58c394c77195acd6d95365ff67bb158b08042a",
+-        "seed/catalog-images/catalog-02.jpg": "2c4546e15757acd203c4a644591a66d7462c5d280399980b59437ce7a02f67e9",
+-        "seed/catalog-images/catalog-03.jpg": "102933c32e72603481265de4e57057bc1ebce1ef27f13bf31c441b6f0bab7f46",
+-        "seed/catalog-images/catalog-04.jpg": "b1efe052ffad1b95deb2eb945f5a726b91113f31c7e051286e4a62ae046bcea1",
+-        "seed/catalog-images/catalog-05.jpg": "b599f6b5543f0736f398b46a1bfe4344a439e950918ab6a3bb51809046d7a129",
+-        "seed/catalog-images/catalog-06.jpg": "d91809105e22cf54897d4b2090325f0624f005b0b221cd61fc480c3745f75c12",
+-        "seed/catalog-images/catalog-07.jpg": "54bab6978dd7a13aac150d7bac1bba3ad1d221f58e68780ee40e3094356e8f21",
+-        "seed/catalog-images/catalog-08.jpg": "2bb21d5f48ba049a4bc7d023c599098ce58d08a8e5eed23ba00cc1450ecd0ad7",
+-        "seed/catalog-images/catalog-09.jpg": "77aabafcf7d70679c2c19bf6f3ac5aa29520f668283f310016fd37387fcdc3e7",
+-        "seed/catalog-images/catalog-10.jpg": "82521c971c254e5b09daee5a8d2f3384f72ef6ba20182e9c441d0b43f2d7c2e5",
+-        "seed/catalog-images/catalog-11.jpg": "dc41de8af62e77749bf5ec216c377ee27eafa232bb3d5e836ee9a0085184f576",
+-        "seed/catalog-images/catalog-12.jpg": "8c775add7e5c7a21d536d85470d467e4615385583fc98a416696b61a2cfe2dfc",
+-        "seed/catalog-images/catalog-13.jpg": "523282666da2a2b7d94f4bba1fa9741aef5b2217b7efb83266c2b0cc0e4b96c2",
+-        "seed/catalog-images/catalog-14.jpg": "78e7c2a44b624355dadce6fa54755976dd67098de551b053acba2e9e3a4fc486",
+-        "seed/catalog-images/catalog-15.jpg": "623c8b118f19343079fdc0e247482e51201044212de48b6e5d4d11e54cf5d3b7",
+-        "seed/catalog-images/catalog-16.jpg": "68c68df400a44c00383e56dd53acf63714d3524b64e47dd47711bbaadebb5444",
+-        "seed/catalog-images/catalog-17.jpg": "f4ebc0c8e1e259c903586086c8604f6e6c340d74b014b630a1ed8b611d520840",
+-        "seed/catalog-images/catalog-18.jpg": "2226ad6d2414df394a79b0865db32b0239bc55b00c45c2cdbb5d956b3b622681",
+-        "seed/catalog-images/catalog-19.jpg": "aae4ca95d5c4b48d4e0e90405ce30a712db4abfb06535f9ab9aaf9743fe84be5",
+-        "seed/catalog-images/catalog-20.jpg": "f968340f62a04edce44b0020589ea543c85640580f035eec7dd0a3a86d8dd791",
+-        "seed/catalog-images/catalog-21.jpg": "83a4757806660000ac6e16c0040f3a232feb95b72cd3247d7f18639d85a384f6",
+-        "seed/catalog-images/catalog-22.jpg": "cb8c7ebcb8fabffa4cf24cee9f867d6b3fdca50a561461a41717cc921cb8d84a",
+-        "seed/catalog-images/catalog-23.jpg": "748582c95bf9ec308b67539c8853a6b1bf9a8f47583a60ff94f9559aab86bb3f",
+-        "seed/catalog-images/catalog-24.jpg": "f407c5cc891b355964e4ea5126c4ef6e37f3daef13bf9d150d0cfd49f8a4757a",
+-        "seed/catalog-images/catalog-25.jpg": "eba0e0bdaa0b695bc8702cdcc9af65638248be4d841a996aac8ee52fd57a45d6",
+-        "seed/catalog-images/catalog-26.jpg": "b8c8fb5ddb1c74d76b3b605a98cba2da63f3e22788ba4da10879f71675de8724",
+-        "seed/catalog-images/catalog-27.jpg": "ff5055df53b54201ca4a2f72a1c1f01c0661d708ce239ef78aaa1239eae37a95",
+-        "seed/catalog-images/catalog-28.jpg": "1d33ce37589136d7dbd8fcec85edec6712d38f41fc8c98a19587880a6cd2c41d",
+-        "seed/catalog-images/catalog-29.jpg": "9181ae4d1f7b578dd3dd94e511fe9e13eee931904eccc9d387e3a3823c3d16ed",
+-        "seed/catalog-images/catalog-30.jpg": "90c29004bcc116539106531c69b6bd5d90a05121b4dc4c450bb14ec7706d802d",
+-        "seed/catalog-images/catalog-31.jpg": "7e8887b09d85d64508550a5c32321a2d17305984d5d8a918eb802e104606a107",
+-        "seed/catalog-images/catalog-32.jpg": "cd7d5611fe6bc8d9144d7e61f740a539589ef044084602dc02c487d2b88d137e",
+-        "seed/catalog-images/catalog-33.jpg": "b604ec06327838bd483bfd47c130d137b8149baf9cf6a6e1e0cd9d48871d30c4",
+-        "seed/catalog-images/catalog-34.jpg": "60fd4c30a8458e1e23529f9f7417f1106d08dd5aa96163bdc5d4423f088da142",
+-        "seed/catalog-images/catalog-35.jpg": "e8fa9bad8de3dfcf8a330c5ce30fd546fbfefd359ffc0da6b636dd3bfabe1e19",
+-        "seed/catalog-images/catalog-36.jpg": "3c3c89da1cdc411c9d1efa5a9faa578c440f7646b6c7f258636b3079b042410e",
+-        "seed/catalog-images/catalog-37.jpg": "bf28dfe83531d4a090a397bf3cf2b0d17dfd9aa13d4c469ba749f538b4f9a2c7",
+-        "seed/catalog-images/catalog-38.jpg": "35013c903a377be88c23d75b35e9a735831fc5397d39c43c935bd1c53f3e322e",
+-        "seed/catalog-images/catalog-39.jpg": "d675b86b588d583929d0da39de940c7ad8d21deb5b54b69ccd210b8a496de8dc",
+-        "seed/catalog-images/catalog-40.jpg": "20c415393dbd8d955cb8c9e5a0174b8b63b0d0afc1e205d44519f7aa9b97dee4",
+-        "seed/catalog-images/catalog-41.jpg": "f02900a9cb680e5d8f520eb5602f1bb9dff835cae60d436b6c7ec6db93dad067",
+-        "seed/catalog-images/catalog-42.jpg": "34c0b9c601078dfcb17d564d6d0b53151e10411851f4c6c2abf77dd102fdb5d8",
+-        "seed/catalog-images/catalog-43.jpg": "8b687342f3f24fb48400f1acefcbb226de4f4ac2bc899ea847ca6d2d47c24edb",
+-        "seed/catalog-images/catalog-44.jpg": "102165964d3e1a10d4ee00485bb39f5d5a9f8efb261db2e02ad87c948b672dd2",
+-        "seed/catalog-images/catalog-45.jpg": "39c354a52e4f73b327a85e77804ea6dfea34bddea7fbca34ecca4fcd50766288",
+-        "seed/catalog-images/catalog-46.jpg": "cf62eb882e5fd1599901ccca975f0981f3e674c6621f3225c1a1e0f4d417372c",
+-        "seed/catalog-images/catalog-47.jpg": "19560356357c5731cadd86c5ecd07fd5df906be5434c138763ca3cc2a5969d06",
+-        "seed/catalog-images/catalog-48.jpg": "8e236c894e9a16d7b73178d92ecced773822c191a84a256978fbd714f0a90be1",
+-        "seed/catalog-images/catalog-49.jpg": "954d9fde12be660b67cc3a4955f11199fd214314ac8c214d2af7c68b8794a524",
+-        "seed/catalog-images/catalog-50.jpg": "ef3b685f2bdffe222aa0ef665008b50c74eeb619ed0a82f24c6fd921d474be4a",
+-        "seed/catalog-images/catalog-51.jpg": "282b6b9a7b855617a5157ff005f2c9db88f524aa80775e96558d8f224683a284",
+-        "seed/catalog-images/catalog-52.jpg": "08193e13351a36fb13e9c8a148a50c6c8922f8625607e7fc65db95164dcf3d78",
+-        "seed/catalog-images/catalog-53.jpg": "2d5416fc761b0f1d35566af6356c56017b32e0cfd1eef2db6ce473dc49a74268",
+-        "seed/catalog-images/catalog-54.jpg": "bac29479abb630044429cd0b16225968a80e9902e7998ef58bebddb30c917145",
+-        "seed/catalog-images/catalog-55.jpg": "eeccf4b63e7081eabcf03da1a2ac2151ea99f8b2ca15df2d3f1f1973a66878ce",
+-        "seed/catalog-images/catalog-56.jpg": "616b6f78318eae646912f39d3bb35b162810b6fcbb215a2524f7194a3d645b54",
+-        "seed/catalog-images/catalog-57.jpg": "84a413da4766e42ec478175b868f2bc964be3ac5aacb8d2d65aee2a36d775238",
+-        "seed/catalog-images/catalog-58.jpg": "d5e7a0f33d7d273046f5a2e57f933dbdada92d6ffa207146c331ebb8bbb861e9",
+-        "seed/catalog-images/catalog-59.jpg": "d01af5dcd9f1dab302777be8764bc1c87b0a1ba0aebd8935895f26be874e60f4",
+-        "seed/catalog-images/catalog-60.jpg": "0b1ab08299da6ac27a5f966dddbd607f18e2bc99081ac0b109c1892ac83c84d3",
+-        "seed/catalog-images/catalog-61.jpg": "b11444ff8cc3e2374421989045b030b1b90e9fb6639a4f308db30d98af0b8dbc",
+-        "seed/catalog-images/catalog-62.jpg": "c030235c9aa83d129901e10df41c7299ef7654e9b2b882a9c052c98bc49a891d",
+-        "seed/catalog-images/catalog-63.jpg": "d1a80fa616ab61fda023259717214a39503c9a292053f05d9870f7f02a8f75e0",
+-        "seed/catalog-images/catalog-64.jpg": "890635cecf83309850aa34368d333157cc2ea974363bf96c015af418d29d4a1a",
+-        "seed/catalog-images/catalog-65.jpg": "b5bab55e83e2c7f66135099bbc1ff70abc386932286b9ed630559ab3634db3b7",
+-        "seed/catalog-images/catalog-66.jpg": "6519b3e9a5a81532817c2f3c2d9536735b88eaa4aac860a5d91daa972bf7e0e7",
+-        "seed/catalog-images/catalog-67.jpg": "fdfd2d48e19caecd14c6e6fdc39bbcc642c3c6858e0a548cb4b45a6ef062ed6f",
+-        "seed/catalog-images/catalog-68.jpg": "aef18eb29938e24b130b4fe0ff85fdcb1a0141d0747e79d92c1c16f77b5efb95",
+-        "seed/catalog-images/catalog-69.jpg": "7747f6a188e20cb8e8cf93cedeaf5f7b192566e9d6aa9776bd7d84e9022577df",
+-        "seed/catalog-images/catalog-70.jpg": "1f13edb4df2c84bf40bea547de42e522a98da837eaf6dc93908f7e8a306a0dae",
+-        "seed/catalog-layout/edinburgh-whisky.jpg": "faede3d458b75198c8c8286a065b29701c6d16e5fca0766bdc988cbcfe27985a",
+-        "seed/catalog-layout/fragrant-drops.jpg": "a37dd676516e973f682712288829afac8dcdbcd084aa47e53bd8a637579ae521",
+-        "seed/catalog-layout/hsg-logo.jpg": "2c1c5d271382383cd5bb4c78c0d1f55ed4489adbca889fe0cc2b92b2f4dcf3c0",
+-        "seed/catalog-layout/lady-of-the-glen.jpg": "3eecd318414709ae18a813b4f78460fd8eb17a68c4b28e48a9acdd6047908739",
+-        "seed/catalog-layout/nyhed.jpg": "e345b6338a0005d75947aed020fbee0b2dae42e4c7fe2f3acd39f5ea957ca72a",
+-        "seed/catalog-layout/nyhed.png": "d1a63f15a142d60b7c464cd872f06ffc1438806a6fb762a99d6ba8e13dd40bd6",
+-        "seed/catalog-layout/uncharted-whisky.jpg": "2cb195d7fd12917512f5a4374a0850f41f87bb2dbf17f0e40737fb1f5e28755c",
+-        "seed/catalog-layout/woodrows.jpg": "ad221881e2441bdd415067f5cd24bbfbfe4311969978220aebe78ad043274857",
+-        "seed/catalog-product-data.json": "ef7b6d9d99b5884411050e27984d889b09d5109a85675d1b4794efda41926ca6",
+-        "session.php": "43778cd1deac64c7bfe6dab945622f00ea3d966e7e841f7745af7a1094c1cf88",
+-        "status.php": "1a153c9a0854f97dd175768a0e660fae48442890fc645e5d3637fa741a46c2a8",
+-        "stock.php": "3221733e73a6925409ed37e4ffe28ab176b508e922fcc9b7ee0e125b38c22bb0",
+-        "supplier_upload.php": "87f0f716a6142f3325e8fdeba74fa15ec9fb7bee964c41abe3c1b1af91ec042b",
+-        "system.php": "aff882ede35a17219bc5d610de7953904e345628e869247313213c74069dd487",
+-        "tools/build-release.php": "18cfc7a72d17c7ce312b9d860e0a58eeb0579be405370fbfba894a4c442491a9",
+         "tools/restore-standalone.php": "00ab77e3320c1e81e841c2ce3a9a671aef4c4094633a3d9dffb2f1febf8aa328",
+         "update.php": "8b37131eff1f386b32f8f97820b65605bd023862ed2546cf0752b62c87c9e895",
+         "user_permissions.php": "1b3676fbe7f2809e3b09281fec15304bad040549c261aa5c2a613c0c2cd4a976",
+diff --git a/index.php b/index.php
+index 615d65d..ba29edf 100644
+--- a/index.php
++++ b/index.php
+@@ -1,6 +1,7 @@
+ <?php
+ declare(strict_types=1);
+ require __DIR__.'/auth.php';require_capability('dashboard.view');require_once __DIR__.'/core/quality.php';
++
+ $stats=$pdo->query("SELECT
+  (SELECT COUNT(*) FROM lager_products WHERE status='active') products,
+  (SELECT COALESCE(SUM(quantity),0) FROM lager_stock) physical,
+@@ -8,29 +9,56 @@ $stats=$pdo->query("SELECT
+  (SELECT COUNT(*) FROM lager_reservations WHERE status='reserved') active_reservations,
+  (SELECT COUNT(*) FROM lager_locations WHERE active=1) locations,
+  (SELECT COUNT(*) FROM lager_users WHERE active=1) active_links")->fetch();
++
+ $negative=(int)$pdo->query("SELECT COUNT(*) FROM lager_products p WHERE (SELECT COALESCE(SUM(s.quantity),0) FROM lager_stock s WHERE s.product_id=p.id)<0")->fetchColumn();
+ $recent=$pdo->query("SELECT m.change_qty delta,m.created_at,m.movement_type,p.name product_name,l.name location_name FROM lager_stock_movements m JOIN lager_products p ON p.id=m.product_id JOIN lager_locations l ON l.id=m.location_id ORDER BY m.created_at DESC LIMIT 10")->fetchAll();
++
++$todayOrders = 0; $todayRevenue = 0.0;
++if(db_table_exists($pdo, 'hsg_woocommerce_orders')) {
++  $stTod = $pdo->query("SELECT COUNT(*) orders_count, COALESCE(SUM(total_amount),0) total_rev FROM hsg_woocommerce_orders WHERE DATE(date_created) = CURDATE() AND status NOT IN ('cancelled','refunded','failed')")->fetch(PDO::FETCH_ASSOC);
++  $todayOrders = (int)($stTod['orders_count'] ?? 0);
++  $todayRevenue = (float)($stTod['total_rev'] ?? 0.0);
++}
++
+ $lastBackup=null;if(is_admin()&&db_table_exists($pdo,'hsg_backup_runs'))$lastBackup=$pdo->query("SELECT * FROM hsg_backup_runs ORDER BY created_at DESC,id DESC LIMIT 1")->fetch();
+ $wcStatus=null;if(is_admin()&&db_table_exists($pdo,'hsg_settings'))$wcStatus=setting_get($pdo,'wc_last_sync_status','not_configured');
+ $quality=is_admin()?hsg_quality_summary($pdo):null;
+ $available=max(0,(int)$stats['physical']-(int)$stats['reserved_qty']);
+ $reservedQty=(int)$stats['reserved_qty'];
+ $totalPhysicalPlusReserved=$available + $reservedQty;
++
+ page_header('Overblik');
+ ?>
+-<div class="grid overview-primary">
+-  <a class="card metric quality-card-link" href="products.php"><strong><?=intval($stats['products'])?></strong><span>Aktive produkter</span></a>
+-  <a class="card metric quality-card-link" href="status.php"><strong><?=$available?></strong><span>Disponibelt lager</span></a>
+-  <a class="card metric quality-card-link" href="reservations.php"><strong><?=$reservedQty?></strong><span>Reserverede flasker</span></a>
+-  <a class="card metric quality-card-link" href="status.php"><strong><?=$totalPhysicalPlusReserved?></strong><span>Samlet (Disponibelt + Reserveret)</span></a>
++
++<div class="grid overview-primary" style="margin-bottom:16px;">
++  <a class="card metric quality-card-link" href="reports.php?tab=builder&period=today">
++    <strong><?=$todayOrders?> ordrer</strong>
++    <span>Salgsomsaetning i dag: <?=number_format($todayRevenue, 2, ',', '.')?> kr</span>
++  </a>
++  <a class="card metric quality-card-link" href="products.php?status=active">
++    <strong><?=intval($stats['products'])?></strong>
++    <span>Aktive produkter</span>
++  </a>
++  <a class="card metric quality-card-link" href="status.php">
++    <strong><?=$available?> stk.</strong>
++    <span>Disponibelt lager</span>
++  </a>
++  <a class="card metric quality-card-link" href="reservations.php?status=reserved">
++    <strong><?=$reservedQty?> flasker</strong>
++    <span>Reserveret i alt</span>
++  </a>
++  <a class="card metric quality-card-link" href="system.php">
++    <strong>✓ OK</strong>
++    <span>Systemstatus</span>
++  </a>
+ </div>
+
+ <?php if(is_admin()&&$quality):?>
+-<div class="card" style="border-left: 5px solid var(--amber, #b54708);">
++<div class="card" id="action-required" style="border-left: 5px solid var(--amber, #b54708);">
+   <div class="page-title" style="margin-bottom:10px;">
+     <div>
+-      <h2 style="margin:0; color:#101828;">⚠️ Kræver handling</h2>
+-      <p class="muted" style="margin:4px 0 0;">Prioriterede opgaver der kræver din opmærksomhed lige nu.</p>
++      <h2 style="margin:0;">⚠️ Kræver handling</h2>
++      <p class="muted" style="margin:4px 0 0;">Prioriterede administrative opgaver der kræver opmærksomhed nu.</p>
+     </div>
+     <a class="button secondary" href="quality.php">Datakvalitets-center</a>
+   </div>
+@@ -46,7 +74,7 @@ page_header('Overblik');
+ <?php endif;?>
+
+ <div class="card">
+-  <h2>⚡ Hurtige handlinger</h2>
++  <h2>⚡ Hurtige handlinger (Quick Actions)</h2>
+   <div class="actions">
+     <?php if(can('inventory.view')):?><a class="button" href="status.php">📦 Åbn lager</a><?php endif;?>
+     <?php if(can('products.view')):?><a class="button secondary" href="products.php">🍾 Se produkter</a><?php endif;?>
+@@ -59,7 +87,7 @@ page_header('Overblik');
+       <a class="button secondary" href="reports.php">📊 Rapporter</a>
+       <a class="button secondary" href="reports.php?tab=settings">🛒 WooCommerce</a>
+       <a class="button secondary" href="users.php">👥 Brugere</a>
+-      <a class="button secondary" href="admin.php">⚙️ Systemstatus</a>
++      <a class="button secondary" href="system.php">⚙️ Systemstatus</a>
+     <?php endif;?>
+   </div>
+ </div>
+diff --git a/products.php b/products.php
+index a564be6..7eca45f 100644
+--- a/products.php
++++ b/products.php
+@@ -223,9 +223,7 @@ page_header('Produkter');
+     </form>
+   </details>
+ </div>
+-<?php endif;?>
+
+-<?php if(is_admin()):?>
+ <div class="card">
+   <div class="page-title" style="margin-bottom:8px"><div><h2 style="margin:0">Produktdata-assistent</h2><p class="muted" style="margin:5px 0 0">Aflæser vareteksten og udfylder manglende ABV, alder, årgang, destilleri, kategori, flaskestørrelse, fadtype og eksplicit fadnummer. Sikre mønstre læses lokalt; Groq bruges kun som ekstra hjælp, hvis en API-nøgle er sat op.</p></div></div>
+   <div class="actions"><button type="button" class="secondary" id="enrichAllBtn">Udfyld manglende data på alle (<?=count($missingIds)?>)</button></div>
+@@ -234,7 +232,7 @@ page_header('Produkter');
+
+ <div class="card" id="new-product"><h2><?=$edit?'Rediger produkt':'Nyt produkt'?></h2>
+ <form method="post" id="productForm"><?=csrf_field()?><input type="hidden" name="id" value="<?=$edit['id']??0?>">
+-<div class="three"><label>SKU / nummer *<input name="sku" required value="<?=h($edit['sku']??'')?>"></label><label>Produktnavn / varetekst (Automatisk sammensat)<input name="name" id="product_name_input" readonly tabindex="-1" style="background-color:#f3f4f6;cursor:not-allowed;" value="<?=h($edit?hsg_catalog_product_title($edit):'')?>"></label><label>Kaldenavn (Valgfri underoverskrift)<input name="call_name" value="<?=h($edit['call_name']??'')?>" placeholder="fx The Chain - Chapter 2"></label></div>
++<div class="three"><label>SKU / nummer *<input name="sku" required value="<?=h($edit['sku']??'')?>"></label><label>Produktnavn / varetekst (Automatisk sammensat)<input name="name" id="product_name_input" readonly tabindex="-1" style="background-color:var(--bg-body,#f3f4f6);cursor:not-allowed;" value="<?=h($edit?hsg_catalog_product_title($edit):'')?>"></label><label>Kaldenavn (Valgfri underoverskrift)<input name="call_name" value="<?=h($edit['call_name']??'')?>" placeholder="fx The Chain - Chapter 2"></label></div>
+ <div class="product-assistant-box">
+   <div class="actions"><button type="button" id="enrichProductBtn">✨ Udfyld fra varetekst</button><label class="check" style="margin:0"><input type="checkbox" id="enrichUseAi" checked> Brug AI til usikre/manglende felter</label></div>
+   <div id="enrichProductStatus" class="muted" style="margin-top:8px">Eksisterende værdier overskrives ikke automatisk.</div>
+@@ -253,7 +251,37 @@ page_header('Produkter');
+ </form></div>
+ <?php endif;?>
+
+-<div class="table-wrap"><table><thead><tr><th>SKU</th><th>Produkt</th><th>Brand</th><th>Lager (Fysisk / Res / Disp)</th><th>Priser</th><th>Nyhed</th><th>Katalog</th><th>Status</th><?php if(is_admin()):?><th></th><?php endif;?></tr></thead><tbody>
++<div class="mobile-list">
++<?php foreach($products as $p):
++  $phys=(int)$p['physical_total'];
++  $resQty=(int)($p['reserved_total']??0);
++  $avail=$phys - $resQty;
++?>
++<article class="mobile-product">
++  <div class="mobile-product-main">
++    <img src="<?=h(product_image_url($p['image_path']))?>" alt="<?=h($p['name'])?>">
++    <div>
++      <h3><?=h($p['name'])?></h3>
++      <div class="sku"><?=h($p['sku'])?><?=!empty($p['brand_name'])?' · '.h($p['brand_name']):''?></div>
++      <div class="mobile-stock-line"><span>Disponibelt</span><strong class="available"><?=$avail?> stk.</strong></div>
++      <div class="mobile-stock-line"><span>Fysisk / Reserveret</span><span><?=$phys?> / <?=$resQty?></span></div>
++      <div class="mobile-stock-line"><span>Pris (Engros/Udsalg)</span><span><?=money_dkk($p['wholesale_price'])?> / <?=money_dkk($p['retail_price'])?></span></div>
++      <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
++        <span class="badge <?=$p['status']==='active'?'green':($p['status']==='inactive'?'blue':'')?>"><?=h(product_status_label($p['status']))?></span>
++        <?php if($p['is_new']):?><span class="badge red">NYHED</span><?php endif;?>
++      </div>
++      <?php if(is_admin()):?>
++        <div class="actions" style="margin-top:8px;">
++          <a class="button secondary small" href="?edit=<?=$p['id']?>">Rediger</a>
++        </div>
++      <?php endif;?>
++    </div>
++  </div>
++</article>
++<?php endforeach;?>
++</div>
++
++<div class="table-wrap desktop-only"><table><thead><tr><th>SKU</th><th>Produkt</th><th>Brand</th><th>Lager (Fysisk / Res / Disp)</th><th>Priser</th><th>Nyhed</th><th>Katalog</th><th>Status</th><?php if(is_admin()):?><th></th><?php endif;?></tr></thead><tbody>
+ <?php foreach($products as $p):
+   $phys=(int)$p['physical_total'];
+   $resQty=(int)($p['reserved_total']??0);
+diff --git a/system.php b/system.php
+index f28e475..5d1417f 100644
+--- a/system.php
++++ b/system.php
+@@ -3,6 +3,11 @@ declare(strict_types=1);
+ require __DIR__.'/auth.php';
+ require_admin();
+
++$tab = (string)($_GET['tab'] ?? 'settings');
++if (!in_array($tab, ['settings', 'modules', 'audit', 'activity'], true)) {
++    $tab = 'settings';
++}
++
+ if($_SERVER['REQUEST_METHOD']==='POST'){
+     $action=(string)($_POST['action']??'settings');
+     try {
+@@ -24,14 +29,46 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
+     } catch(Throwable $e){
+         flash('error',$e->getMessage());
+     }
+-    redirect('system.php');
++    redirect('system.php?tab='.$tab);
+ }
+
+ $modules=hsg_module_manifests();
+ $states=hsg_module_state($pdo);
+-$audits=$pdo->query("SELECT * FROM hsg_audit_log ORDER BY created_at DESC,id DESC LIMIT 80")->fetchAll();
+-page_header('System');
++
++$qLog = trim((string)($_GET['q'] ?? ''));
++$entityLog = trim((string)($_GET['entity'] ?? ''));
++
++$logConds = [];
++$logParams = [];
++
++if ($qLog !== '') {
++    $logConds[] = "(action LIKE ? OR actor_name LIKE ? OR details_json LIKE ?)";
++    $like = '%' . $qLog . '%';
++    $logParams = [$like, $like, $like];
++}
++if ($entityLog !== '') {
++    $logConds[] = "entity_type = ?";
++    $logParams[] = $entityLog;
++}
++
++$logWhereSql = $logConds ? 'WHERE ' . implode(' AND ', $logConds) : '';
++
++$audits = $pdo->prepare("SELECT * FROM hsg_audit_log {$logWhereSql} ORDER BY created_at DESC, id DESC LIMIT 150");
++$audits->execute($logParams);
++$auditRows = $audits->fetchAll(PDO::FETCH_ASSOC);
++
++page_header('System & Auditlog');
+ ?>
++
++<div class="simple-tabs" style="margin-bottom:1rem;">
++  <a class="button <?=$tab==='settings'?'':'secondary'?>" href="system.php?tab=settings">⚙️ Indstillinger</a>
++  <a class="button <?=$tab==='modules'?'':'secondary'?>" href="system.php?tab=modules">🧩 Moduler</a>
++  <a class="button <?=$tab==='audit'?'':'secondary'?>" href="system.php?tab=audit">📜 Auditlog</a>
++  <a class="button <?=$tab==='activity'?'':'secondary'?>" href="system.php?tab=activity">📈 Aktivitetsside</a>
++</div>
++
++<?php if($tab === 'settings'): ?>
++
+ <div class="grid">
+   <div class="card metric"><strong><?=h(app_version())?></strong><span>Platformversion</span></div>
+   <div class="card metric"><strong><?=count($modules)?></strong><span>Installerede moduler</span></div>
+@@ -47,13 +84,15 @@ page_header('System');
+       <label>Systemnavn<input name="platform_name" value="<?=h(setting_get($pdo,'platform_name','HSG Administration'))?>"></label>
+       <label>Virksomhed<input name="company_name" value="<?=h(setting_get($pdo,'company_name','HSG Whisky ApS'))?>"></label>
+     </div>
+-    <button>Gem indstillinger</button>
++    <button type="submit">Gem indstillinger</button>
+   </form>
+ </div>
+
++<?php elseif($tab === 'modules'): ?>
++
+ <div class="card">
+   <h2>Moduler</h2>
+-  <p class="muted">Nye forretningsområder installeres som selvstændige moduler med eget versionsnummer og egne databaseændringer. Lagerdata behøver ikke ændres, når fx indkøb, kunder eller events tilføjes.</p>
++  <p class="muted">Nye forretningsområder installeres som selvstændige moduler med eget versionsnummer og egne databaseændringer.</p>
+   <div class="table-wrap"><table><thead><tr><th>Modul</th><th>Version</th><th>Type</th><th>Status</th><th>Handling</th></tr></thead><tbody>
+   <?php foreach($modules as $id=>$m): $state=$states[$id]??[];$installed=$state['version']??$m['version'];$enabled=hsg_module_is_enabled($id);$core=!empty($m['core']); ?>
+     <tr>
+@@ -63,42 +102,52 @@ page_header('System');
+       <td><?=$enabled?'<span class="badge green">Aktiv</span>':'<span class="badge">Deaktiveret</span>'?></td>
+       <td>
+         <?php if($core):?><span class="muted">Altid aktiv</span>
+-        <?php else:?><form method="post" style="display:inline"><?=csrf_field()?><input type="hidden" name="action" value="toggle_module"><input type="hidden" name="module_id" value="<?=h($id)?>"><input type="hidden" name="enabled" value="<?=$enabled?'0':'1'?>"><button class="secondary"><?=$enabled?'Deaktivér':'Aktivér'?></button></form><?php endif;?>
++        <?php else:?><form method="post" style="display:inline"><?=csrf_field()?><input type="hidden" name="action" value="toggle_module"><input type="hidden" name="module_id" value="<?=h($id)?>"><input type="hidden" name="enabled" value="<?=$enabled?'0':'1'?>"><button type="submit" class="secondary"><?=$enabled?'Deaktivér':'Aktivér'?></button></form><?php endif;?>
+       </td>
+     </tr>
+   <?php endforeach;?>
+   </tbody></table></div>
+ </div>
+
+-<div class="card">
+-  <h2>Platformfundament</h2>
+-  <div class="three">
+-    <div><strong>Fælles kerne</strong><p class="muted">Sikkert admin-login, direkte lagerlinks, rettigheder, indstillinger, audit-log og modulstyring deles af hele platformen.</p></div>
+-    <div><strong>Adskilte moduler</strong><p class="muted">Hvert forretningsområde har egne filer og kan have egne tabeller og migrations. Et nyt modul skal derfor ikke omskrive lagerdelen.</p></div>
+-    <div><strong>Opgraderbar</strong><p class="muted">Platformen og hvert modul har versionsnumre. Databaseændringer køres automatisk ved opdatering, mens eksisterende data bevares.</p></div>
+-  </div>
+-</div>
++<?php elseif($tab === 'audit' || $tab === 'activity'): ?>
+
+ <div class="card">
+-  <h2>Mulige næste HSG-moduler</h2>
+-  <p class="muted">Disse er ikke aktiveret endnu, men platformen er nu struktureret til at de kan tilføjes separat:</p>
+-  <div class="three">
+-    <div><strong>Indkøb & leverandører</strong><p class="muted">Outturn-lister, indkøbsordrer, kostpriser, afgifter, forventet avance og varemodtagelse.</p></div>
+-    <div><strong>Kunder & salg</strong><p class="muted">Kunder, tilbud, reservationer, salgsordrer og evt. synkronisering med WooCommerce.</p></div>
+-    <div><strong>Fade & anparter</strong><p class="muted">Fade, anpartshavere, hjemtagelse, betaling, flaskefordeling og historik.</p></div>
+-    <div><strong>Events</strong><p class="muted">Smagninger, deltagere, flaskeforbrug, økonomi og partnerbesøg.</p></div>
+-    <div><strong>Økonomi</strong><p class="muted">Dækningsbidrag, lagerbinding, prisberegning og integration til økonomisystem/datasæt.</p></div>
+-    <div><strong>Rapporter</strong><p class="muted">Salg, lageromsætning, reservationer, indkøb og ledelsesoverblik på tværs af moduler.</p></div>
+-  </div>
+-</div>
++  <h2><?=$tab === 'activity' ? '📈 Aktivitetsside' : '📜 System Auditlog'?></h2>
++  <p class="muted">Kronologisk overblik over ændringer af produkter, lager, reservationer og brugere.</p>
+
+-<div class="card">
+-  <h2>Audit-log</h2>
+-  <div class="table-wrap"><table><thead><tr><th>Dato</th><th>Bruger</th><th>Handling</th><th>Objekt</th><th>Detaljer</th></tr></thead><tbody>
+-  <?php foreach($audits as $a):?>
+-    <tr><td><?=h($a['created_at'])?></td><td><?=h($a['actor_name'])?><br><span class="muted"><?=h($a['actor_type'])?></span></td><td><?=h($a['action'])?></td><td><?=h($a['entity_type'])?><?=($a['entity_id']!==null?' #'.h($a['entity_id']):'')?></td><td><small><?=h($a['details_json']??'')?></small></td></tr>
++  <form class="searchbar" method="get">
++    <input type="hidden" name="tab" value="<?=h($tab)?>">
++    <input name="q" value="<?=h($qLog)?>" placeholder="Søg på handling, bruger eller detaljer...">
++    <select name="entity">
++      <option value="">Alle entiteter</option>
++      <option value="product" <?=$entityLog==='product'?'selected':''?>>Produkter</option>
++      <option value="stock" <?=$entityLog==='stock'?'selected':''?>>Lager</option>
++      <option value="reservation" <?=$entityLog==='reservation'?'selected':''?>>Reservationer</option>
++      <option value="user" <?=$entityLog==='user'?'selected':''?>>Brugere</option>
++      <option value="system" <?=$entityLog==='system'?'selected':''?>>System</option>
++    </select>
++    <button type="submit">Søg i log</button>
++    <?php if($qLog !== '' || $entityLog !== ''):?>
++      <a class="button secondary" href="system.php?tab=<?=h($tab)?>">Nulstil filtre</a>
++    <?php endif;?>
++  </form>
++
++  <div class="table-wrap"><table><thead><tr><th>Tidspunkt</th><th>Bruger</th><th>Handling</th><th>Entitet</th><th>Detaljer</th></tr></thead><tbody>
++  <?php foreach($auditRows as $a):?>
++    <tr>
++      <td><?=h($a['created_at'])?></td>
++      <td><strong><?=h($a['actor_name']?:'System')?></strong><br><small class="muted"><?=h($a['actor_type'])?></small></td>
++      <td><span class="badge blue"><?=h($a['action'])?></span></td>
++      <td><?=h($a['entity_type'])?><?=($a['entity_id']!==null?' #'.h($a['entity_id']):'')?></td>
++      <td><small><?=h($a['details_json']??'')?></small></td>
++    </tr>
+   <?php endforeach;?>
+-  <?php if(!$audits):?><tr><td colspan="5" class="muted">Der er endnu ingen logposter.</td></tr><?php endif;?>
++  <?php if(!$auditRows):?>
++    <tr><td colspan="5" class="muted" style="text-align:center; padding:24px;">Ingen logposter fundet med de valgte filtre. <a class="button secondary small" href="system.php?tab=<?=h($tab)?>">Ryd filtre</a></td></tr>
++  <?php endif;?>
+   </tbody></table></div>
+ </div>
++
++<?php endif; ?>
++
+ <?php page_footer();
+diff --git a/tools/build-release.php b/tools/build-release.php
+index 79dae7c..e5af707 100644
+--- a/tools/build-release.php
++++ b/tools/build-release.php
+@@ -295,6 +295,7 @@ function hsg_run_negative_test(): bool {
+     require_once HSG_ROOT . '/functions.php';
+     require_once HSG_ROOT . '/core/updater.php';
+
++    $currentVersion = trim((string)(require HSG_ROOT . '/app_version.php'));
+     $testsPassed = 0;
+     $totalTests = 7;
+
+@@ -317,7 +318,7 @@ function hsg_run_negative_test(): bool {
+     $zipB = sys_get_temp_dir() . '/hsg-neg-B-' . bin2hex(random_bytes(4)) . '.zip';
+     try {
+         hsg_build_clean_export($dirB);
+-        $manifest = hsg_build_generate_manifest($dirB, '10.4.0', 'testcommit');
++        $manifest = hsg_build_generate_manifest($dirB, $currentVersion, 'testcommit');
+         file_put_contents($dirB . '/unmanifested_extra.php', '<?php // extra');
+         hsg_build_zip($dirB, $zipB);
+         hsg_build_validate_zip($zipB, $manifest);
+@@ -332,7 +333,7 @@ function hsg_run_negative_test(): bool {
+     $zipC = sys_get_temp_dir() . '/hsg-neg-C-' . bin2hex(random_bytes(4)) . '.zip';
+     try {
+         hsg_build_clean_export($dirC);
+-        $manifest = hsg_build_generate_manifest($dirC, '10.4.0', 'testcommit');
++        $manifest = hsg_build_generate_manifest($dirC, $currentVersion, 'testcommit');
+         file_put_contents($dirC . '/app_version.php', '<?php return "99.99.99"; // tampered');
+         hsg_build_zip($dirC, $zipC);
+         hsg_build_validate_zip($zipC, $manifest);
+@@ -375,7 +376,7 @@ function hsg_run_negative_test(): bool {
+     try {
+         hsg_build_clean_export($dirF);
+         file_put_contents($dirF . '/app_version.php', '<?php return "10.2.1";');
+-        hsg_build_check_version_consistency($dirF, '10.4.0');
++        hsg_build_check_version_consistency($dirF, $currentVersion);
+         hsg_build_log("Test F FEJLEDE: Version mismatch mellem tag og app_version.php blev ikke opdaget!", 'ERROR');
+     } catch (RuntimeException $e) {
+         $testsPassed++;
+@@ -386,9 +387,9 @@ function hsg_run_negative_test(): bool {
+     $dirG = sys_get_temp_dir() . '/hsg-neg-G-' . bin2hex(random_bytes(4));
+     try {
+         hsg_build_clean_export($dirG);
+-        file_put_contents($dirG . '/hsg-package.json', json_encode(['version' => '10.4.0']));
++        file_put_contents($dirG . '/hsg-package.json', json_encode(['version' => $currentVersion]));
+         file_put_contents($dirG . '/app_version.php', '<?php return "10.2.1";');
+-        hsg_build_check_version_consistency($dirG, '10.4.0');
++        hsg_build_check_version_consistency($dirG, $currentVersion);
+         hsg_build_log("Test G FEJLEDE: Manifest version vs app_version.php blev ikke afvist!", 'ERROR');
+     } catch (RuntimeException $e) {
+         $testsPassed++;

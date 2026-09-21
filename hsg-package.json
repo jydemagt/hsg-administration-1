@@ -196,6 +196,7 @@
         "stock.php": "3221733e73a6925409ed37e4ffe28ab176b508e922fcc9b7ee0e125b38c22bb0",
         "supplier_upload.php": "87f0f716a6142f3325e8fdeba74fa15ec9fb7bee964c41abe3c1b1af91ec042b",
         "system.php": "aff882ede35a17219bc5d610de7953904e345628e869247313213c74069dd487",
+        "tools/build-release.php": "18cfc7a72d17c7ce312b9d860e0a58eeb0579be405370fbfba894a4c442491a9",
         "tools/restore-standalone.php": "00ab77e3320c1e81e841c2ce3a9a671aef4c4094633a3d9dffb2f1febf8aa328",
         "update.php": "8b37131eff1f386b32f8f97820b65605bd023862ed2546cf0752b62c87c9e895",
         "user_permissions.php": "1b3676fbe7f2809e3b09281fec15304bad040549c261aa5c2a613c0c2cd4a976",
