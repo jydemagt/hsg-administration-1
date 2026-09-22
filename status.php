@@ -53,13 +53,15 @@ page_header('Lagerstatus');
 
 <?php if(can('reservations.create')):?><div id="reserveModal" class="hsg-modal" hidden aria-hidden="true"><div class="hsg-modal-backdrop" data-modal-close="reserve"></div><section class="hsg-modal-dialog reserve-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="reserveModalTitle"><button type="button" class="hsg-modal-close" data-modal-close="reserve" aria-label="Luk">×</button><div class="hsg-modal-head"><span class="modal-kicker">Ny reservation</span><h2 id="reserveModalTitle">Reservér</h2><p id="reserveModalMeta" class="muted"></p></div><form method="post" action="reservations.php" id="reserveModalForm"><?=csrf_field()?><input type="hidden" name="action" value="quick"><input type="hidden" name="product_id" id="reserveProductId"><label>Lokation<select name="location_id" id="reserveLocation" required></select></label><label>Hvor mange?<div class="qty-stepper"><button type="button" class="secondary qty-minus" aria-label="Træk én fra">−</button><input type="number" min="1" step="1" name="quantity" id="reserveQuantity" value="1" required inputmode="numeric"><button type="button" class="secondary qty-plus" aria-label="Læg én til">+</button></div><small class="muted" id="reserveAvailable"></small></label><label>Hvem / hvad er reservationen til?<textarea name="customer_name" id="reserveFor" maxlength="180" rows="4" placeholder="Fx Peter Hansen, smagning i Vejle, ordre #1047 ..."></textarea></label><button type="submit" class="reserve-submit">Reservér</button></form></section></div><?php endif;?>
 
-<div id="productModal" class="hsg-modal" hidden aria-hidden="true"><div class="hsg-modal-backdrop" data-modal-close="product"></div><section class="hsg-modal-dialog product-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="productModalTitle"><button type="button" class="hsg-modal-close" data-modal-close="product" aria-label="Luk">×</button><div class="product-modal-layout"><div class="product-modal-image"><img id="productModalImage" src="" alt=""></div><div class="product-modal-body"><div class="product-modal-titleline"><div><span id="productModalNew" class="badge red" hidden>NYHED</span><h2 id="productModalTitle"></h2><p id="productModalSub" class="muted"></p></div><?php if(can('reservations.create')):?><button type="button" id="productModalReserve" class="open-reserve">Reservér</button><?php endif;?></div><div id="productModalFacts" class="product-detail-grid"></div><div class="product-stock-details"><h3>Lager</h3><div id="productModalStock"></div></div><div id="productModalNotesWrap" class="product-notes" hidden><h3>Bemærkning</h3><p id="productModalNotes"></p></div></div></div></section></div>
+<div id="productModal" class="hsg-modal" hidden aria-hidden="true"><div class="hsg-modal-backdrop" data-modal-close="product"></div><section class="hsg-modal-dialog product-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="productModalTitle"><button type="button" class="hsg-modal-close" data-modal-close="product" aria-label="Luk">×</button><div class="product-modal-layout"><div class="product-modal-image" id="productModalImageWrap" role="button" tabindex="0" title="Klik for at forstørre billede"><img id="productModalImage" src="" alt=""></div><div class="product-modal-body"><div class="product-modal-titleline"><div><span id="productModalNew" class="badge red" hidden>NYHED</span><h2 id="productModalTitle"></h2><p id="productModalSub" class="muted"></p></div><?php if(can('reservations.create')):?><button type="button" id="productModalReserve" class="open-reserve">Reservér</button><?php endif;?></div><div id="productModalFacts" class="product-detail-grid"></div><div class="product-stock-details"><h3>Lager</h3><div id="productModalStock"></div></div><div id="productModalNotesWrap" class="product-notes" hidden><h3>Bemærkning</h3><p id="productModalNotes"></p></div></div></div></section></div>
+
+<div id="imageLightboxModal" class="hsg-lightbox" hidden aria-hidden="true"><div class="hsg-lightbox-backdrop" data-lightbox-close="1"></div><div class="hsg-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Forstørret produktbillede"><button type="button" class="hsg-lightbox-close" data-lightbox-close="1" aria-label="Luk forstørret billede">×</button><img id="hsgLightboxImage" class="hsg-lightbox-img" src="" alt=""><div id="hsgLightboxCaption" class="hsg-lightbox-caption"></div></div></div>
 
 <script>
 const HSG_PRODUCTS=<?=json_encode($productDetails,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;
 const money=v=>v===null||v===undefined?'—':new Intl.NumberFormat('da-DK',{style:'currency',currency:'DKK',maximumFractionDigits:2}).format(v);
 const fmt=v=>v===null||v===undefined||v===''?'—':String(v).replace('.',',');
-const reserveModal=document.getElementById('reserveModal'),productModal=document.getElementById('productModal');
+const reserveModal=document.getElementById('reserveModal'),productModal=document.getElementById('productModal'),lightboxModal=document.getElementById('imageLightboxModal');
 let previousActiveElement = null;
 
 function modalOpen(el){
@@ -73,11 +75,28 @@ function modalClose(el){
   if(!el)return;
   el.hidden=true;
   el.setAttribute('aria-hidden','true');
-  if((!reserveModal||reserveModal.hidden)&&productModal.hidden)document.body.classList.remove('modal-open');
-  if(previousActiveElement && typeof previousActiveElement.focus === 'function'){
+  if((!reserveModal||reserveModal.hidden)&&(productModal.hidden)&&(!lightboxModal||lightboxModal.hidden))document.body.classList.remove('modal-open');
+  if(previousActiveElement && typeof previousActiveElement.focus === 'function' && el !== lightboxModal){
     previousActiveElement.focus();
     previousActiveElement = null;
   }
+}
+
+function openLightbox(src, caption){
+  if(!lightboxModal || !src) return;
+  const img = document.getElementById('hsgLightboxImage');
+  const cap = document.getElementById('hsgLightboxCaption');
+  if(img) { img.src = src; img.alt = caption || 'Produktbillede'; }
+  if(cap) { cap.textContent = caption || ''; cap.hidden = !caption; }
+  lightboxModal.hidden = false;
+  lightboxModal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+}
+function closeLightbox(){
+  if(!lightboxModal) return;
+  lightboxModal.hidden = true;
+  lightboxModal.setAttribute('aria-hidden', 'true');
+  if((!reserveModal||reserveModal.hidden) && productModal.hidden) document.body.classList.remove('modal-open');
 }
 function productById(id){return HSG_PRODUCTS[String(id)]||HSG_PRODUCTS[Number(id)]||null;}
 function openReserve(id){
@@ -213,9 +232,27 @@ document.addEventListener('click',e=>{
 document.addEventListener('keydown',e=>{const product=e.target.closest?.('.product-detail-trigger');if(product&&(e.key==='Enter'||e.key===' ')){e.preventDefault();openProduct(product.dataset.productId);}});
 document.querySelectorAll('[data-modal-close="reserve"]').forEach(b=>b.addEventListener('click',()=>modalClose(reserveModal)));
 document.querySelectorAll('[data-modal-close="product"]').forEach(b=>b.addEventListener('click',()=>modalClose(productModal)));
+document.querySelectorAll('[data-lightbox-close="1"]').forEach(b=>b.addEventListener('click',closeLightbox));
+
+const imgWrap = document.getElementById('productModalImageWrap');
+if(imgWrap){
+  imgWrap.addEventListener('click', ()=>{
+    const img = document.getElementById('productModalImage');
+    const title = document.getElementById('productModalTitle')?.textContent || '';
+    if(img && img.src && !img.src.includes('placeholder')) {
+      openLightbox(img.src, title);
+    }
+  });
+  imgWrap.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter' || e.key === ' '){
+      e.preventDefault();
+      imgWrap.click();
+    }
+  });
+}
 const loc=document.getElementById('reserveLocation');if(loc)loc.addEventListener('change',updateReserveMax);
 document.querySelector('.qty-minus')?.addEventListener('click',()=>{const q=document.getElementById('reserveQuantity');q.value=String(Math.max(1,Number(q.value||1)-1));});
 document.querySelector('.qty-plus')?.addEventListener('click',()=>{const q=document.getElementById('reserveQuantity'),m=Number(q.max||999);q.value=String(Math.min(m,Number(q.value||1)+1));});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(reserveModal&&!reserveModal.hidden)modalClose(reserveModal);else if(!productModal.hidden)modalClose(productModal);}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(lightboxModal&&!lightboxModal.hidden)closeLightbox();else if(reserveModal&&!reserveModal.hidden)modalClose(reserveModal);else if(!productModal.hidden)modalClose(productModal);}});
 </script>
 <?php page_footer();
