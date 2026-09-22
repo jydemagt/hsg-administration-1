@@ -201,4 +201,5 @@ foreach($pagePlan as $plan){
 
 if(!$rows){$pdf->addPage([$pdf->textFont(40,790,20,'HSG Whisky produktkatalog','helvetica-bold'),$pdf->textFont(40,755,11,'Ingen produkter med disponibelt lager er tilgængelige i kataloget.','helvetica')]);}
 $pdfFilename=$newOnly?('HSG-Nyhedskatalog-'.($price==='retail'?'vejl-priser':'engrospriser').'-'.date('Y-m-d').'.pdf'):('HSG-Whisky-Katalog-'.($price==='retail'?'vejl-priser':'engrospriser').'-'.date('Y-m-d').'.pdf');
-$pdf->output($pdfFilename);
+$isInline = !empty($_GET['inline']) || (!isset($_GET['download']) && !empty($_GET['view']));
+$pdf->output($pdfFilename, $isInline ? 'inline' : 'download');

@@ -7,9 +7,15 @@ $pendingImages=(int)$pdo->query("SELECT COUNT(*) FROM lager_products WHERE image
 $negative=(int)$pdo->query("SELECT COUNT(*) FROM lager_products p WHERE (SELECT COALESCE(SUM(s.quantity),0) FROM lager_stock s WHERE s.product_id=p.id)<0")->fetchColumn();
 
 // Diagnostics checks
-$dbOk = true;
+try {
+  $pdo->query('SELECT 1');
+  $dbOk = true;
+} catch (Throwable $e) {
+  $dbOk = false;
+}
 $phpOk = version_compare(PHP_VERSION, '8.1.0', '>=');
-$storageWritable = is_writable(dirname(__DIR__).'/storage/tmp') || is_writable(dirname(__DIR__));
+$storageDir = __DIR__ . '/storage/tmp';
+$storageWritable = is_dir($storageDir) && is_writable($storageDir);
 $extZip = extension_loaded('zip');
 $extGd = extension_loaded('gd');
 $extPdo = extension_loaded('pdo');
@@ -38,7 +44,7 @@ $groups=[
  ],
  'System'=>[
    ['Systemindstillinger','Moduler, audit-log og teknisk status.','system.php','⚙'],
-   ['Produkter med negativt lager',$negative.' produkter kan kræve oprydning.','products.php?negative_stock=1','!'],
+   ['Produkter med negativt lager',$negative.' produkter kan kræve oprydning.','products.php?status=all&filter=negative_stock','!'],
  ],
 ];
 ?>
@@ -47,7 +53,7 @@ $groups=[
   <h2>🖥️ Systemdiagnostik & Status</h2>
   <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top:12px;">
     <div class="card metric" style="padding:10px;">
-      <span class="badge green">✓ Forbundet</span>
+      <span class="badge <?=$dbOk?'green':'red'?>"><?=$dbOk?'✓ Forbundet':'🔴 Fejl'?></span>
       <strong>Database</strong>
       <small class="muted">MySQL / MariaDB PDO</small>
     </div>
@@ -63,7 +69,7 @@ $groups=[
     </div>
     <div class="card metric" style="padding:10px;">
       <span class="badge <?=($extZip&&$extGd&&$extPdo)?'green':'red'?>"><?=($extZip&&$extGd&&$extPdo)?'✓ Alle aktiveret':'🔴 Mangler moduler'?></span>
-      <strong>PHP Udvisninger</strong>
+      <strong>PHP Udvidelser</strong>
       <small class="muted">Zip, GD, PDO</small>
     </div>
     <div class="card metric" style="padding:10px;">
