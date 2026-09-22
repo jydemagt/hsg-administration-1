@@ -7,7 +7,8 @@ $price = (($_GET['price'] ?? 'retail') === 'wholesale') ? 'wholesale' : 'retail'
 $newOnly = !empty($_GET['news']) || !empty($_GET['new_only']);
 
 $pdfParams = 'price=' . urlencode($price) . '&new_only=' . ($newOnly ? '1' : '0');
-$pdfUrl = 'catalog_pdf.php?' . $pdfParams;
+$pdfInlineUrl = 'catalog_pdf.php?' . $pdfParams . '&inline=1';
+$pdfDownloadUrl = 'catalog_pdf.php?' . $pdfParams . '&download=1';
 
 page_header('Produktkatalog');
 ?>
@@ -30,7 +31,8 @@ page_header('Produktkatalog');
       </div>
       <div class="catalog-form-actions">
         <button type="submit" class="button">Vis PDF</button>
-        <a class="button secondary" href="<?=h($pdfUrl)?>" target="_blank" rel="noopener">Åbn PDF i nyt vindue</a>
+        <a class="button secondary" href="<?=h($pdfInlineUrl)?>" target="_blank" rel="noopener">Åbn PDF i browser</a>
+        <a class="button secondary" href="<?=h($pdfDownloadUrl)?>">Download PDF</a>
         <?php if(is_admin()): ?>
           <a class="button secondary" href="products.php">Rediger produkter</a>
         <?php endif; ?>
@@ -42,13 +44,13 @@ page_header('Produktkatalog');
 <div class="card catalog-pdf-card" style="padding:0; overflow:hidden;">
   <div class="catalog-pdf-wrapper">
     <iframe
-      src="<?=h($pdfUrl)?>"
+      src="<?=h($pdfInlineUrl)?>"
       title="HSG Produktkatalog PDF"
       class="catalog-pdf-iframe"
     ></iframe>
   </div>
   <div class="catalog-pdf-fallback muted">
-    Kan du ikke se PDF'en direkte herover? <a href="<?=h($pdfUrl)?>" target="_blank" rel="noopener">Klik her for at åbne katalog som PDF i nyt vindue</a>.
+    Kan du ikke se PDF'en direkte herover? <a href="<?=h($pdfInlineUrl)?>" target="_blank" rel="noopener">Åbn PDF i nyt vindue</a> eller <a href="<?=h($pdfDownloadUrl)?>">Download PDF</a>.
   </div>
 </div>
 

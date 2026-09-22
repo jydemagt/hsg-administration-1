@@ -84,75 +84,38 @@ if($statusFilter === 'active') {
 }
 
 if($qFilter!=='') {
-    $whereConds[] = "(p.name LIKE ? OR p.sku LIKE ? OR b.name LIKE ? OR pb.name LIKE ? OR p.cask_number LIKE ? OR p.call_name LIKE ?)";
-    $term = '%'.$qFilter.'%';
-    $whereParams[] = $term;
-    $whereParams[] = $term;
-    $whereParams[] = $term;
-    $whereParams[] = $term;
-    $whereParams[] = $term;
-    $whereParams[] = $term;
+    $whereConds[] = "(p.name LIKE ? OR p.sku LIKE ?)";
+    $whereParams[] = '%'.$qFilter.'%';
+    $whereParams[] = '%'.$qFilter.'%';
 }
 
 $whereSql = implode(' AND ', $whereConds);
-$pSql = "SELECT DISTINCT p.id product_id, p.sku, p.name, p.call_name, p.cask_number, p.status
-         FROM lager_products p
-         LEFT JOIN lager_brands b ON b.id=p.brand_id
-         LEFT JOIN lager_brands pb ON pb.id=b.parent_id
-         WHERE {$whereSql}
-         ORDER BY p.name";
+$pSql = "SELECT p.id product_id, p.sku, p.name, p.status FROM lager_products p WHERE {$whereSql} ORDER BY p.name";
 $stP = $pdo->prepare($pSql); $stP->execute($whereParams);
 $gridProducts = $stP->fetchAll(PDO::FETCH_ASSOC);
 
-$pLocStock = [];
-$pLocRes = [];
-if($gridProducts) {
-    $pids = array_column($gridProducts, 'product_id');
-    $inClause = implode(',', array_fill(0, count($pids), '?'));
-
-    $stStock = $pdo->prepare("SELECT product_id, location_id, quantity FROM lager_stock WHERE product_id IN ({$inClause})");
-    $stStock->execute($pids);
-    foreach($stStock->fetchAll(PDO::FETCH_ASSOC) as $sRow) {
-        $pLocStock[(int)$sRow['product_id']][(int)$sRow['location_id']] = (int)$sRow['quantity'];
-    }
-
-    $stRes = $pdo->prepare("SELECT product_id, location_id, SUM(quantity) reserved FROM lager_reservations WHERE product_id IN ({$inClause}) AND status='reserved' GROUP BY product_id, location_id");
-    $stRes->execute($pids);
-    foreach($stRes->fetchAll(PDO::FETCH_ASSOC) as $rRow) {
-        $pLocRes[(int)$rRow['product_id']][(int)$rRow['location_id']] = (int)$rRow['reserved'];
-    }
-}
+$stStockGrid = $pdo->prepare('SELECT location_id, quantity FROM lager_stock WHERE product_id=?');
+$stResGrid = $pdo->prepare("SELECT location_id, SUM(quantity) reserved FROM lager_reservations WHERE product_id=? AND status='reserved' GROUP BY location_id");
 
 page_header('Lager');
 ?>
-<form class="stock-filter-bar" method="get">
-  <div class="filter-group filter-search">
-    <label for="stock_q">Søg</label>
-    <input id="stock_q" name="q" value="<?=h($qFilter)?>" placeholder="Søg produkt, SKU, brand, fadnr, call name...">
-  </div>
-  <div class="filter-group">
-    <label for="stock_status">Status</label>
-    <select id="stock_status" name="status">
-      <option value="active" <?=$statusFilter==='active'?'selected':''?>>Aktive</option>
-      <option value="inactive" <?=$statusFilter==='inactive'?'selected':''?>>Inaktive</option>
-      <option value="all" <?=$statusFilter==='all'?'selected':''?>>Alle</option>
-    </select>
-  </div>
-  <div class="filter-group">
-    <label for="stock_location">Lokation</label>
-    <select id="stock_location" name="location">
-      <option value="0">Alle lokationer</option>
-      <?php foreach($locations as $l): ?>
-        <option value="<?=$l['id']?>" <?=$locFilter===(int)$l['id']?'selected':''?>><?=h($l['name'])?></option>
-      <?php endforeach; ?>
-    </select>
-  </div>
-  <div class="filter-actions">
-    <button type="submit">Søg & filtrér</button>
-    <?php if($qFilter !== '' || $locFilter || $statusFilter !== 'active'): ?>
-      <a class="button secondary" href="stock.php">Nulstil filtre</a>
-    <?php endif; ?>
-  </div>
+<form class="searchbar" method="get">
+  <input name="q" value="<?=h($qFilter)?>" placeholder="Søg produkt eller SKU...">
+  <select name="status">
+    <option value="active" <?=$statusFilter==='active'?'selected':''?>>Aktive produkter</option>
+    <option value="inactive" <?=$statusFilter==='inactive'?'selected':''?>>Inaktive produkter</option>
+    <option value="all" <?=$statusFilter==='all'?'selected':''?>>Alle produkter (inkl. inaktive)</option>
+  </select>
+  <select name="location">
+    <option value="0">Alle lokationer</option>
+    <?php foreach($locations as $l): ?>
+      <option value="<?=$l['id']?>" <?=$locFilter===(int)$l['id']?'selected':''?>><?=h($l['name'])?></option>
+    <?php endforeach; ?>
+  </select>
+  <button type="submit">Søg & Filtrér</button>
+  <?php if($qFilter !== '' || $locFilter || $statusFilter !== 'active'): ?>
+    <a class="button secondary" href="stock.php">Nulstil filtre</a>
+  <?php endif; ?>
 </form>
 
 <?php if(is_admin()): ?>
@@ -206,87 +169,61 @@ page_header('Lager');
   </div>
 </div>
 
-<div class="table-wrap stock-table-container">
-  <table class="stock-table">
+<div class="table-wrap">
+  <table>
     <thead>
       <tr>
-        <th class="sticky-col sticky-sku">SKU</th>
-        <th class="sticky-col sticky-product">Produkt</th>
+        <th>SKU</th>
+        <th>Produkt</th>
         <?php if($statusFilter !== 'active'): ?>
           <th style="text-align:center;">Status</th>
         <?php endif; ?>
         <?php foreach($locations as $l): if($locFilter && (int)$l['id'] !== $locFilter) continue; ?>
-          <th style="text-align:center; min-width:115px;"><?=h($l['name'])?></th>
+          <th style="text-align:center;"><?=h($l['name'])?></th>
         <?php endforeach; ?>
-        <th style="text-align:right;">Fysisk</th>
-        <th style="text-align:right;">Reserveret</th>
-        <th style="text-align:right;">Disponibelt</th>
+        <th style="text-align:center;">Totalt disponibelt</th>
       </tr>
     </thead>
     <tbody>
       <?php foreach($gridProducts as $gp):
         $pid=(int)$gp['product_id'];
-        $locStocks = $pLocStock[$pid] ?? [];
-        $locRes = $pLocRes[$pid] ?? [];
+        $stStockGrid->execute([$pid]);
+        $pLocStock=[]; foreach($stStockGrid->fetchAll(PDO::FETCH_ASSOC) as $sRow) $pLocStock[(int)$sRow['location_id']] = (int)$sRow['quantity'];
 
-        $totalPhys = 0;
-        $totalRes = 0;
-        $totalAvail = 0;
+        $stResGrid->execute([$pid]);
+        $pLocRes=[]; foreach($stResGrid->fetchAll(PDO::FETCH_ASSOC) as $rRow) $pLocRes[(int)$rRow['location_id']] = (int)$rRow['reserved'];
+
+        $totalAvailable = 0;
       ?>
         <tr>
-          <td class="sticky-col sticky-sku">
-            <code class="stock-sku-badge"><?=h($gp['sku'])?></code>
-          </td>
-          <td class="sticky-col sticky-product">
-            <div class="stock-product-cell">
-              <strong><?=h($gp['name'])?></strong>
-              <?php if(!empty($gp['call_name'])): ?>
-                <div class="muted stock-subinfo"><em><?=h($gp['call_name'])?></em></div>
-              <?php endif; ?>
-              <?php if(!empty($gp['cask_number'])): ?>
-                <div class="muted stock-subinfo">Fad: <?=h($gp['cask_number'])?></div>
-              <?php endif; ?>
-            </div>
-          </td>
+          <td><strong><?=h($gp['sku'])?></strong></td>
+          <td><strong><?=h($gp['name'])?></strong></td>
           <?php if($statusFilter !== 'active'): ?>
             <td style="text-align:center;">
-              <span class="badge <?=$gp['status']==='active'?'green':'red'?>"><?=$gp['status']==='active'?'Aktiv':'Inaktiv'?></span>
+              <span class="badge <?=$gp['status']==='active'?'green':'red'?>"><?=h(product_status_label($gp['status']))?></span>
             </td>
           <?php endif; ?>
           <?php foreach($locations as $l):
             $lid=(int)$l['id']; if($locFilter && $lid !== $locFilter) continue;
-            $curPhys = $locStocks[$lid] ?? 0;
-            $curRes = $locRes[$lid] ?? 0;
+            $curPhys = $pLocStock[$lid] ?? 0;
+            $curRes = $pLocRes[$lid] ?? 0;
             $curAvail = $curPhys - $curRes;
-
-            $totalPhys += $curPhys;
-            $totalRes += $curRes;
-            $totalAvail += $curAvail;
+            $totalAvailable += $curAvail;
           ?>
-            <td style="text-align:center;" class="stock-loc-cell">
-              <div class="stock-input-wrap">
-                <input type="number" min="0" name="stock[<?=$pid?>][<?=$lid?>]" value="<?=$curPhys?>" class="stock-phys-input">
-                <?php if($curRes > 0): ?>
-                  <span class="stock-res-badge" title="Reserveret på <?=h($l['name'])?>">Res: <?=$curRes?></span>
-                <?php endif; ?>
-              </div>
+            <td style="text-align:center; width:110px; background:var(--bg-card,#fdfdfd);">
+              <input type="number" min="0" name="stock[<?=$pid?>][<?=$lid?>]" value="<?=$curPhys?>" style="width:75px; padding:6px 8px; text-align:center; font-weight:600; font-size:1rem; border:1px solid #ccc; border-radius:4px;">
+              <?php if($curRes > 0): ?>
+                <div style="font-size:0.75rem; color:#d97706; margin-top:3px; font-weight:600;">Res: <?=$curRes?></div>
+              <?php endif; ?>
             </td>
           <?php endforeach; ?>
-          <td style="text-align:right; font-weight:600;"><?=$totalPhys?></td>
-          <td style="text-align:right; font-weight:600; color:var(--amber);"><?=$totalRes > 0 ? $totalRes : 0?></td>
-          <td style="text-align:right;" class="stock-avail-cell <?=$totalAvail<0?'negative':''?>">
-            <span class="stock-avail-badge <?=$totalAvail<0?'negative':($totalAvail>0?'positive':'zero')?>"><?=$totalAvail?></span>
-          </td>
+          <td style="text-align:center; font-size:1.1rem; font-weight:bold;" class="available <?=$totalAvailable<0?'negative':''?>"><?=$totalAvailable?></td>
         </tr>
       <?php endforeach; ?>
       <?php if(!$gridProducts): ?>
         <tr>
-          <td colspan="12" class="muted" style="text-align:center; padding:32px;">
-            <div style="font-size:1.05rem; font-weight:600; margin-bottom:8px;">Ingen produkter matcher din søgning.</div>
-            <?php if($qFilter !== ''): ?>
-              <div style="margin-bottom:12px;">Søgning: <strong><?=h($qFilter)?></strong> (Filter: <?=h($statusFilter==='active'?'Aktive':($statusFilter==='inactive'?'Inaktive':'Alle'))?>)</div>
-            <?php endif; ?>
-            <a class="button secondary small" href="stock.php">Nulstil filtre</a>
+          <td colspan="12" class="muted" style="text-align:center; padding:24px;">
+            Der blev ikke fundet nogen produkter i lagerstyringen med de valgte filtre. <a class="button secondary small" href="stock.php">Ryd filtre</a>
           </td>
         </tr>
       <?php endif; ?>
@@ -297,85 +234,56 @@ page_header('Lager');
 
 <?php else: ?>
 
-<div class="table-wrap stock-table-container">
-  <table class="stock-table">
+<div class="table-wrap">
+  <table>
     <thead>
       <tr>
-        <th class="sticky-col sticky-sku">SKU</th>
-        <th class="sticky-col sticky-product">Produkt</th>
+        <th>SKU</th>
+        <th>Produkt</th>
         <?php if($statusFilter !== 'active'): ?>
           <th style="text-align:center;">Status</th>
         <?php endif; ?>
         <?php foreach($locations as $l): if($locFilter && (int)$l['id'] !== $locFilter) continue; ?>
-          <th style="text-align:center; min-width:115px;"><?=h($l['name'])?></th>
+          <th><?=h($l['name'])?> (Disponibelt)</th>
         <?php endforeach; ?>
-        <th style="text-align:right;">Fysisk</th>
-        <th style="text-align:right;">Reserveret</th>
-        <th style="text-align:right;">Disponibelt</th>
+        <th>Totalt disponibelt</th>
       </tr>
     </thead>
     <tbody>
       <?php foreach($gridProducts as $gp):
         $pid=(int)$gp['product_id'];
-        $locStocks = $pLocStock[$pid] ?? [];
-        $locRes = $pLocRes[$pid] ?? [];
+        $stStockGrid->execute([$pid]);
+        $pLocStock=[]; foreach($stStockGrid->fetchAll(PDO::FETCH_ASSOC) as $sRow) $pLocStock[(int)$sRow['location_id']] = (int)$sRow['quantity'];
 
-        $totalPhys = 0;
-        $totalRes = 0;
-        $totalAvail = 0;
+        $stResGrid->execute([$pid]);
+        $pLocRes=[]; foreach($stResGrid->fetchAll(PDO::FETCH_ASSOC) as $rRow) $pLocRes[(int)$rRow['location_id']] = (int)$rRow['reserved'];
+
+        $totalAvailable = 0;
       ?>
         <tr>
-          <td class="sticky-col sticky-sku">
-            <code class="stock-sku-badge"><?=h($gp['sku'])?></code>
-          </td>
-          <td class="sticky-col sticky-product">
-            <div class="stock-product-cell">
-              <strong><?=h($gp['name'])?></strong>
-              <?php if(!empty($gp['call_name'])): ?>
-                <div class="muted stock-subinfo"><em><?=h($gp['call_name'])?></em></div>
-              <?php endif; ?>
-              <?php if(!empty($gp['cask_number'])): ?>
-                <div class="muted stock-subinfo">Fad: <?=h($gp['cask_number'])?></div>
-              <?php endif; ?>
-            </div>
-          </td>
+          <td><strong><?=h($gp['sku'])?></strong></td>
+          <td><?=h($gp['name'])?></td>
           <?php if($statusFilter !== 'active'): ?>
             <td style="text-align:center;">
-              <span class="badge <?=$gp['status']==='active'?'green':'red'?>"><?=$gp['status']==='active'?'Aktiv':'Inaktiv'?></span>
+              <span class="badge <?=$gp['status']==='active'?'green':'red'?>"><?=h(product_status_label($gp['status']))?></span>
             </td>
           <?php endif; ?>
           <?php foreach($locations as $l):
             $lid=(int)$l['id']; if($locFilter && $lid !== $locFilter) continue;
-            $curPhys = $locStocks[$lid] ?? 0;
-            $curRes = $locRes[$lid] ?? 0;
+            $curPhys = $pLocStock[$lid] ?? 0;
+            $curRes = $pLocRes[$lid] ?? 0;
             $curAvail = $curPhys - $curRes;
-
-            $totalPhys += $curPhys;
-            $totalRes += $curRes;
-            $totalAvail += $curAvail;
+            $totalAvailable += $curAvail;
           ?>
-            <td style="text-align:center;" class="stock-loc-cell">
-              <span style="font-weight:600;"><?=$curPhys?></span>
-              <?php if($curRes > 0): ?>
-                <span class="stock-res-badge">Res: <?=$curRes?></span>
-              <?php endif; ?>
-            </td>
+            <td class="available <?=$curAvail<0?'negative':''?>"><?=$curAvail?></td>
           <?php endforeach; ?>
-          <td style="text-align:right; font-weight:600;"><?=$totalPhys?></td>
-          <td style="text-align:right; font-weight:600; color:var(--amber);"><?=$totalRes > 0 ? $totalRes : 0?></td>
-          <td style="text-align:right;" class="stock-avail-cell <?=$totalAvail<0?'negative':''?>">
-            <span class="stock-avail-badge <?=$totalAvail<0?'negative':($totalAvail>0?'positive':'zero')?>"><?=$totalAvail?></span>
-          </td>
+          <td style="font-weight:bold;" class="available <?=$totalAvailable<0?'negative':''?>"><?=$totalAvailable?></td>
         </tr>
       <?php endforeach; ?>
       <?php if(!$gridProducts): ?>
         <tr>
-          <td colspan="12" class="muted" style="text-align:center; padding:32px;">
-            <div style="font-size:1.05rem; font-weight:600; margin-bottom:8px;">Ingen produkter matcher din søgning.</div>
-            <?php if($qFilter !== ''): ?>
-              <div style="margin-bottom:12px;">Søgning: <strong><?=h($qFilter)?></strong> (Filter: <?=h($statusFilter==='active'?'Aktive':($statusFilter==='inactive'?'Inaktive':'Alle'))?>)</div>
-            <?php endif; ?>
-            <a class="button secondary small" href="stock.php">Nulstil filtre</a>
+          <td colspan="12" class="muted" style="text-align:center; padding:24px;">
+            Der blev ikke fundet nogen produkter i lagerstyringen med de valgte filtre. <a class="button secondary small" href="stock.php">Ryd filtre</a>
           </td>
         </tr>
       <?php endif; ?>

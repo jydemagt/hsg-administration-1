@@ -59,7 +59,7 @@ final class SimplePdf {
  public function rect(float $x,float $y,float $w,float $h,bool $fill=false): string {return $x.' '.$y.' '.$w.' '.$h.' re '.($fill?'f':'S');}
  public function setRgb(float $r,float $g,float $b,bool $fill=true): string {return $r.' '.$g.' '.$b.' '.($fill?'rg':'RG');}
  public function wrap(string $text,int $chars): array {$words=preg_split('/\s+/u',trim($text))?:[];$lines=[];$line='';foreach($words as $w){$try=$line===''?$w:$line.' '.$w;if((function_exists('mb_strlen')?mb_strlen($try,'UTF-8'):strlen($try))>$chars&&$line!==''){$lines[]=$line;$line=$w;}else$line=$try;}if($line!=='')$lines[]=$line;return $lines;}
- public function output(string $filename): void {
+ public function output(string $filename, string $disposition='attachment'): void {
   $objs=[];$objs[1]='<< /Type /Catalog /Pages 2 0 R >>';$objs[3]='<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';$objs[4]='<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';$objs[5]='<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>';$objs[6]='<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold /Encoding /WinAnsiEncoding >>';
   $pageObjMap=[];
   $nextObj=7;
@@ -117,7 +117,8 @@ final class SimplePdf {
   $objs[2]='<< /Type /Pages /Kids ['.implode(' ',$kids).'] /Count '.count($kids).' >>';ksort($objs);$pdf="%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";$offset=[0=>0];foreach($objs as $num=>$body){$offset[$num]=strlen($pdf);$pdf.=$num." 0 obj\n".$body."\nendobj\n";}$xref=strlen($pdf);$max=max(array_keys($objs));$pdf.="xref\n0 ".($max+1)."\n0000000000 65535 f \n";for($i=1;$i<=$max;$i++)$pdf.=sprintf('%010d 00000 n ',(int)($offset[$i]??0))."\n";$pdf.='trailer << /Size '.($max+1).' /Root 1 0 R >>' . "\nstartxref\n$xref\n%%EOF";
   if(!headers_sent()){
       header('Content-Type: application/pdf');
-      header('Content-Disposition: attachment; filename="'.$filename.'"');
+      $disp = strtolower($disposition) === 'inline' ? 'inline' : 'attachment';
+      header('Content-Disposition: '.$disp.'; filename="'.$filename.'"');
       header('Content-Length: '.strlen($pdf));
   }
   echo $pdf;
