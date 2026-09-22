@@ -60,7 +60,6 @@ function page_header(string $title): void {
   echo '<!doctype html><html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#ffffff"><title>'.h($title).' · HSG Whisky</title><link rel="stylesheet" href="assets/style.css?v='.rawurlencode(app_version()).'"></head><body>';
   echo '<a class="skip-link" href="#main-content">Spring til hovedindhold</a>';
   echo '<header class="top"><a class="brand" href="'.h(actor_home_url()).'"><span class="brandmark" aria-hidden="true">🥃</span><span><strong>HSG Whisky</strong><small>'.h($platformName).'</small></span></a>';
-  echo '<div class="global-search-wrap"><input type="search" id="globalSearchInput" placeholder="🔍 Søg produkt, SKU, brand, ref... (Ctrl+K)" aria-label="Global søgning / Command Palette" autocomplete="off"><div id="globalSearchResults" class="global-search-dropdown" hidden></div></div>';
   echo '<div class="top-actions">';
   echo '<button type="button" class="theme-toggle" id="themeToggleBtn" title="Skift tema (Lys / Mørk)" aria-label="Skift tema">🌓</button>';
   if(!$admin && (!function_exists('hsg_module_is_enabled') || hsg_module_is_enabled('catalog')) && can('catalog.view')) echo '<a class="catalog-top" href="catalog.php">Katalog</a>';
@@ -169,106 +168,6 @@ function page_footer(): void {
       }
     });
 
-    // Global Quick Search / Command Palette
-    var inp = document.getElementById("globalSearchInput");
-    var box = document.getElementById("globalSearchResults");
-    if(!inp || !box) return;
-
-    var timer = null;
-    var selectedIndex = -1;
-
-    function clearResults(){
-      box.hidden = true;
-      box.textContent = "";
-      selectedIndex = -1;
-    }
-
-    inp.addEventListener("input", function(){
-      clearTimeout(timer);
-      var q = inp.value.trim();
-      if(q.length < 2) { clearResults(); return; }
-      timer = setTimeout(function(){
-        fetch("core/bootstrap.php?action=quick_search&q=" + encodeURIComponent(q))
-          .then(function(res){ return res.json(); })
-          .then(function(data){
-            box.textContent = "";
-            selectedIndex = -1;
-            if(!data.results || !data.results.length) {
-              var empty = document.createElement("div");
-              empty.className = "global-search-item muted";
-              empty.textContent = "Ingen resultater fundet";
-              box.appendChild(empty);
-              box.hidden = false;
-              return;
-            }
-            data.results.forEach(function(r){
-              var a = document.createElement("a");
-              a.className = "global-search-item";
-              a.href = r.url;
-
-              var badge = document.createElement("span");
-              badge.className = "badge blue";
-              badge.textContent = r.type;
-
-              var title = document.createElement("strong");
-              title.textContent = r.title;
-
-              var sub = document.createElement("small");
-              sub.textContent = r.subtitle;
-
-              a.appendChild(badge);
-              a.appendChild(document.createTextNode(" "));
-              a.appendChild(title);
-              a.appendChild(sub);
-              box.appendChild(a);
-            });
-            box.hidden = false;
-          }).catch(function(){ clearResults(); });
-      }, 200);
-    });
-
-    // Keyboard navigation & shortcuts
-    document.addEventListener("keydown", function(e){
-      var activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : "";
-      var isEditing = activeTag === "input" || activeTag === "textarea" || activeTag === "select";
-
-      if((e.ctrlKey && e.key.toLowerCase() === "k") || (e.key === "/" && !isEditing)){
-        e.preventDefault();
-        inp.focus();
-        inp.select();
-        return;
-      }
-
-      if(e.key === "Escape"){
-        if(!box.hidden || document.activeElement === inp){
-          clearResults();
-          inp.blur();
-        }
-        return;
-      }
-
-      if(!box.hidden && document.activeElement === inp){
-        var items = box.querySelectorAll("a.global-search-item");
-        if(!items.length) return;
-
-        if(e.key === "ArrowDown"){
-          e.preventDefault();
-          selectedIndex = (selectedIndex + 1) % items.length;
-          items.forEach(function(it, idx){ it.classList.toggle("active", idx === selectedIndex); });
-        } else if(e.key === "ArrowUp"){
-          e.preventDefault();
-          selectedIndex = (selectedIndex - 1 + items.length) % items.length;
-          items.forEach(function(it, idx){ it.classList.toggle("active", idx === selectedIndex); });
-        } else if(e.key === "Enter" && selectedIndex >= 0 && items[selectedIndex]){
-          e.preventDefault();
-          items[selectedIndex].click();
-        }
-      }
-    });
-
-    document.addEventListener("click", function(e){
-      if(!inp.contains(e.target) && !box.contains(e.target)) clearResults();
-    });
   })();
   </script></body></html>';
 }
