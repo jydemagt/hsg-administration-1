@@ -194,7 +194,19 @@ button:disabled,.button:disabled,input[type="submit"]:disabled{opacity:0.65;curs
   .product-detail-fact{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)}
   .product-stock-detail{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);gap:4px}
 }
-.product-modal-image{width:100%;max-height:220px;object-fit:contain}
+.product-modal-image{width:100%;max-height:220px;object-fit:contain;cursor:zoom-in;position:relative}
+.product-modal-image img{width:100%;height:100%;object-fit:contain;border-radius:var(--radius-md);transition:transform .15s ease}
+.product-modal-image:hover img{transform:scale(1.03)}
+.product-modal-image::after{content:"🔍 Klik for stort billede";position:absolute;bottom:6px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.75);color:#fff;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:99px;white-space:nowrap;pointer-events:none;opacity:0.85}
+
+/* Standalone Image Lightbox Modal */
+.hsg-lightbox[hidden]{display:none!important}
+.hsg-lightbox{position:fixed;inset:0;z-index:2000;display:grid;place-items:center;padding:16px}
+.hsg-lightbox-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.9);backdrop-filter:blur(6px)}
+.hsg-lightbox-dialog{position:relative;z-index:1;max-width:92vw;max-height:92vh;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.hsg-lightbox-close{position:absolute;top:-18px;right:-18px;width:40px;height:40px;border-radius:50%;border:1px solid var(--line-strong);background:var(--bg-card);color:var(--text-main);font-size:24px;cursor:pointer;display:grid;place-items:center;box-shadow:var(--shadow-md);z-index:10}
+.hsg-lightbox-img{max-width:88vw;max-height:82vh;object-fit:contain;border-radius:var(--radius-md);box-shadow:var(--shadow-md)}
+.hsg-lightbox-caption{margin-top:10px;color:#fff;font-size:13px;font-weight:600;text-align:center;background:rgba(0,0,0,.6);padding:4px 12px;border-radius:var(--radius-pill)}
 .product-modal-titleline{display:flex;justify-content:space-between;align-items:flex-start;font-size:18px;font-weight:700;margin:0 0 6px 0;gap:10px}
 .product-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;margin:10px 0}
 .product-detail-fact{display:flex;justify-content:space-between;gap:8px}
