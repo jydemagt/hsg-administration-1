@@ -47,6 +47,10 @@ page_header('Overblik');
     <strong><?=$reservedQty?> flasker</strong>
     <span>Reserveret i alt</span>
   </a>
+  <a class="card metric quality-card-link" href="status.php">
+    <strong><?=$totalPhysicalPlusReserved?> stk.</strong>
+    <span>Samlet lager</span>
+  </a>
   <a class="card metric quality-card-link" href="system.php">
     <strong>✓ OK</strong>
     <span>Systemstatus</span>
