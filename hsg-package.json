@@ -2,7 +2,7 @@
     "product": "HSG Administration",
     "name": "hsg-administration",
     "package_type": "distribution",
-    "version": "11.0.4",
+    "version": "11.0.5",
     "min_php": "8.1.0",
     "required_extensions": [
         "pdo",
