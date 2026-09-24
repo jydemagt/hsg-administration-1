@@ -227,7 +227,7 @@ page_header('Produkter');
 <?php endforeach;?>
 </div>
 
-<div class="table-wrap desktop-only"><table><thead><tr><th>SKU</th><th>Produkt</th><th>Brand</th><th>Lager (Fysisk / Res / Disp)</th><th>Priser</th><th style="text-align:center;">Nyhed</th><th style="text-align:center;">Katalog</th><th style="text-align:center;">Status</th><?php if(is_admin()):?><th></th><?php endif;?></tr></thead><tbody>
+<div class="table-wrap desktop-only"><table class="products-table"><thead><tr><th class="col-sku">SKU</th><th class="col-product">Produkt</th><th class="col-brand">Brand</th><th class="col-stock">Lager</th><th class="col-prices">Priser</th><th class="col-flag" style="text-align:center;">Nyhed</th><th class="col-flag" style="text-align:center;">Katalog</th><th class="col-status" style="text-align:center;">Status</th><?php if(is_admin()):?><th class="col-action" style="text-align:right;">Handling</th><?php endif;?></tr></thead><tbody>
 <?php foreach($products as $p):
   $phys=(int)$p['physical_total'];
   $resQty=(int)($p['reserved_total']??0);
@@ -235,32 +235,37 @@ page_header('Produkter');
   $isNegative=($phys<0||(int)$p['negative_locations']>0);
 ?>
 <tr class="<?=$isNegative?'validation-flagged-row':''?>">
-  <td><strong><?=h($p['sku'])?></strong></td>
-  <td>
+  <td class="col-sku"><strong><?=h($p['sku'])?></strong></td>
+  <td class="col-product">
     <div class="product-row">
-      <img class="product-thumb" src="<?=h(product_image_url($p['image_path']))?>" alt="<?=h($p['name'])?>">
-      <div>
+      <div class="product-thumb-frame">
+        <img class="product-thumb" src="<?=h(product_image_url($p['image_path']))?>" alt="<?=h($p['name'])?>">
+      </div>
+      <div class="product-info">
         <div class="product-title"><?=h($p['name'])?><?php if(!empty($p['call_name'])):?> <small class="muted">(<?=h($p['call_name'])?>)</small><?php endif;?></div>
-        <span class="product-meta"><?=h($p['distillery'])?><?=!empty($p['vintage_year'])?' · '.intval($p['vintage_year']):''?><?=!empty($p['age_text'])?' · '.h($p['age_text']):''?><?=($p['abv']!==null?' · '.h(rtrim(rtrim(number_format((float)$p['abv'],2,',',''),'0'),',')).'%':'')?><?=!empty($p['cask_number'])?' · Fad #'.h($p['cask_number']):' · Fadnr. mangler'?></span>
+        <div class="product-meta"><?=h($p['distillery'])?><?=!empty($p['vintage_year'])?' · '.intval($p['vintage_year']):''?><?=!empty($p['age_text'])?' · '.h($p['age_text']):''?><?=($p['abv']!==null?' · '.h(rtrim(rtrim(number_format((float)$p['abv'],2,',',''),'0'),',')).'%':'')?><?=!empty($p['cask_number'])?' · Fad #'.h($p['cask_number']):' · Fadnr. mangler'?></div>
       </div>
     </div>
   </td>
-  <td><?=h($p['brand_name']??'–')?></td>
-  <td>
-    <div style="font-size:1.05rem; font-weight:800; color:<?=$avail<0?'#b42318':($avail>0?'#067647':'#667085')?>;">Disp: <?=$avail?> stk.</div>
-    <small class="muted">Fysisk: <?=$phys?> · Res: <?=$resQty?></small>
-    <?php if((int)$p['negative_locations']>0):?><br><small style="color:#b42318; font-weight:600;"><?=intval($p['negative_locations'])?> lokation(er) under 0</small><?php endif;?>
+  <td class="col-brand"><?=h($p['brand_name']??'–')?></td>
+  <td class="col-stock">
+    <div class="stock-avail-line" style="font-weight:700; color:<?=$avail<0?'#b42318':($avail>0?'#067647':'#667085')?>;">Disponibelt: <?=$avail?> stk.</div>
+    <div class="stock-sub-line muted" style="font-size:12px;">Fysisk: <?=$phys?> · Res: <?=$resQty?></div>
+    <?php if((int)$p['negative_locations']>0):?><div class="stock-neg-line" style="color:#b42318; font-weight:600; font-size:11px;"><?=intval($p['negative_locations'])?> lokation(er) under 0</div><?php endif;?>
   </td>
-  <td><span class="muted">Engros:</span> <?=money_dkk($p['wholesale_price'])?><br><span class="muted">Udsalg:</span> <?=money_dkk($p['retail_price'])?></td>
-  <td style="text-align:center;"><form method="post" style="margin:0;display:inline;"><?=csrf_field()?><input type="hidden" name="action" value="toggle_flag"><input type="hidden" name="id" value="<?=$p['id']?>"><input type="hidden" name="field" value="is_new"><input type="checkbox" name="value" value="1" <?=$p['is_new']?'checked':''?> onchange="toggleProductFlag(this)" <?=is_admin()?'':'disabled'?>></form></td>
-  <td style="text-align:center;"><form method="post" style="margin:0;display:inline;"><?=csrf_field()?><input type="hidden" name="action" value="toggle_flag"><input type="hidden" name="id" value="<?=$p['id']?>"><input type="hidden" name="field" value="show_in_catalog"><input type="checkbox" name="value" value="1" <?=$p['show_in_catalog']?'checked':''?> onchange="toggleProductFlag(this)" <?=is_admin()?'':'disabled'?>></form></td>
-  <td style="text-align:center;"><span class="badge <?=$p['status']==='active'?'green':($p['status']==='inactive'?'blue':'')?>"><?=h(product_status_label($p['status']))?></span></td>
+  <td class="col-prices" style="font-size:13px; white-space:nowrap;">
+    <div><span class="muted">Engros:</span> <?=money_dkk($p['wholesale_price'])?></div>
+    <div><span class="muted">Udsalg:</span> <?=money_dkk($p['retail_price'])?></div>
+  </td>
+  <td class="col-flag" style="text-align:center;"><form method="post" style="margin:0;display:inline;"><?=csrf_field()?><input type="hidden" name="action" value="toggle_flag"><input type="hidden" name="id" value="<?=$p['id']?>"><input type="hidden" name="field" value="is_new"><input type="checkbox" name="value" value="1" <?=$p['is_new']?'checked':''?> onchange="toggleProductFlag(this)" <?=is_admin()?'':'disabled'?>></form></td>
+  <td class="col-flag" style="text-align:center;"><form method="post" style="margin:0;display:inline;"><?=csrf_field()?><input type="hidden" name="action" value="toggle_flag"><input type="hidden" name="id" value="<?=$p['id']?>"><input type="hidden" name="field" value="show_in_catalog"><input type="checkbox" name="value" value="1" <?=$p['show_in_catalog']?'checked':''?> onchange="toggleProductFlag(this)" <?=is_admin()?'':'disabled'?>></form></td>
+  <td class="col-status" style="text-align:center;"><span class="badge <?=$p['status']==='active'?'green':($p['status']==='inactive'?'blue':'')?>"><?=h(product_status_label($p['status']))?></span></td>
   <?php if(is_admin()):?>
-  <td>
-    <div class="actions">
+  <td class="col-action" style="text-align:right;">
+    <div class="actions" style="justify-content:flex-end;">
       <a class="button secondary small" href="product_edit.php?id=<?=$p['id']?>">Rediger</a>
       <?php if($isNegative):?>
-      <form method="post" onsubmit="return confirm('Slet <?=h(addslashes($p['name']))?> permanent? Historiske lagerbevægelser og afsluttede reservationer for produktet slettes også.');"><?=csrf_field()?><input type="hidden" name="action" value="delete_negative"><input type="hidden" name="id" value="<?=$p['id']?>"><button type="submit" class="danger small" <?=((int)$p['active_reservations']>0)?'disabled title="Produktet har aktive reservationer"':''?>>Slet produkt</button></form>
+      <form method="post" style="margin:0;" onsubmit="return confirm('Slet <?=h(addslashes($p['name']))?> permanent? Historiske lagerbevægelser og afsluttede reservationer for produktet slettes også.');"><?=csrf_field()?><input type="hidden" name="action" value="delete_negative"><input type="hidden" name="id" value="<?=$p['id']?>"><button type="submit" class="danger small" <?=((int)$p['active_reservations']>0)?'disabled title="Produktet har aktive reservationer"':''?>>Slet produkt</button></form>
       <?php endif;?>
     </div>
   </td>
