@@ -8,7 +8,14 @@ final class SimplePdf {
  public function addLink(int $fromPage, float $x1, float $y1, float $x2, float $y2, int $toPage): void {
   $this->links[]=['from'=>max(1,$fromPage),'to'=>max(1,$toPage),'x1'=>$x1,'y1'=>$y1,'x2'=>$x2,'y2'=>$y2];
  }
- private function esc(string $s): string {$s=iconv('UTF-8','Windows-1252//TRANSLIT',$s)?:$s;return str_replace(['\\','(',')'],['\\\\','\\(','\\)'],$s);}
+ private function esc(string $s): string {
+  if (function_exists('iconv')) {
+   $s = iconv('UTF-8', 'Windows-1252//TRANSLIT', $s) ?: $s;
+  } elseif (function_exists('mb_convert_encoding')) {
+   $s = mb_convert_encoding($s, 'Windows-1252', 'UTF-8');
+  }
+  return str_replace(['\\','(',')'],['\\\\','\\(','\\)'],$s);
+ }
  private function imgObj(string $path): ?array {
   if(!is_file($path))return null;
   $info=@getimagesize($path);
@@ -16,34 +23,38 @@ final class SimplePdf {
 
   // Handle PNG images with 8-bit Alpha channel using PDF /SMask Soft Mask
   if($info[2]===IMAGETYPE_PNG && function_exists('imagecreatefrompng') && function_exists('gzcompress')){
-   $src=@imagecreatefrompng($path);
-   if($src){
-    $w=imagesx($src);$h=imagesy($src);
-    $rgbData='';$alphaData='';
-    for($y=0;$y<$h;$y++){
-     for($x=0;$x<$w;$x++){
-      $rgba=imagecolorat($src,$x,$y);
-      $r=($rgba>>16)&0xFF;
-      $g=($rgba>>8)&0xFF;
-      $b=$rgba&0xFF;
-      $a=($rgba>>24)&0x7F;
-      // Convert 7-bit GD alpha (0=opaque, 127=transparent) to PDF 8-bit alpha (255=opaque, 0=transparent)
-      $alphaByte=(int)round((127 - $a) * 255 / 127);
-      $rgbData.=chr($r).chr($g).chr($b);
-      $alphaData.=chr($alphaByte);
+   try {
+    $src=@imagecreatefrompng($path);
+    if($src){
+     $w=imagesx($src);$h=imagesy($src);
+     $rgbData='';$alphaData='';
+     for($y=0;$y<$h;$y++){
+      for($x=0;$x<$w;$x++){
+       $rgba=imagecolorat($src,$x,$y);
+       $r=($rgba>>16)&0xFF;
+       $g=($rgba>>8)&0xFF;
+       $b=$rgba&0xFF;
+       $a=($rgba>>24)&0x7F;
+       // Convert 7-bit GD alpha (0=opaque, 127=transparent) to PDF 8-bit alpha (255=opaque, 0=transparent)
+       $alphaByte=(int)round((127 - $a) * 255 / 127);
+       $rgbData.=chr($r).chr($g).chr($b);
+       $alphaData.=chr($alphaByte);
+      }
      }
-    }
-    imagedestroy($src);
-    $rgbStream=gzcompress($rgbData);
-    $alphaStream=gzcompress($alphaData);
+     imagedestroy($src);
+     $rgbStream=gzcompress($rgbData);
+     $alphaStream=gzcompress($alphaData);
 
-    return [
-     'is_png_smask'=>true,
-     'w'=>$w,
-     'h'=>$h,
-     'rgbStream'=>$rgbStream,
-     'alphaStream'=>$alphaStream
-    ];
+     return [
+      'is_png_smask'=>true,
+      'w'=>$w,
+      'h'=>$h,
+      'rgbStream'=>$rgbStream,
+      'alphaStream'=>$alphaStream
+     ];
+    }
+   } catch(Throwable $e) {
+    // Fail gracefully to fallback placeholder if GD image processing throws an exception
    }
   }
 
@@ -115,14 +126,17 @@ final class SimplePdf {
       $kids[]=$pageObj.' 0 R';
   }
   $objs[2]='<< /Type /Pages /Kids ['.implode(' ',$kids).'] /Count '.count($kids).' >>';ksort($objs);$pdf="%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";$offset=[0=>0];foreach($objs as $num=>$body){$offset[$num]=strlen($pdf);$pdf.=$num." 0 obj\n".$body."\nendobj\n";}$xref=strlen($pdf);$max=max(array_keys($objs));$pdf.="xref\n0 ".($max+1)."\n0000000000 65535 f \n";for($i=1;$i<=$max;$i++)$pdf.=sprintf('%010d 00000 n ',(int)($offset[$i]??0))."\n";$pdf.='trailer << /Size '.($max+1).' /Root 1 0 R >>' . "\nstartxref\n$xref\n%%EOF";
-  if(!headers_sent()){
+  if (!headers_sent()) {
+      if (ob_get_length()) {
+          @ob_clean();
+      }
       header('Content-Type: application/pdf');
       $disp = strtolower($disposition) === 'inline' ? 'inline' : 'attachment';
       header('Content-Disposition: '.$disp.'; filename="'.$filename.'"');
       header('Content-Length: '.strlen($pdf));
   }
   echo $pdf;
-  if(php_sapi_name()==='cli'){ return; }
+  if (php_sapi_name() === 'cli') { return; }
   exit;
  }
 }
