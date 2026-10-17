@@ -16,34 +16,38 @@ final class SimplePdf {
 
   // Handle PNG images with 8-bit Alpha channel using PDF /SMask Soft Mask
   if($info[2]===IMAGETYPE_PNG && function_exists('imagecreatefrompng') && function_exists('gzcompress')){
-   $src=@imagecreatefrompng($path);
-   if($src){
-    $w=imagesx($src);$h=imagesy($src);
-    $rgbData='';$alphaData='';
-    for($y=0;$y<$h;$y++){
-     for($x=0;$x<$w;$x++){
-      $rgba=imagecolorat($src,$x,$y);
-      $r=($rgba>>16)&0xFF;
-      $g=($rgba>>8)&0xFF;
-      $b=$rgba&0xFF;
-      $a=($rgba>>24)&0x7F;
-      // Convert 7-bit GD alpha (0=opaque, 127=transparent) to PDF 8-bit alpha (255=opaque, 0=transparent)
-      $alphaByte=(int)round((127 - $a) * 255 / 127);
-      $rgbData.=chr($r).chr($g).chr($b);
-      $alphaData.=chr($alphaByte);
+   try {
+    $src=@imagecreatefrompng($path);
+    if($src){
+     $w=imagesx($src);$h=imagesy($src);
+     $rgbData='';$alphaData='';
+     for($y=0;$y<$h;$y++){
+      for($x=0;$x<$w;$x++){
+       $rgba=imagecolorat($src,$x,$y);
+       $r=($rgba>>16)&0xFF;
+       $g=($rgba>>8)&0xFF;
+       $b=$rgba&0xFF;
+       $a=($rgba>>24)&0x7F;
+       // Convert 7-bit GD alpha (0=opaque, 127=transparent) to PDF 8-bit alpha (255=opaque, 0=transparent)
+       $alphaByte=(int)round((127 - $a) * 255 / 127);
+       $rgbData.=chr($r).chr($g).chr($b);
+       $alphaData.=chr($alphaByte);
+      }
      }
-    }
-    imagedestroy($src);
-    $rgbStream=gzcompress($rgbData);
-    $alphaStream=gzcompress($alphaData);
+     imagedestroy($src);
+     $rgbStream=gzcompress($rgbData);
+     $alphaStream=gzcompress($alphaData);
 
-    return [
-     'is_png_smask'=>true,
-     'w'=>$w,
-     'h'=>$h,
-     'rgbStream'=>$rgbStream,
-     'alphaStream'=>$alphaStream
-    ];
+     return [
+      'is_png_smask'=>true,
+      'w'=>$w,
+      'h'=>$h,
+      'rgbStream'=>$rgbStream,
+      'alphaStream'=>$alphaStream
+     ];
+    }
+   } catch(Throwable $e) {
+    // Fail gracefully to fallback placeholder if GD image processing throws an exception
    }
   }
 
