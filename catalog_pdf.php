@@ -1,6 +1,8 @@
 <?php
 require __DIR__.'/auth.php';
 require_module_enabled('catalog');require_capability('catalog.view');
+@ini_set('memory_limit', '256M');
+@set_time_limit(120);
 require_once __DIR__.'/pdf_simple.php';require_once __DIR__.'/core/catalog_layout.php';
 
 $price=(($_GET['price']??'retail')==='wholesale')?'wholesale':'retail';
