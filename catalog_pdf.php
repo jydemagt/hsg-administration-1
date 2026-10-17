@@ -3,30 +3,6 @@ require __DIR__.'/auth.php';
 require_module_enabled('catalog');require_capability('catalog.view');
 @ini_set('memory_limit', '256M');
 @set_time_limit(120);
-
-// Setup PDF diagnostic logging & safe fatal shutdown handler
-$pdfRequestId = 'pdf_' . bin2hex(random_bytes(6));
-register_shutdown_function(static function() use ($pdfRequestId): void {
-    $err = error_get_last();
-    if ($err !== null && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) {
-        error_log(sprintf('[HSG PDF Error][%s] Fatal Error: %s in %s on line %d', $pdfRequestId, $err['message'], $err['file'], $err['line']));
-        if (!headers_sent()) {
-            http_response_code(500);
-            header('Content-Type: text/plain; charset=utf-8');
-            echo 'Der opstod en fejl ved generering af PDF-kataloget. Kontakt administrator (Fejl-ID: ' . $pdfRequestId . ').';
-        }
-    }
-});
-
-set_exception_handler(static function(Throwable $e) use ($pdfRequestId): void {
-    error_log(sprintf('[HSG PDF Exception][%s] %s: %s in %s:%d', $pdfRequestId, get_class($e), $e->getMessage(), $e->getFile(), $e->getLine()));
-    if (!headers_sent()) {
-        http_response_code(500);
-        header('Content-Type: text/plain; charset=utf-8');
-        echo 'Der opstod en fejl ved generering af PDF-kataloget. Kontakt administrator (Fejl-ID: ' . $pdfRequestId . ').';
-    }
-});
-
 require_once __DIR__.'/pdf_simple.php';require_once __DIR__.'/core/catalog_layout.php';
 
 $price=(($_GET['price']??'retail')==='wholesale')?'wholesale':'retail';
