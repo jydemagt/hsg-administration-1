@@ -80,10 +80,17 @@ function hsg_catalog_prepare_image(?string $relativePath): array {
     $target=$cacheDir.'/'.$filename;
     $web='uploads/catalog-crops/'.$filename;
     if(is_file($target) && @filesize($target)>1000) return ['path'=>$target,'web'=>$web,'cropped'=>true];
+    // Without a writable cache the crop would be recomputed (and thrown away) on every PDF request.
+    if(!is_writable($cacheDir)) return $fallback;
+
+    // Decoding a huge upload can exhaust memory_limit and take the whole catalogue down with a 500.
+    $info=@getimagesize($source);if(!$info||$info[0]<=0||$info[1]<=0)return $fallback;
+    $limit=hsg_catalog_ini_bytes((string)ini_get('memory_limit'));
+    if($limit>0 && memory_get_usage(true)+$info[0]*$info[1]*6+(int)@filesize($source)*2>$limit*0.8) return $fallback;
 
     $bytes=@file_get_contents($source);if($bytes===false||$bytes==='')return $fallback;
-    $src=@imagecreatefromstring($bytes);if(!$src)return $fallback;
-    $w=imagesx($src);$h=imagesy($src);if($w<40||$h<40){imagedestroy($src);return $fallback;}
+    $src=@imagecreatefromstring($bytes);unset($bytes);if(!$src)return $fallback;
+    $w=imagesx($src);$h=imagesy($src);if($w<40||$h<40)return $fallback;
 
     // Use the four corners as the background reference. Catalogue bottle
     // photography is normally on white/off-white, but this also tolerates a
@@ -92,7 +99,9 @@ function hsg_catalog_prepare_image(?string $relativePath): array {
     foreach($corners as [$cx,$cy]){$rgb=imagecolorat($src,$cx,$cy);$br+=($rgb>>16)&255;$bg+=($rgb>>8)&255;$bb+=$rgb&255;}
     $br/=4;$bg/=4;$bb/=4;
     $nearWhite=$br>225&&$bg>225&&$bb>225;$threshold=$nearWhite?34:58;
-    $minX=$w;$minY=$h;$maxX=-1;$maxY=-1;$step=max(1,(int)floor(max($w,$h)/1100));
+    // Sampling ~300 points along the long edge is plenty to find the bottle and keeps the
+    // per-pixel PHP loop fast (a full-resolution scan timed out on catalogues with many images).
+    $minX=$w;$minY=$h;$maxX=-1;$maxY=-1;$step=max(1,(int)floor(max($w,$h)/300));
     for($y=0;$y<$h;$y+=$step){
         for($x=0;$x<$w;$x+=$step){
             $rgb=imagecolorat($src,$x,$y);$r=($rgb>>16)&255;$g=($rgb>>8)&255;$b=$rgb&255;
@@ -105,13 +114,13 @@ function hsg_catalog_prepare_image(?string $relativePath): array {
             if($foreground){$minX=min($minX,$x);$minY=min($minY,$y);$maxX=max($maxX,$x);$maxY=max($maxY,$y);}
         }
     }
-    if($maxX<$minX||$maxY<$minY){imagedestroy($src);return $fallback;}
+    if($maxX<$minX||$maxY<$minY)return $fallback;
 
     // Expand a little so bottle edges/corks are never clipped, but avoid the
     // large white margins from the source catalogue image.
     $boxW=$maxX-$minX+1;$boxH=$maxY-$minY+1;
-    if($boxW<$w*.04||$boxH<$h*.12){imagedestroy($src);return $fallback;}
-    $padX=max(2,(int)round($boxW*.025));$padY=max(2,(int)round($boxH*.018));
+    if($boxW<$w*.04||$boxH<$h*.12)return $fallback;
+    $padX=max(2,(int)round($boxW*.025))+$step;$padY=max(2,(int)round($boxH*.018))+$step;
     $minX=max(0,$minX-$padX);$maxX=min($w-1,$maxX+$padX);$minY=max(0,$minY-$padY);$maxY=min($h-1,$maxY+$padY);
     $cropW=$maxX-$minX+1;$cropH=$maxY-$minY+1;
 
@@ -120,9 +129,14 @@ function hsg_catalog_prepare_image(?string $relativePath): array {
     $outW=max(1,(int)round($cropW*$scale));$outH=max(1,(int)round($cropH*$scale));
     $canvas=imagecreatetruecolor($outW,$outH);$white=imagecolorallocate($canvas,255,255,255);imagefill($canvas,0,0,$white);
     imagecopyresampled($canvas,$src,0,0,$minX,$minY,$outW,$outH,$cropW,$cropH);
-    $saved=@imagejpeg($canvas,$target,92);imagedestroy($canvas);imagedestroy($src);
+    $saved=@imagejpeg($canvas,$target,92);
     if(!$saved||!is_file($target))return $fallback;
     return ['path'=>$target,'web'=>$web,'cropped'=>true];
+}
+/** Converts php.ini sizes such as "128M" to bytes; -1 (unlimited) or garbage returns 0. */
+function hsg_catalog_ini_bytes(string $value): int {
+    $value=trim($value);if($value===''||$value==='-1'||!preg_match('/^(\d+)\s*([kmg]?)/i',$value,$m))return 0;
+    return (int)$m[1]*match(strtolower($m[2])){'g'=>1073741824,'m'=>1048576,'k'=>1024,default=>1};
 }
 function hsg_catalog_image_path(?string $relativePath): ?string {return hsg_catalog_prepare_image($relativePath)['path'];}
 function hsg_catalog_image_url(?string $relativePath): ?string {return hsg_catalog_prepare_image($relativePath)['web'];}
@@ -150,7 +164,8 @@ function hsg_catalog_product_title(array $p): string {
         $distillery=trim((string)($p['name']??''));
     }
     $vintage=$p['vintage_year']?intval($p['vintage_year']):null;
-    $age=trim((string)($p['age_text']??''));
+    // "12 år." from imports would otherwise end up as "12 år. – 55 %" in the title.
+    $age=rtrim(trim((string)($p['age_text']??'')),'. ');
     $abv=$p['abv']!==null?hsg_catalog_abv($p['abv']):'';
 
     $parts=[];
@@ -160,7 +175,9 @@ function hsg_catalog_product_title(array $p): string {
     }
     $parts[]=$distPart;
     if($age!=='' && $age!=='N/A'){
-        if(preg_match('/\b(?:år|years?|yr|yrs)\b/i',$age)){
+        // The /u flag is required: without it "å" is not a word character, \b never matches
+        // and every Danish age got a second "år" appended ("12 år år").
+        if(preg_match('/\b(?:år|years?|yr|yrs)\b/iu',$age)){
             $parts[]=$age;
         } else {
             $parts[]=$age.' år';
