@@ -152,7 +152,7 @@ function hsg_supplier_match_score(array $src,array $p): array {
 function hsg_supplier_find_match(array $src,array $products,?int $brandId=null,?PDO $pdo=null): array {
     $sku=trim((string)($src['sku']??''));
     if($pdo && $sku!=='' && db_table_exists($pdo,'hsg_supplier_sku_aliases')){
-        $stA=$pdo->prepare('SELECT product_id FROM hsg_supplier_sku_aliases WHERE supplier_sku=? LIMIT 1');
+        $stA=$pdo->prepare('SELECT product_id FROM hsg_supplier_sku_aliases WHERE supplier_sku=? ORDER BY id DESC LIMIT 1');
         $stA->execute([$sku]);
         $aliasPid=(int)($stA->fetchColumn()?:0);
         if($aliasPid>0){
@@ -170,20 +170,59 @@ function hsg_supplier_find_match(array $src,array $products,?int $brandId=null,?
     return $best;
 }
 
-function hsg_supplier_suggest_columns(array $headers, array $savedHeaderMap = []): array {
+/**
+ * Nøgle pr. kolonne, som kolonnevalget huskes under: den normaliserede overskrift.
+ * Gentages en overskrift i samme fil, får anden forekomst "|2", tredje "|3" osv.
+ */
+function hsg_supplier_header_keys(array $headers): array {
+    $keys=[];$seen=[];
+    foreach($headers as $ci=>$cell){
+        $n=hsg_supplier_norm((string)$cell);
+        if($n===''){$keys[(int)$ci]='';continue;}
+        $seen[$n]=($seen[$n]??0)+1;
+        $keys[(int)$ci]=$seen[$n]>1?$n.'|'.$seen[$n]:$n;
+    }
+    return $keys;
+}
+
+function hsg_supplier_saved_columns(PDO $pdo): array {
+    $saved=json_decode(trim((string)setting_get($pdo,'supplier_import_header_map','')),true);
+    return is_array($saved)?$saved:[];
+}
+
+/** Gemmer kolonnevalget fra seneste upload (overskrift → HSG-felt, '' = ignoreret) i hsg_settings. */
+function hsg_supplier_remember_columns(PDO $pdo, array $headers, array $colMap): void {
+    $map=[];
+    foreach(hsg_supplier_header_keys($headers) as $ci=>$key){
+        if($key===''||!array_key_exists($ci,$colMap))continue;
+        $map[$key]=trim((string)$colMap[$ci]);
+    }
+    if($map)setting_set($pdo,'supplier_import_header_map',json_encode($map,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_FORCE_OBJECT));
+}
+
+/**
+ * Foreslår HSG-felt pr. kolonne. Kolonner, hvis overskrift fandtes i seneste upload, får præcis
+ * det valg, der blev brugt sidst – også "Ignorer kolonne". Kun nye overskrifter gættes automatisk,
+ * og felter, der bevidst stod uden kolonne sidst, gættes ikke igen.
+ */
+function hsg_supplier_suggest_columns(array $headers, array $savedHeaderMap = [], ?array $allowedFields = null): array {
     $aliases=hsg_supplier_aliases();$reverse=[];
     foreach($aliases as $field=>$names)foreach($names as $n)$reverse[hsg_supplier_norm($n)]=$field;
+    $isAllowed=static fn(string $f): bool => $allowedFields!==null ? in_array($f,$allowedFields,true) : (isset($aliases[$f])||str_starts_with($f,'stock_loc_'));
     $colMap=[];$usedFields=[];
+    foreach(hsg_supplier_header_keys($headers) as $ci=>$key){
+        if($key===''||!array_key_exists($key,$savedHeaderMap))continue;
+        $savedField=trim((string)$savedHeaderMap[$key]);
+        if($savedField===''){$colMap[$ci]='';continue;}
+        if($isAllowed($savedField)&&!in_array($savedField,$usedFields,true)){$colMap[$ci]=$savedField;$usedFields[]=$savedField;}
+    }
+    $mappedLast=array_filter(array_map(static fn($f)=>trim((string)$f),$savedHeaderMap),static fn($f)=>$f!=='');
+    $blocked=$savedHeaderMap?array_diff(array_keys($aliases),$mappedLast):[];
     foreach($headers as $ci=>$cell){
         $ci=(int)$ci;
+        if(array_key_exists($ci,$colMap))continue;
         $cell=trim((string)$cell);if($cell===''){$colMap[$ci]='';continue;}
         $n=hsg_supplier_norm($cell);
-        $savedField=isset($savedHeaderMap[$n])?trim((string)$savedHeaderMap[$n]):(isset($savedHeaderMap[$ci])?trim((string)$savedHeaderMap[$ci]):'');
-        if($savedField!=='' && (isset($aliases[$savedField]) || $savedField==='' || str_starts_with($savedField,'stock_loc_')) && !in_array($savedField,$usedFields,true)){
-            $usedFields[]=$savedField;
-            $colMap[$ci]=$savedField;
-            continue;
-        }
         $matched=null;
         if(isset($reverse[$n])){$matched=$reverse[$n];}
         else{
@@ -194,79 +233,130 @@ function hsg_supplier_suggest_columns(array $headers, array $savedHeaderMap = []
                 }
             }
         }
-        if($matched && !in_array($matched,$usedFields,true)){
+        if($matched && !in_array($matched,$usedFields,true) && !in_array($matched,$blocked,true)){
             $usedFields[]=$matched;
             $colMap[$ci]=$matched;
         } else {
             $colMap[$ci]='';
         }
     }
+    ksort($colMap);
     return $colMap;
 }
 
+/**
+ * Varenummer uden bogstav-endelse: "17-1028a" → "17-1028". Kun ét bogstav direkte efter et tal
+ * tæller som variant. Andre varenumre returneres uændret (med store bogstaver).
+ */
 function hsg_supplier_base_sku(string $sku): string {
     $s=strtoupper(trim($sku));if($s==='')return '';
-    if(preg_match('/^([A-Z0-9\-_]+?)[_\-\s]*[A-Z]$/i',$s,$m)&&strlen($m[1])>=3)return $m[1];
+    if(preg_match('/^(.*\d)[A-Z]$/',$s,$m)&&strlen($m[1])>=3)return $m[1];
     return $s;
 }
 
+/** Lægger en ekstra filrække oven i en primær række: lagerfelter summeres, øvrige felter udfylder kun tomme felter. */
+function hsg_supplier_merge_source(array $primary, array $extra): array {
+    foreach($extra as $k=>$v){
+        if($k==='stock_quantity'||str_starts_with($k,'stock_loc_')){$primary[$k]=(int)($primary[$k]??0)+(int)$v;continue;}
+        if((!isset($primary[$k])||trim((string)$primary[$k])==='')&&$v!==null&&trim((string)$v)!=='')$primary[$k]=$v;
+    }
+    return $primary;
+}
+
 function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $products, ?int $brandId = null, int $start = 1, ?PDO $pdo = null): array {
-    $byId = [];
-    foreach($products as $p) $byId[(int)$p['id']] = $p;
+    $byId = [];$bySku = [];
+    foreach($products as $p) {
+        $byId[(int)$p['id']] = $p;
+        $k = strtoupper(trim((string)($p['sku'] ?? '')));
+        if($k !== '') $bySku[$k][] = (int)$p['id'];
+    }
 
     $parsedRows = [];
     foreach($rawRows as $i => $row) {
         $src = hsg_supplier_source_fields((array)$row, $fieldMap);
         if(!$src || (empty($src['name']) && empty($src['sku']) && empty($src['cask_number']))) continue;
         $sku = trim((string)($src['sku'] ?? ''));
-        $baseSku = hsg_supplier_base_sku($sku);
         $parsedRows[] = [
             'original_row' => $start + 1 + $i,
             'src' => $src,
             'sku' => $sku,
-            'base_sku' => $baseSku
+            'sku_key' => strtoupper($sku),
+            'base_sku' => hsg_supplier_base_sku($sku)
         ];
     }
+    $fileSkus = [];
+    foreach($parsedRows as $pRow) if($pRow['sku_key'] !== '') $fileSkus[$pRow['sku_key']] = true;
 
-    $grouped = [];
+    // 1) Rækker med samme varenummer samles. En bogstav-variant (17-1028a) samles under varenummeret
+    //    uden bogstav (17-1028), men kun hvis det findes i filen eller i HSG. Ellers står varianten alene.
+    $baseMatches = [];$units = [];
     foreach($parsedRows as $pRow) {
-        $src = $pRow['src'];
-        $match = hsg_supplier_find_match($src, $products, $brandId, $pdo);
-        $pid = (int)$match['id'];
-
-        $groupKey = $pid > 0 ? "pid_{$pid}" : ($pRow['base_sku'] !== '' ? "sku_{$pRow['base_sku']}" : "row_{$pRow['original_row']}");
-
-        if (!isset($grouped[$groupKey])) {
-            $grouped[$groupKey] = [
-                'rows' => [$pRow['original_row']],
-                'source' => $src,
-                'match' => $match,
-            ];
-        } else {
-            $grouped[$groupKey]['rows'][] = $pRow['original_row'];
-            $existingSrc = $grouped[$groupKey]['source'];
-
-            if (isset($src['stock_quantity'])) {
-                $existingSrc['stock_quantity'] = (int)($existingSrc['stock_quantity'] ?? 0) + (int)$src['stock_quantity'];
+        $key = $pRow['sku_key'];
+        if($key !== '' && $pRow['base_sku'] !== $key) {
+            $base = $pRow['base_sku'];
+            if(!isset($fileSkus[$base]) && !array_key_exists($base, $baseMatches)) {
+                $baseMatches[$base] = hsg_supplier_find_match(['sku' => $base], $products, $brandId, $pdo);
             }
-
-            foreach ($src as $k => $v) {
-                if ($k === 'stock_quantity') continue;
-                if (str_starts_with($k, 'stock_loc_')) {
-                    $existingSrc[$k] = (int)($existingSrc[$k] ?? 0) + (int)$v;
-                    continue;
-                }
-                if ($v !== null && trim((string)$v) !== '') {
-                    $existingSrc[$k] = $v;
-                }
-            }
-
-            $newMatch = hsg_supplier_find_match($existingSrc, $products, $brandId);
-            if ($newMatch['score'] > $grouped[$groupKey]['match']['score']) {
-                $grouped[$groupKey]['match'] = $newMatch;
-            }
-            $grouped[$groupKey]['source'] = $existingSrc;
+            if(isset($fileSkus[$base]) || (int)($baseMatches[$base]['id'] ?? 0) > 0) $key = $base;
         }
+        $unitKey = $key !== '' ? 'sku_'.$key : 'row_'.$pRow['original_row'];
+        $units[$unitKey]['base'] = $key;
+        $units[$unitKey]['rows'][] = $pRow;
+    }
+
+    $merged = [];
+    foreach($units as $u) {
+        $rows = $u['rows'];$base = (string)$u['base'];
+        $primaryIdx = 0;
+        foreach($rows as $ri => $r) if($r['sku_key'] === $base) { $primaryIdx = $ri; break; }
+        $src = $rows[$primaryIdx]['src'];
+        $variants = [];
+        foreach($rows as $ri => $r) {
+            if($ri !== $primaryIdx) $src = hsg_supplier_merge_source($src, $r['src']);
+            if($r['sku_key'] !== $base && !isset($variants[$r['sku_key']])) $variants[$r['sku_key']] = $r['sku'];
+        }
+        $variants = array_values($variants);
+
+        if($base !== '' && !isset($fileSkus[$base])) {
+            // Kun bogstav-varianten står i filen, men varenummeret uden bogstav findes i HSG.
+            $match = $baseMatches[$base];
+            $match['reason'] = 'Varenummer '.$base.' findes i HSG – bogstav-varianten flettes ind';
+            $src['sku'] = (string)($byId[(int)$match['id']]['sku'] ?? $base);
+        } else {
+            $match = hsg_supplier_find_match($src, $products, $brandId, $pdo);
+        }
+        if((int)$match['id'] === 0) {
+            // Undgå dubletter: findes en bogstav-variant allerede som produkt i HSG, bruges det.
+            foreach($variants as $v) {
+                $vm = hsg_supplier_find_match(['sku' => $v], $products, $brandId, $pdo);
+                if((int)$vm['id'] > 0) { $match = ['id' => (int)$vm['id'], 'score' => 95, 'reason' => 'Matchet via bogstav-varianten '.$v.', som allerede findes i HSG']; break; }
+            }
+        }
+
+        $notes = [];
+        if($variants) $notes[] = 'Lagerantal fra '.implode(', ', $variants).' er lagt sammen med '.($src['sku'] ?? $base).'.';
+        foreach($variants as $v) {
+            foreach($bySku[strtoupper($v)] ?? [] as $vpid) {
+                if($vpid === (int)$match['id'] || ($byId[$vpid]['status'] ?? '') === 'discontinued') continue;
+                $notes[] = 'Bemærk: '.$v.' findes også som selvstændigt produkt i HSG (lager '.(int)($byId[$vpid]['stock_quantity'] ?? 0).' stk.). Det ændres ikke – sæt det som udgået, så lageret ikke tælles dobbelt.';
+            }
+        }
+        $merged[] = ['rows' => array_column($rows, 'original_row'), 'source' => $src, 'match' => $match, 'merged_skus' => $variants, 'notes' => $notes];
+    }
+
+    // 2) Enheder, der matcher samme HSG-produkt, flettes også (lagerantal lægges sammen).
+    $grouped = [];
+    foreach($merged as $mi => $m) {
+        $pid = (int)$m['match']['id'];
+        $groupKey = $pid > 0 ? 'pid_'.$pid : 'unit_'.$mi;
+        if(!isset($grouped[$groupKey])) { $grouped[$groupKey] = $m; continue; }
+        $g = $grouped[$groupKey];
+        $g['rows'] = array_merge($g['rows'], $m['rows']);
+        $g['source'] = hsg_supplier_merge_source($g['source'], $m['source']);
+        $g['merged_skus'] = array_values(array_unique(array_merge($g['merged_skus'], $m['merged_skus'])));
+        $g['notes'] = array_values(array_unique(array_merge($g['notes'], $m['notes'])));
+        if($m['match']['score'] > $g['match']['score']) $g['match'] = $m['match'];
+        $grouped[$groupKey] = $g;
     }
 
     $items = [];
@@ -278,6 +368,7 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
         if ($pid && isset($byId[$pid])) {
             $changes = hsg_supplier_changes_for_product($src, $byId[$pid]);
         }
+        sort($g['rows']);
         $rowLabel = count($g['rows']) > 1 ? '#' . implode(', #', $g['rows']) . ' (Flettet)' : '#' . $g['rows'][0];
 
         $totalStock = (int)($src['stock_quantity'] ?? 0);
@@ -296,6 +387,8 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
             'changes' => $changes,
             'total_stock' => $totalStock,
             'is_create_new' => $isCreateNew,
+            'merged_skus' => $g['merged_skus'],
+            'notes' => $g['notes'],
             'selected' => ($pid > 0 && $match['score'] >= 90 && count($changes) > 0) || $isCreateNew
         ];
     }
@@ -318,10 +411,14 @@ function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?i
     unset($p);
     $rows=$sheets[$bestSheet];$start=$bestHeader['row']+1;
     $headers=(array)$bestHeader['headers'];
-    $savedRaw=trim((string)setting_get($pdo,'supplier_import_header_map',''));
-    $savedColMap=json_decode($savedRaw,true);
-    if(!is_array($savedColMap))$savedColMap=[];
-    $colMap=hsg_supplier_suggest_columns($headers,$savedColMap);
+    $savedColMap=hsg_supplier_saved_columns($pdo);
+    $allowedFields=array_keys(hsg_supplier_aliases());
+    foreach($locs as $lid)$allowedFields[]='stock_loc_'.(int)$lid;
+    $colMap=hsg_supplier_suggest_columns($headers,$savedColMap,$allowedFields);
+    $remembered=[];
+    foreach(hsg_supplier_header_keys($headers) as $ci=>$key){
+        if($key!==''&&array_key_exists($key,$savedColMap)&&trim((string)$savedColMap[$key])===($colMap[$ci]??null))$remembered[]=$ci;
+    }
     $fieldMap=[];
     foreach($colMap as $ci=>$field){if($field!==''){$fieldMap[$field]=(int)$ci;}}
     $rawRows=array_values(array_slice($rows,$start,null,true));
@@ -334,6 +431,7 @@ function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?i
         'headers'=>$headers,
         'mapping'=>$fieldMap,
         'col_mapping'=>$colMap,
+        'col_remembered'=>$remembered,
         'raw_rows'=>$rawRows,
         'items'=>$items,
         'created_at'=>date('c'),
@@ -378,6 +476,7 @@ function hsg_supplier_recalculate_preview(PDO $pdo, array $preview, array $custo
 
     $preview['mapping'] = $fieldMap;
     $preview['col_mapping'] = $colMap;
+    $preview['col_remembered'] = [];
     $preview['items'] = $items;
     return $preview;
 }
@@ -584,6 +683,8 @@ function hsg_supplier_remember_alias(PDO $pdo, string $supplierSku, int $product
     $sku = trim($supplierSku);
     if ($sku === '' || $productId <= 0 || !db_table_exists($pdo, 'hsg_supplier_sku_aliases')) return;
     $normName = $supplierName ? hsg_supplier_norm($supplierName) : null;
+    // Unik nøgle er (supplier_sku, product_id) – fjern ældre kobling til et andet produkt, så nyeste valg gælder.
+    $pdo->prepare('DELETE FROM hsg_supplier_sku_aliases WHERE supplier_sku=? AND product_id<>?')->execute([$sku, $productId]);
     $st = $pdo->prepare('INSERT INTO hsg_supplier_sku_aliases (supplier_sku, supplier_name_norm, product_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE product_id=VALUES(product_id), supplier_name_norm=VALUES(supplier_name_norm)');
     $st->execute([$sku, $normName, $productId]);
 }

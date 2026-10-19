@@ -43,18 +43,6 @@ if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='uplo
         $name=(string)$_FILES['file']['name'];$ext=strtolower(pathinfo($name,PATHINFO_EXTENSION));if(!in_array($ext,['xlsx','csv'],true))throw new RuntimeException('Brug en Excel-fil (.xlsx) eller CSV-fil.');
         $sheets=$ext==='xlsx'?hsg_supplier_read_xlsx($_FILES['file']['tmp_name']):hsg_supplier_read_csv($_FILES['file']['tmp_name']);
         $brandId=(int)($_POST['brand_id']??0)?:null;$preview=hsg_supplier_prepare_preview($pdo,$sheets,$name,$brandId);$token=hsg_supplier_preview_save($preview);
-        if(!empty($preview['col_mapping']) && !empty($preview['headers'])){
-            $hdrMap = [];
-            foreach((array)$preview['headers'] as $ci => $hdr){
-                $normHdr = hsg_supplier_norm((string)$hdr);
-                if($normHdr !== '' && isset($preview['col_mapping'][$ci])){
-                    $hdrMap[$normHdr] = $preview['col_mapping'][$ci];
-                }
-            }
-            if($hdrMap){
-                setting_set($pdo,'supplier_import_header_map',json_encode($hdrMap,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
-            }
-        }
         audit_log($pdo,'supplier_import.preview','import',null,['filename'=>$name,'sheet'=>$preview['sheet'],'rows'=>count($preview['items']),'brand_id'=>$brandId]);
         redirect('supplier_upload.php?preview='.$token);
     }catch(Throwable $e){flash('error',$e->getMessage());redirect('supplier_upload.php');}
@@ -63,21 +51,11 @@ if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='uplo
 if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='remap'){
     try{
         $preview=hsg_supplier_preview_load($token);
-        $customMap=(array)($_POST['col_map']??[]);
+        $customMap=[];
+        foreach((array)($_POST['col_map']??[]) as $ci=>$field){$field=trim((string)$field);$customMap[(int)$ci]=array_key_exists($field,$assignableFields)?$field:'';}
         $preview=hsg_supplier_recalculate_preview($pdo,$preview,$customMap);
         hsg_supplier_preview_save($preview,$token);
-        if(!empty($preview['col_mapping']) && !empty($preview['headers'])){
-            $hdrMap = [];
-            foreach((array)$preview['headers'] as $ci => $hdr){
-                $normHdr = hsg_supplier_norm((string)$hdr);
-                if($normHdr !== '' && isset($preview['col_mapping'][$ci])){
-                    $hdrMap[$normHdr] = $preview['col_mapping'][$ci];
-                }
-            }
-            if($hdrMap){
-                setting_set($pdo,'supplier_import_header_map',json_encode($hdrMap,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
-            }
-        }
+        hsg_supplier_remember_columns($pdo,(array)($preview['headers']??[]),(array)($preview['col_mapping']??[]));
         flash('success','Kolonnemapping blev opdateret og preview er genberegnet.');
         redirect('supplier_upload.php?preview='.$token.'&remap=1');
     }catch(Throwable $e){flash('error','Kunne ikke genberegne mapping: '.$e->getMessage());redirect('supplier_upload.php'.($token?'?preview='.$token.'&remap=1':''));}
@@ -91,11 +69,13 @@ if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='appl
         foreach($selected as $idx){
             if(!isset($preview['items'][$idx]))continue;
             $item=$preview['items'][$idx];
+            $mergedSkus=array_values(array_filter(array_map('strval',(array)($item['merged_skus']??[])),static fn($s)=>trim($s)!==''));
             $postedVal=trim((string)($_POST['product_'.$idx]??''));
             if($postedVal==='create_new' || ($postedVal==='' && empty($item['match']['id']) && !empty($item['is_create_new']))){
                 $newPid=hsg_supplier_create_product($pdo,(array)$item['source']);
+                foreach($mergedSkus as $ms)hsg_supplier_remember_alias($pdo,$ms,$newPid,$item['source']['name']??null);
                 $created++;
-                $details[]=['product_id'=>$newPid,'action'=>'created','source_row'=>$item['row']];
+                $details[]=['product_id'=>$newPid,'action'=>'created','source_row'=>$item['row']]+($mergedSkus?['merged_skus'=>$mergedSkus]:[]);
             } else {
                 $pid=(int)($postedVal ?: ($item['match']['id']??0));
                 if(!$pid||!isset($byId[$pid]))continue;
@@ -103,11 +83,13 @@ if($_SERVER['REQUEST_METHOD']==='POST' && (string)($_POST['action']??'')==='appl
                 if(!empty($item['source']['sku'])){
                     hsg_supplier_remember_alias($pdo, (string)$item['source']['sku'], $pid, $item['source']['name']??null);
                 }
+                foreach($mergedSkus as $ms)hsg_supplier_remember_alias($pdo,$ms,$pid,$item['source']['name']??null);
                 if(!$changes)continue;
                 $updated++;$changedFields+=count($changes);
-                $details[]=['product_id'=>$pid,'fields'=>array_keys($changes),'source_row'=>$item['row']];
+                $details[]=['product_id'=>$pid,'fields'=>array_keys($changes),'source_row'=>$item['row']]+($mergedSkus?['merged_skus'=>$mergedSkus]:[]);
             }
         }
+        hsg_supplier_remember_columns($pdo,(array)($preview['headers']??[]),(array)($preview['col_mapping']??[]));
         $pdo->prepare('INSERT INTO hsg_supplier_import_runs(filename,sheet_name,rows_detected,rows_updated,created_by_admin) VALUES(?,?,?,?,?)')->execute([
             substr((string)$preview['filename'],0,255),substr((string)$preview['sheet'],0,180),count($preview['items']),$updated+$created,(int)current_admin_id()
         ]);
@@ -138,7 +120,7 @@ page_header('Kims uploadfil');
 
 <div class="card">
   <h2>Upload Kims masterfil</h2>
-  <p class="muted">Upload masterfil (Excel eller CSV). Filen fungerer som stamdata-masterfil og opdaterer produktattributter i HSG Administration. Varenumre, der kun afviger med et ekstra bogstav (fx suffix), flettes automatisk, og deres lagerantal lægges sammen.</p>
+  <p class="muted">Upload masterfil (Excel eller CSV). Filen fungerer som stamdata-masterfil og opdaterer produktattributter i HSG Administration. Varenumre med et bogstav til sidst (fx 17-1028a) flettes ind i varenummeret uden bogstav (17-1028), og lagerantallet lægges sammen. Står kun bogstav-varianten i filen og findes varenummeret uden bogstav heller ikke i HSG, behandles varianten som sit eget varenummer. Kolonnevalget huskes fra seneste upload.</p>
   <form method="post" enctype="multipart/form-data"><?=csrf_field()?><input type="hidden" name="action" value="upload">
     <div class="split">
       <label>Excel/CSV<input type="file" name="file" accept=".xlsx,.csv" required></label>
@@ -158,15 +140,18 @@ $detected=array_keys((array)$preview['mapping']);$detectedLabels=[];foreach($det
 
 <details class="card" <?=isset($_GET['remap'])||count($detected)===0?'open':''?>>
   <summary style="cursor:pointer;font-weight:600;font-size:1.1rem;">⚙️ Kolonnemapping (Tilknytning af felter)</summary>
-  <p class="muted" style="margin-top:8px;">Vælg hvilken kolonne fra filen der svarer til hvilken egenskab i HSG. Systemet har automatisk forslået de mest sandsynlige matchende felter:</p>
+  <?php
+  $headers=(array)($preview['headers']??[]);
+  $colMapping=(array)($preview['col_mapping']??[]);
+  $colRemembered=array_map('intval',(array)($preview['col_remembered']??[]));
+  ?>
+  <p class="muted" style="margin-top:8px;">Vælg hvilken kolonne fra filen der svarer til hvilken egenskab i HSG. Kolonner med samme overskrift som ved seneste upload får det valg, du brugte sidst – også "Ignorer kolonne". Kun nye overskrifter foreslås automatisk. Dit valg gemmes, når du genberegner eller anvender ændringerne.<?php if($colRemembered):?> <strong><?=count($colRemembered)?> af <?=count($headers)?> kolonner</strong> er hentet fra seneste upload.<?php endif;?></p>
   <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="remap"><input type="hidden" name="preview_token" value="<?=h($token)?>">
     <div class="table-wrap" style="max-height:380px;overflow-y:auto;margin-bottom:12px;">
       <table>
         <thead><tr><th>Fil-kolonne</th><th>Overskrift i dokument</th><th>Tilknyttet HSG-felt</th></tr></thead>
         <tbody>
           <?php
-          $headers=(array)($preview['headers']??[]);
-          $colMapping=(array)($preview['col_mapping']??[]);
           foreach($headers as $ci=>$headerText):
             $curField=$colMapping[$ci]??'';
           ?>
@@ -176,9 +161,10 @@ $detected=array_keys((array)$preview['mapping']);$detectedLabels=[];foreach($det
             <td>
               <select name="col_map[<?=$ci?>]">
                 <?php foreach($assignableFields as $fKey=>$fLabel): ?>
-                  <option value="<?=$fKey?>" <?=$curField===$fKey?'selected':''?>><?=h($fLabel)?></option>
+                  <option value="<?=h((string)$fKey)?>" <?=$curField===$fKey?'selected':''?>><?=h($fLabel)?></option>
                 <?php endforeach; ?>
               </select>
+              <?php if(in_array((int)$ci,$colRemembered,true)):?><small class="muted">Husket fra seneste upload</small><?php endif;?>
             </td>
           </tr>
           <?php endforeach; ?>
@@ -194,13 +180,14 @@ $detected=array_keys((array)$preview['mapping']);$detectedLabels=[];foreach($det
 <tr>
   <td><input type="checkbox" name="apply_rows[]" value="<?=$i?>" <?=!empty($item['selected'])?'checked':''?> ></td>
   <td><?=h($item['row_label'] ?? ('#'.intval($item['row'])))?></td>
-  <td><strong><?=h($src['name']??'(uden navn)')?></strong><br><small class="muted"><?php if(!empty($src['sku'])):?>SKU <?=h($src['sku'])?> · <?php endif;?><?php if(!empty($src['cask_number'])):?>Fad #<?=h($src['cask_number'])?><?php endif;?></small></td>
+  <td><strong><?=h($src['name']??'(uden navn)')?></strong><br><small class="muted"><?php if(!empty($src['sku'])):?>SKU <?=h($src['sku'])?><?php if(!empty($item['merged_skus'])):?> + <?=h(implode(', ',(array)$item['merged_skus']))?><?php endif;?> · <?php endif;?><?php if(!empty($src['cask_number'])):?>Fad #<?=h($src['cask_number'])?><?php endif;?></small></td>
   <td>
     <?php if(!empty($item['is_create_new'])): ?>
       <span class="badge blue">Nyt produkt oprettes (Lager: <?=intval($item['total_stock']??0)?>)</span>
     <?php else: ?>
       <span class="badge <?=$score>=90?'green':($score>=70?'':'red')?>"><?=$score?> %</span> <small class="muted"><?=h($item['match']['reason']??'')?></small>
     <?php endif; ?>
+    <?php foreach((array)($item['notes']??[]) as $note):?><br><small <?=str_starts_with((string)$note,'Bemærk')?'style="color:var(--amber);font-weight:600"':'class="muted"'?>><?=h((string)$note)?></small><?php endforeach;?>
     <select name="product_<?=$i?>" style="margin-top:6px">
       <?php if(!empty($item['is_create_new'])): ?>
         <option value="create_new" selected>✨ Opret som nyt produkt i HSG (Lager: <?=intval($item['total_stock']??0)?> stf)</option>
