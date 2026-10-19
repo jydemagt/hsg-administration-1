@@ -1,7 +1,7 @@
 # Spec: Nyhedsbrev fra HSG Administration
 
 - **Dato:** 2026-10-19
-- **Status:** Udkast 2 – Michaels svar indarbejdet, afventer Kims svar
+- **Status:** Udkast 3 – Michaels svar indarbejdet (også om afsender og kataloglink), afventer svar på spørgsmål 2, 6, 11 og 12
 - **Ønske fra:** Kim, HSG Whisky ApS (mail "VS: brochure", 21-09-2026)
 - **Nyt modul:** `newsletter` (version 1.0.0 → 1.1.0 → 1.2.0, ét versionsløft pr. trin)
 - **Prioritet:** Fremtidsønske, ikke hastende. Bygges i tre trin, og hvert trin kan frigives for sig.
@@ -10,20 +10,16 @@
 
 ## Åbne spørgsmål
 
-Kims spørgsmål er endnu ikke besvaret. Indtil der kommer svar, bygger udvikleren på antagelserne. Numrene er de samme som i første udkast, så svarene kan findes igen. Spørgsmål 13 er nyt efter undersøgelsen af Microsoft 365.
+Spørgsmålene herunder er endnu ikke besvaret. Indtil der kommer svar, bygger udvikleren på antagelserne. Numrene er de samme som i første udkast, så svarene kan findes igen.
 
 - **(2) Forhandlere og kunder i Excel-filen (Kim – påvirker trin 1).** Hvordan er de to grupper markeret: to filer eller én kolonne, og i så fald med hvilke værdier? Hvilke kolonner findes ud over mailadressen i kolonne D (navn, firma)?
   *Antagelse:* Administratoren vælger enten "Alle i filen er kunder", "Alle i filen er forhandlere" eller en kolonne. Vælges en kolonne, bliver værdier der starter med "forhandler" (uanset store/små bogstaver) til *Forhandler*, og alt andet til *Kunde*.
-- **(5) Link i stedet for vedhæftning (Kim – påvirker trin 3).** Er Kim indforstået med, at kataloget sendes som et personligt link, der virker i 90 dage, i stedet for en vedhæftet PDF? Hvor stor er den PDF, han vedhæfter i dag?
-  *Antagelse:* Link, som beskrevet i beslutning 5.
 - **(6) Hvilket katalog og hvilke priser (Kim – påvirker trin 3).** Skal der sendes hele kataloget eller nyhedskataloget hver måned? Skal forhandlere kun have engrospriser, eller også et link med vejledende udsalgspriser?
   *Antagelse:* Katalogtypen vælges pr. udsendelse (hele kataloget / kun nyheder / intet katalog). Forhandlere får engrospriser ekskl. moms, og kunder får vejledende udsalgspriser inkl. moms.
 - **(11) Overgang fra Outlook (Kim).** Stopper Kim med at sende via Bcc fra Outlook, når systemet sender? Ellers kan modtagerne få nyhedsbrevet to gange. Hvornår ønskes de enkelte trin i drift?
   *Antagelse:* Kim stopper med Bcc-udsendelsen, når trin 2 er i drift.
 - **(12) Modtagere der forsvinder fra Excel-filen (Kim).** Skal en modtager automatisk sættes til "Stoppet", hvis vedkommende ikke længere står i månedens fil?
   *Antagelse:* Nej, ikke i første version. Forhåndsvisningen af importen viser kun antallet.
-- **(13) Afsenderpostkasse (Michael – påvirker kun opsætningen, ikke koden).** Skal nyhedsbrevet sendes fra info@ (som i dag) eller fra en egen postkasse, fx `nyhedsbrev@hsg-whisky.dk`, med svar-til info@? Markerer mange modtagere mailen som spam, kan Microsoft begrænse den postkasse, der sender. Så kan Kim ikke sende almindelig mail fra info@, før postkassen er frigivet i Microsoft Defender. En ekstra postkasse kan kræve en licens.
-  *Antagelse:* info@. Systemet understøtter begge dele uden kodeændring, fordi afsenderadressen er en indstilling, og Exchange-rettigheden gives til den postkasse, Michael vælger.
 
 ---
 
@@ -36,10 +32,12 @@ Michael besvarede spørgsmålene den 19-10-2026. For hvert svar står konsekvens
 | 1 | Retsgrundlag for udsendelsen | "Ikke relevant." | Systemet spørger ikke om retsgrundlag og registrerer det ikke. Kolonnen `basis`, valget af grundlag og bekræftelses-fluebenet ved import og manuel tilføjelse er fjernet, og det samme gælder grundlag i audit-details, CSV-eksport, skærme og acceptkriterier. Afmeldingslink i hver mail, `List-Unsubscribe` og spærrelisten er uændrede. |
 | 3 | Mailudbyder og SMTP | Office 365. info@ ligger i Microsoft 365. | Beslutning 2 og 7 er omskrevet. Transporten er SMTP med OAuth2 (XOAUTH2) til `smtp.office365.com:587` via en egen Entra-app med `SMTP.SendAsApp`. Dedikerede udbydere (Brevo, Mailjet, SES) er flyttet til "Fravalgt" som reserve. |
 | 4 | DNS og afsenderadresse | Michael styrer selv DNS. | `docs/NEWSLETTER.md` skrives til Michael med de præcise SPF-, DKIM- og DMARC-poster for Microsoft 365 (se Brugerflow A). "Tjek afsenderdomæne" kontrollerer alle tre, også DKIM via `selector1`/`selector2`. |
+| 5 | Link i stedet for vedhæftning | "Kataloget skal der bare linkes til, så der skal være et direkte link i nyhedsbrevet." | Beslutning 5 er bekræftet. PDF'en vedhæftes ikke. Mailen har et direkte link, der åbner katalog-PDF'en med det samme, uden login og uden mellemside (S8). Den nuværende PDF-størrelse er ikke længere relevant. |
 | 7 | Opbevaring af data | OK som foreslået. | Udsendelseslog 24 måneder, kataloglinks 90 dage, afmeldte gemmes som spærreliste uden automatisk anonymisering, og slettede gemmes som hash. Perioderne kan ændres under Indstillinger. |
 | 8 | Ét-klik-afmelding uden CSRF | Godkendt. | Undtagelsen fra CSRF-reglen er **godkendt af Michael den 19-10-2026**. Den gælder kun `nyhedsbrev-afmeld.php`, kun med et gyldigt token og kun til afmelding (beslutning 3). CLAUDE.md ændres ikke. |
 | 9 | Bunden af mailen | Samme adresse, CVR og privatlivspolitik som på hsg-whisky.dk. | Felterne "Bund i mailen" og "Privatlivspolitik" i indstillingerne bevares, og Michael udfylder dem ved opsætningen med oplysningerne fra hsg-whisky.dk. Der hardkodes intet. |
 | 10 | Hvem må sende | De, der har adgang til modulet. | Som designet: `newsletter.send` følger moduladgangen, og superadministratorer har altid adgang. Andre login-brugere har ingen adgang, før en superadministrator giver den i `users.php`. Det sikres med `admin_default_access => false` (beslutning 6). |
+| 13 | Afsenderpostkasse | Fra info@. | Som antaget: `newsletter_from_email` er `info@hsg-whisky.dk`, og Exchange-rettigheden gives til info@ (Brugerflow A). Der oprettes ingen ekstra postkasse. Risikoen for, at Microsoft begrænser info@, hvis mange markerer mailen som spam, står under beslutning 2, Risici. |
 
 ---
 
@@ -164,7 +162,7 @@ Udvikleren bygger og frigiver ét trin ad gangen. Hvert trin har sine egne accep
   - De præcise poster står i Brugerflow A og i `docs/NEWSLETTER.md`.
 - **Sendt post og headere:** Efter vores viden lægger Exchange ingen kopi i info@'s Sendt post, når mails indleveres via SMTP, og egne headere som `List-Unsubscribe` og `List-Unsubscribe-Post` bevares. Det kontrolleres i driftstjekket (Brugerflow A, trin 8). Oversigten over, hvad der er sendt, er HSG's udsendelseslog.
 - **Risici:**
-  - **Masseudsendelse:** Microsofts servicebeskrivelse anbefaler en specialiseret udbyder til kommercielle masseudsendelser. Én månedlig udsendelse til få hundrede kendte modtagere i lavt tempo ligger inden for grænserne. Markerer mange modtagere mailen som spam, kan Microsoft dog begrænse den postkasse, der sender (se åbent spørgsmål 13).
+  - **Masseudsendelse:** Microsofts servicebeskrivelse anbefaler en specialiseret udbyder til kommercielle masseudsendelser. Én månedlig udsendelse til få hundrede kendte modtagere i lavt tempo ligger inden for grænserne. Markerer mange modtagere mailen som spam, kan Microsoft dog begrænse den postkasse, der sender. Det er info@ (afklaret spørgsmål 13), så Kim kan i så fald ikke sende almindelig mail fra info@, før postkassen er frigivet i Microsoft Defender. Det lave tempo og ét-klik-afmeldingen holder risikoen nede.
   - **Port 587:** Nogle webhoteller blokerer udgående forbindelser på port 587. "Test forbindelse" afslører det med det samme. Sker det, er reserven Graph `sendMail` over HTTPS (se Fravalgt).
   - **Client secret:** Den udløber efter højst 24 måneder. Indstillingen `newsletter_m365_secret_expires` giver en advarsel 30 dage før.
 
