@@ -122,6 +122,11 @@ function hsg_build_filter_production_source(string $buildDir): void {
         '.git',
         '.gitignore',
         '.gitattributes',
+        // Udviklingsværktøjer (AI-agenter, tests, specs) må aldrig med i en release
+        '.claude',
+        'CLAUDE.md',
+        'tests',
+        'docs/specs',
     ];
 
     foreach ($devExclusions as $item) {

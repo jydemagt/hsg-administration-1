@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php -l:*)",
+      "Bash(php tools/build-release.php --test-negative)",
+      "Bash(bash tests/run.sh)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git switch:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [
+      "Read(./config.php)",
+      "Read(./config.local.php)",
+      "Read(./.env)",
+      "Edit(./config.php)",
+      "Edit(./config.local.php)",
+      "Edit(./uploads/**)",
+      "Edit(./storage/**)",
+      "Bash(git push --force:*)",
+      "Bash(git push origin main:*)",
+      "Bash(rm -rf:*)"
+    ]
+  }
+}
