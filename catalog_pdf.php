@@ -1,9 +1,25 @@
 <?php
 require __DIR__.'/auth.php';
 require_module_enabled('catalog');require_capability('catalog.view');
-@ini_set('memory_limit', '256M');
-@set_time_limit(120);
 require_once __DIR__.'/pdf_simple.php';require_once __DIR__.'/core/catalog_layout.php';
+
+// The first run after new product images crops and caches every bottle image, which can exceed
+// the webhotel's default limits. Raise them for this request only (never lower them).
+if(function_exists('set_time_limit'))@set_time_limit(300);
+$memLimit=hsg_catalog_ini_bytes((string)ini_get('memory_limit'));
+if($memLimit>0 && $memLimit<256*1048576)@ini_set('memory_limit','256M');
+
+// A fatal error would otherwise leave a blank "HTTP 500" in the catalogue iframe.
+register_shutdown_function(static function(): void {
+    $e=error_get_last();
+    if(!$e||!in_array($e['type'],[E_ERROR,E_CORE_ERROR,E_COMPILE_ERROR,E_USER_ERROR],true)||headers_sent())return;
+    error_log('catalog_pdf.php: '.$e['message'].' in '.$e['file'].':'.$e['line']);
+    http_response_code(500);header('Content-Type: text/html; charset=utf-8');
+    echo '<!doctype html><html lang="da"><head><meta charset="utf-8"><title>PDF-katalog</title></head><body style="font-family:sans-serif;padding:24px">';
+    echo '<h1 style="font-size:20px">PDF-kataloget kunne ikke genereres</h1><p>Prøv igen om et øjeblik. Fortsætter fejlen, så kontakt administrator.</p>';
+    if(is_admin())echo '<pre style="white-space:pre-wrap;background:#f4f4f4;padding:12px">'.h($e['message'].' ('.basename($e['file']).':'.$e['line'].')').'</pre>';
+    echo '</body></html>';
+});
 
 $price=(($_GET['price']??'retail')==='wholesale')?'wholesale':'retail';
 $newOnly=!empty($_GET['news']) || !empty($_GET['new_only']);
@@ -32,11 +48,21 @@ foreach($rows as $p){
     $parentBrand=$p['parent_brand_name']?(string)$p['parent_brand_name']:null;
     $family=hsg_catalog_family($brand,$parentBrand);
     $familySort=(int)($p['parent_sort_order']??$p['brand_sort_order']??999);
-    if(!isset($families[$family]))$families[$family]=['sort'=>$familySort,'sections'=>[]];
+    if(!isset($families[$family]))$families[$family]=['sort'=>$familySort,'sections'=>[],'sectionSort'=>[]];
     $families[$family]['sort']=min($families[$family]['sort'],$familySort);
     $families[$family]['sections'][$brand][]=$p;
+    $families[$family]['sectionSort'][$brand]=(int)($p['brand_sort_order']??999);
 }
+// A brand is placed by its own sort order; a sub-brand's sort order must not move the whole brand.
+foreach($families as $family=>$f)if(isset($brandMeta[(string)$family]))$families[$family]['sort']=(int)$brandMeta[(string)$family]['sort_order'];
 uasort($families,static fn($a,$b)=>$a['sort']<=>$b['sort']);
+// The brand's own bottles come first, then each sub-brand (by sort order, then name). Otherwise
+// the brand's own bottles could follow a sub-brand heading in the TOC and look like they belong to it.
+foreach($families as $family=>&$f){
+    $order=$f['sectionSort'];
+    uksort($f['sections'],static fn($a,$b)=>[(string)$a!==(string)$family,$order[$a],(string)$a]<=>[(string)$b!==(string)$family,$order[$b],(string)$b]);
+}
+unset($f);
 
 function catalog_toc_page_count(array $families): int {
     if(!$families)return 1;$pages=1;$y=708;
@@ -44,7 +70,7 @@ function catalog_toc_page_count(array $families): int {
         $topGap=($y<690)?28:0;
         if($y-$topGap-18<52){$pages++;$y=748-$topGap;}$y-=$topGap+18;
         foreach($f['sections'] as $section=>$products){
-            if($section !== $family){
+            if((string)$section !== (string)$family){
                 if($y-16<52){$pages++;$y=748;}$y-=16;
             }
             foreach($products as $_){
@@ -61,7 +87,7 @@ foreach($families as $family=>$f){
     $familyMeta=$brandMeta[$family]??null;$familyDesc=hsg_catalog_get_family_desc($family,$f,$brandMeta);$familyLogo=(string)($familyMeta['logo_path']??'');
     $pagePlan[]=['type'=>'intro','family'=>$family,'display'=>hsg_catalog_family_display($family),'desc'=>$familyDesc,'logo'=>$familyLogo,'page'=>$introPage];
     foreach($f['sections'] as $section=>$products){
-        if($section !== $family){
+        if((string)$section !== (string)$family){
             $tocEntries[]=['type'=>'subbrand','text'=>(string)$section,'page'=>$currentPage];
         }
         foreach(array_chunk($products,2) as $chunk){
@@ -109,28 +135,26 @@ function add_product_slot(SimplePdf $pdf,array &$ops,array &$images,array $p,int
     $subtitle=hsg_catalog_product_subtitle($p);
     if($subtitle!==''){$subLines=$pdf->wrap($subtitle,48);foreach(array_slice($subLines,0,1) as $stl)$ops[]=$pdf->textFont($tableX,$tableTop-5,10.5,$stl,'helvetica');$tableTop-=15;}
     $rows=hsg_catalog_product_rows($p,$priceField,$priceLabel);add_product_table($pdf,$ops,$rows,$tableX,$tableTop,250);
-    $path=hsg_catalog_image_path((string)($p['image_path']??''));
-    $imgType=@getimagesize($path)[2]??0;
-    if(($p['image_approval_status']??'')==='approved'&&$path&&is_file($path)&&in_array($imgType,[IMAGETYPE_JPEG,IMAGETYPE_PNG],true)){
+    // Only approved images are cropped/cached; unapproved ones are never shown anyway.
+    $path=($p['image_approval_status']??'')==='approved'?hsg_catalog_image_path((string)($p['image_path']??'')):null;
+    $info=$path?@getimagesize($path):false;
+    if($info&&$info[0]>0&&$info[1]>0&&in_array($info[2],[IMAGETYPE_JPEG,IMAGETYPE_PNG],true)){
         $name='P'.(int)$p['id'].'_'.$slot;$images[$name]=$path;
-        $info=@getimagesize($path);
-        if($info&&$info[0]>0&&$info[1]>0){
-            $scale=min($imgW/$info[0],$imgH/$info[1]);
-            $iw=$info[0]*$scale;$ih=$info[1]*$scale;
-            $ix=$imgX+($imgW-$iw)/2;$iy=$imgY+($imgH-$ih)/2;
-            $ops[]='q '.$iw.' 0 0 '.$ih.' '.$ix.' '.$iy.' cm /'.$name.' Do Q';
+        $scale=min($imgW/$info[0],$imgH/$info[1]);
+        $iw=$info[0]*$scale;$ih=$info[1]*$scale;
+        $ix=$imgX+($imgW-$iw)/2;$iy=$imgY+($imgH-$ih)/2;
+        $ops[]='q '.$iw.' 0 0 '.$ih.' '.$ix.' '.$iy.' cm /'.$name.' Do Q';
 
-            // Render NYHED sticker overlay with FIXED physical PDF dimensions (width: 58 pt, height: 58 pt)
-            // placed at top-left corner of rendered bottle bounding box with slight offset.
-            if(!empty($p['is_new'])&&$newBadge&&is_file($newBadge)){
-                $badgeName='NB'.(int)$p['id'].'_'.$slot;
-                $images[$badgeName]=$newBadge;
-                $badgeW=58.0;
-                $badgeH=58.0;
-                $badgeX=$ix - 10.0;
-                $badgeY=$iy + $ih - $badgeH + 10.0;
-                $ops[]='q '.$badgeW.' 0 0 '.$badgeH.' '.$badgeX.' '.$badgeY.' cm /'.$badgeName.' Do Q';
-            }
+        // Render NYHED sticker overlay with FIXED physical PDF dimensions (width: 58 pt, height: 58 pt)
+        // placed at top-left corner of rendered bottle bounding box with slight offset.
+        if(!empty($p['is_new'])&&$newBadge&&is_file($newBadge)){
+            $badgeName='NB'.(int)$p['id'].'_'.$slot;
+            $images[$badgeName]=$newBadge;
+            $badgeW=58.0;
+            $badgeH=58.0;
+            $badgeX=$ix - 10.0;
+            $badgeY=$iy + $ih - $badgeH + 10.0;
+            $ops[]='q '.$badgeW.' 0 0 '.$badgeH.' '.$badgeX.' '.$badgeY.' cm /'.$badgeName.' Do Q';
         }
     }else{
         $ops[]=$pdf->setRgb(.95,.95,.95,true);$ops[]=$pdf->rect($imgX+30,$imgY+40,$imgW-60,$imgH-80,true);$ops[]=$pdf->setRgb(.45,.45,.45,true);$ops[]=$pdf->textFont($imgX+52,$imgY+($imgH/2),10,'Intet godkendt billede','helvetica');$ops[]=$pdf->setRgb(0,0,0,true);
@@ -194,7 +218,11 @@ foreach($pagePlan as $plan){
         else{$ops[]=$pdf->textFont(82,555,34,(string)$plan['display'],'times-bold');}
         $desc=trim((string)$plan['desc']);$y=365;if($desc!=='')foreach(array_slice($pdf->wrap($desc,82),0,10) as $line){$ops[]=$pdf->textFont(36,$y,11.5,$line,'helvetica');$y-=18;}
     }else{
-        $ops[]=$pdf->textFont(36,785,18,(string)$plan['section'],'helvetica');
+        // Sub-brand pages show the full path ("Lady of the Glen – Dalgety") so it is clear which brand they belong to.
+        $section=(string)$plan['section'];$family=(string)$plan['family'];
+        $heading=$section===$family?$section:hsg_catalog_family_display($family).' – '.$section;
+        $headingLen=function_exists('mb_strlen')?mb_strlen($heading,'UTF-8'):strlen($heading);
+        $ops[]=$pdf->textFont(36,785,$headingLen>40?14:18,$heading,'helvetica');
         $products=$plan['products'];add_product_slot($pdf,$ops,$images,$products[0],0,$priceField,$priceLabel,$newBadge);
         if(isset($products[1])){$ops[]=$pdf->line(36,421,559,421,.55);add_product_slot($pdf,$ops,$images,$products[1],1,$priceField,$priceLabel,$newBadge);}
     }
