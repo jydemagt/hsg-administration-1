@@ -15,7 +15,7 @@ bad()  { echo -e "\033[31m[FEJL]\033[0m $*"; FAIL=1; }
 info() { echo -e "\033[34m[INFO]\033[0m $*"; }
 
 # 1. PHP-syntaks
-info "1/3 PHP-syntakstjek"
+info "1/4 PHP-syntakstjek"
 LINT_ERR=0
 while IFS= read -r -d '' f; do
   out=$(php -l "$f" 2>&1) || { echo "$out"; LINT_ERR=1; }
@@ -23,18 +23,26 @@ done < <(find . -name '*.php' -not -path './storage/*' -not -path './vendor/*' -
 [ $LINT_ERR -eq 0 ] && ok "Alle PHP-filer er syntaktisk korrekte" || bad "Syntaksfejl fundet"
 
 # 2. Release-bygger: negativtest (forbudte filer må aldrig komme med)
-info "2/3 Release-bygger negativtest"
+info "2/4 Release-bygger negativtest"
 if php tools/build-release.php --test-negative >/tmp/hsg-build-neg.log 2>&1; then
   ok "Release-negativtest bestået"
 else
   cat /tmp/hsg-build-neg.log; bad "Release-negativtest fejlede"
 fi
 
-# 3. Installation + røgtest af sider (kræver testdatabase)
-if [ -z "${HSG_TEST_DB_NAME:-}" ]; then
-  info "3/3 Røgtest sprunget over (HSG_TEST_DB_* ikke sat)"
+# 3. Enhedstest af rene funktioner (ingen database, ingen ZipArchive)
+info "3/4 Enhedstest: Kims uploadfil"
+if php tests/supplier_import_test.php; then
+  ok "Enhedstest: Kims uploadfil bestået"
 else
-  info "3/3 Installation og røgtest mod ${HSG_TEST_DB_NAME}"
+  bad "Enhedstest: Kims uploadfil fejlede"
+fi
+
+# 4. Installation + røgtest af sider (kræver testdatabase)
+if [ -z "${HSG_TEST_DB_NAME:-}" ]; then
+  info "4/4 Røgtest sprunget over (HSG_TEST_DB_* ikke sat)"
+else
+  info "4/4 Installation og røgtest mod ${HSG_TEST_DB_NAME}"
   if [ -f config.php ]; then
     bad "config.php findes allerede – kør røgtest i en ren kopi (fx git worktree), ikke i en installation"
   else
