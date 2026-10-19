@@ -1,7 +1,7 @@
 # Spec: Nyhedsbrev fra HSG Administration
 
 - **Dato:** 2026-10-19
-- **Status:** Udkast – afventer godkendelse fra Michael
+- **Status:** Udkast 2 – Michaels svar indarbejdet, afventer Kims svar
 - **Ønske fra:** Kim, HSG Whisky ApS (mail "VS: brochure", 21-09-2026)
 - **Nyt modul:** `newsletter` (version 1.0.0 → 1.1.0 → 1.2.0, ét versionsløft pr. trin)
 - **Prioritet:** Fremtidsønske, ikke hastende. Bygges i tre trin, og hvert trin kan frigives for sig.
@@ -10,40 +10,36 @@
 
 ## Åbne spørgsmål
 
-Spørgsmålene herunder skal besvares af Michael (og evt. Kim). For hvert spørgsmål står det, hvad der er blokeret, og hvilken antagelse udvikleren bygger på, indtil der kommer et svar.
+Kims spørgsmål er endnu ikke besvaret. Indtil der kommer svar, bygger udvikleren på antagelserne. Numrene er de samme som i første udkast, så svarene kan findes igen. Spørgsmål 13 er nyt efter undersøgelsen af Microsoft 365.
 
-1. **Retsgrundlag for udsendelsen (Michael – blokerer første rigtige udsendelse, ikke udviklingen).**
-   Markedsføringslovens § 10, stk. 1 kræver forudgående samtykke til elektronisk markedsføring. Det gælder også over for virksomheder og generelle adresser som info@. Undtagelsen i § 10, stk. 2 ("soft opt-in") dækker kun markedsføring af egne, tilsvarende produkter over for kunder, hvis mailadresse er modtaget i forbindelse med et salg. Kunden skal desuden have fået mulighed for at frabede sig det, både da adressen blev givet og i hver mail.
-   *Spørgsmål:* Hvilket grundlag gælder for forhandlerne og kunderne i Kims Excel-liste? Er alle modtagere over 18 år? Kim står for indholdet, men reglerne for markedsføring af alkohol gælder.
-   *Antagelse:* Ved hver import skal administratoren vælge grundlag ("Samtykke" eller "Eksisterende kunde (soft opt-in)") og bekræfte det med et flueben. Grundlaget gemmes pr. modtager. Systemet dokumenterer grundlaget, men vurderer ikke, om det er lovligt.
-2. **Forhandlere og kunder i Excel-filen (Kim – påvirker trin 1).** Hvordan er de to grupper markeret: to filer eller én kolonne, og i så fald med hvilke værdier? Hvilke kolonner findes ud over mailadressen i kolonne D (navn, firma)?
-   *Antagelse:* Administratoren vælger enten "Alle i filen er kunder", "Alle i filen er forhandlere" eller en kolonne. Vælges en kolonne, bliver værdier der starter med "forhandler" (uanset store/små bogstaver) til *Forhandler*, og alt andet til *Kunde*.
-3. **Mailudbyder og SMTP (Michael – blokerer trin 2 i drift).** Hvilket webhotel bruges, og hvor ligger info@-postkassen (Microsoft 365?)?
-   - Simply.com forbyder nyhedsbreve via `smtp.simply.com`. Kontoen kan suspenderes, hvis der sendes til mere end 300 modtagere inden for 2 timer.
-   - Microsoft 365 slår SMTP AUTH med brugernavn og adgangskode fra som standard fra udgangen af december 2026.
+- **(2) Forhandlere og kunder i Excel-filen (Kim – påvirker trin 1).** Hvordan er de to grupper markeret: to filer eller én kolonne, og i så fald med hvilke værdier? Hvilke kolonner findes ud over mailadressen i kolonne D (navn, firma)?
+  *Antagelse:* Administratoren vælger enten "Alle i filen er kunder", "Alle i filen er forhandlere" eller en kolonne. Vælges en kolonne, bliver værdier der starter med "forhandler" (uanset store/små bogstaver) til *Forhandler*, og alt andet til *Kunde*.
+- **(5) Link i stedet for vedhæftning (Kim – påvirker trin 3).** Er Kim indforstået med, at kataloget sendes som et personligt link, der virker i 90 dage, i stedet for en vedhæftet PDF? Hvor stor er den PDF, han vedhæfter i dag?
+  *Antagelse:* Link, som beskrevet i beslutning 5.
+- **(6) Hvilket katalog og hvilke priser (Kim – påvirker trin 3).** Skal der sendes hele kataloget eller nyhedskataloget hver måned? Skal forhandlere kun have engrospriser, eller også et link med vejledende udsalgspriser?
+  *Antagelse:* Katalogtypen vælges pr. udsendelse (hele kataloget / kun nyheder / intet katalog). Forhandlere får engrospriser ekskl. moms, og kunder får vejledende udsalgspriser inkl. moms.
+- **(11) Overgang fra Outlook (Kim).** Stopper Kim med at sende via Bcc fra Outlook, når systemet sender? Ellers kan modtagerne få nyhedsbrevet to gange. Hvornår ønskes de enkelte trin i drift?
+  *Antagelse:* Kim stopper med Bcc-udsendelsen, når trin 2 er i drift.
+- **(12) Modtagere der forsvinder fra Excel-filen (Kim).** Skal en modtager automatisk sættes til "Stoppet", hvis vedkommende ikke længere står i månedens fil?
+  *Antagelse:* Nej, ikke i første version. Forhåndsvisningen af importen viser kun antallet.
+- **(13) Afsenderpostkasse (Michael – påvirker kun opsætningen, ikke koden).** Skal nyhedsbrevet sendes fra info@ (som i dag) eller fra en egen postkasse, fx `nyhedsbrev@hsg-whisky.dk`, med svar-til info@? Markerer mange modtagere mailen som spam, kan Microsoft begrænse den postkasse, der sender. Så kan Kim ikke sende almindelig mail fra info@, før postkassen er frigivet i Microsoft Defender. En ekstra postkasse kan kræve en licens.
+  *Antagelse:* info@. Systemet understøtter begge dele uden kodeændring, fordi afsenderadressen er en indstilling, og Exchange-rettigheden gives til den postkasse, Michael vælger.
 
-   Anbefaling: en dedikeret, EU-baseret udbyder med SMTP-relay (fx Brevo, Mailjet eller Amazon SES i en EU-region) og en databehandleraftale. Hvem vælger udbyderen, og hvem betaler?
-   *Antagelse:* Systemet har generiske SMTP-indstillinger, og ingen udbyder er kodet fast.
-4. **DNS og afsenderadresse (Michael).** Hvem administrerer DNS for afsenderdomænet (antaget `hsg-whisky.dk`)? Der skal sættes SPF, DKIM og DMARC op til den valgte udbyder. Hvad er den præcise afsenderadresse (antaget `info@hsg-whisky.dk`)?
-5. **Link i stedet for vedhæftning (Kim – påvirker trin 3).** Er Kim indforstået med, at kataloget sendes som et personligt link, der virker i 90 dage, i stedet for en vedhæftet PDF? Hvor stor er den PDF, han vedhæfter i dag?
-6. **Hvilket katalog og hvilke priser (Kim – påvirker trin 3).** Skal der sendes hele kataloget eller nyhedskataloget hver måned? Skal forhandlere kun have engrospriser, eller også et link med vejledende udsalgspriser?
-   *Antagelse:* Katalogtypen vælges pr. udsendelse (hele kataloget / kun nyheder / intet katalog). Forhandlere får engrospriser ekskl. moms, og kunder får vejledende udsalgspriser inkl. moms.
-7. **Opbevaring af data (Michael).** Er følgende i orden?
-   - Udsendelsesloggen gemmes i 24 måneder.
-   - Kataloglinks virker i 90 dage.
-   - Afmeldte gemmes med mailadresse som spærreliste, så længe systemet bruges.
-   - Slettede modtagere gemmes kun som en hash.
+---
 
-   Skal afmeldte anonymiseres automatisk efter et antal måneder?
-   *Antagelse:* Som beskrevet ovenfor. Begge perioder kan ændres under Indstillinger.
-8. **Afmelding med ét klik uden CSRF-token (Michael – påvirker trin 1).** RFC 8058 ("List-Unsubscribe-Post") betyder, at mailprogrammet (fx Gmail) sender en POST uden session og uden CSRF-token. Godkender du en dokumenteret undtagelse fra CLAUDE.md-reglen om CSRF på alle POST? Undtagelsen gælder kun `nyhedsbrev-afmeld.php`, kun med et gyldigt token pr. modtager, og kun til handlingen "afmeld".
-   *Alternativ, hvis nej:* Mailen får kun et almindeligt afmeldingslink, der fører til en bekræftelsesformular med CSRF, og headeren `List-Unsubscribe-Post` udelades.
-9. **Bunden af mailen (Kim/Michael).** Hvilken adresse, hvilket CVR-nummer og hvilket link til privatlivspolitikken skal stå nederst i mailen?
-10. **Hvem må sende (Michael).**
-    *Antagelse:* Som standard kun superadministratorer. En superadministrator kan give andre login-brugere adgang under *Brugere → Login-brugere*.
-11. **Overgang fra Outlook (Kim).** Stopper Kim med at sende via Bcc fra Outlook, når systemet sender? Ellers kan modtagerne få nyhedsbrevet to gange. Hvornår ønskes de enkelte trin i drift?
-12. **Modtagere der forsvinder fra Excel-filen (Kim).** Skal en modtager automatisk sættes til "Stoppet", hvis vedkommende ikke længere står i månedens fil?
-    *Antagelse:* Nej, ikke i første version. Forhåndsvisningen af importen viser kun antallet.
+## Afklarede spørgsmål (19-10-2026)
+
+Michael besvarede spørgsmålene den 19-10-2026. For hvert svar står konsekvensen for spec'en.
+
+| Nr. | Spørgsmål | Svar | Konsekvens for spec'en |
+|---|---|---|---|
+| 1 | Retsgrundlag for udsendelsen | "Ikke relevant." | Systemet spørger ikke om retsgrundlag og registrerer det ikke. Kolonnen `basis`, valget af grundlag og bekræftelses-fluebenet ved import og manuel tilføjelse er fjernet, og det samme gælder grundlag i audit-details, CSV-eksport, skærme og acceptkriterier. Afmeldingslink i hver mail, `List-Unsubscribe` og spærrelisten er uændrede. |
+| 3 | Mailudbyder og SMTP | Office 365. info@ ligger i Microsoft 365. | Beslutning 2 og 7 er omskrevet. Transporten er SMTP med OAuth2 (XOAUTH2) til `smtp.office365.com:587` via en egen Entra-app med `SMTP.SendAsApp`. Dedikerede udbydere (Brevo, Mailjet, SES) er flyttet til "Fravalgt" som reserve. |
+| 4 | DNS og afsenderadresse | Michael styrer selv DNS. | `docs/NEWSLETTER.md` skrives til Michael med de præcise SPF-, DKIM- og DMARC-poster for Microsoft 365 (se Brugerflow A). "Tjek afsenderdomæne" kontrollerer alle tre, også DKIM via `selector1`/`selector2`. |
+| 7 | Opbevaring af data | OK som foreslået. | Udsendelseslog 24 måneder, kataloglinks 90 dage, afmeldte gemmes som spærreliste uden automatisk anonymisering, og slettede gemmes som hash. Perioderne kan ændres under Indstillinger. |
+| 8 | Ét-klik-afmelding uden CSRF | Godkendt. | Undtagelsen fra CSRF-reglen er **godkendt af Michael den 19-10-2026**. Den gælder kun `nyhedsbrev-afmeld.php`, kun med et gyldigt token og kun til afmelding (beslutning 3). CLAUDE.md ændres ikke. |
+| 9 | Bunden af mailen | Samme adresse, CVR og privatlivspolitik som på hsg-whisky.dk. | Felterne "Bund i mailen" og "Privatlivspolitik" i indstillingerne bevares, og Michael udfylder dem ved opsætningen med oplysningerne fra hsg-whisky.dk. Der hardkodes intet. |
+| 10 | Hvem må sende | De, der har adgang til modulet. | Som designet: `newsletter.send` følger moduladgangen, og superadministratorer har altid adgang. Andre login-brugere har ingen adgang, før en superadministrator giver den i `users.php`. Det sikres med `admin_default_access => false` (beslutning 6). |
 
 ---
 
@@ -58,12 +54,12 @@ Spørgsmålene herunder skal besvares af Michael (og evt. Kim). For hvert spørg
 **Løsning:** Et nyt modul *Nyhedsbrev* i HSG Administration:
 - en modtagerliste, der indlæses fra Kims Excel-fil og husker afmeldinger
 - personlige afmeldingslinks
-- én mail pr. modtager via SMTP i en kø, der kan genoptages efter en afbrydelse
+- én mail pr. modtager fra info@ via Microsoft 365 (SMTP med OAuth2), sendt fra en kø, der kan genoptages efter en afbrydelse
 - forhåndsvisning og obligatorisk testudsendelse
 - et personligt link til et fastfrosset katalog med den rigtige pris for modtagerens gruppe
 
 **Brugere:**
-- **Administrator (Kim, Michael):** importerer modtagere, skriver og tester nyhedsbrevet, sender det og håndterer afmeldinger og GDPR-henvendelser.
+- **Administrator (Kim, Michael):** importerer modtagere, skriver og tester nyhedsbrevet, sender det og håndterer afmeldinger og GDPR-henvendelser. Michael står for den engangsopsætning, der kræves i Microsoft 365 og DNS.
 - **Modtager (forhandler eller kunde):** møder kun mailen, den offentlige afmeldingsside og kataloglinket. Modtageren har ingen login.
 - **Linkbrugere og lagermedarbejdere:** har ingen adgang og ser ingen ændringer.
 
@@ -74,7 +70,7 @@ Spørgsmålene herunder skal besvares af Michael (og evt. Kim). For hvert spørg
 | Trin | Modulversion | Indhold | Værdi alene |
 |---|---|---|---|
 | **1** | `newsletter` 1.0.0 | Modul og menupunkt, modtagertabel, Excel/CSV-import med forhåndsvisning, manuel tilføj/ret/afmeld/stop/slet/eksport, offentlig afmeldingsside med ét-klik-afmelding. **Der sendes ingen mails.** | Kims liste bliver renset (dubletter, ugyldige adresser), opdelt i forhandlere og kunder og klar med afmeldingstokens. |
-| **2** | `newsletter` 1.1.0 | Indstillinger (afsender, SMTP, hastighed, opbevaring, cron), egen SMTP-klient, udsendelser (kladde, forhåndsvisning, test, start), kø med batches via browser og cron, pause/genoptag/annullér, udsendelseslog og automatisk oprydning. Endnu uden katalog. | Nyhedsbrevet kan sendes lovligt og sikkert fra systemet. Kim kan midlertidigt skrive et link i teksten. |
+| **2** | `newsletter` 1.1.0 | Indstillinger (afsender, Microsoft 365, hastighed, opbevaring, cron), egen SMTP-klient med OAuth2 (XOAUTH2) til Microsoft 365 og en lokal test-SMTP, udsendelser (kladde, forhåndsvisning, test, start), kø med batches via browser og cron, pause/genoptag/annullér, udsendelseslog og automatisk oprydning. Endnu uden katalog. | Nyhedsbrevet kan sendes sikkert fra info@ via systemet. Kim kan midlertidigt skrive et link i teksten. |
 | **3** | `newsletter` 1.2.0 | Katalog: kataloggenereringen flyttes ud i en funktion, kataloget fryses pr. udsendelse, og der kommer en offentlig download pr. modtager med pris efter gruppe og udløbsdato. | Kataloget følger med, uden vedhæftning og uden at engrospriser bliver offentlige. |
 
 Udvikleren bygger og frigiver ét trin ad gangen. Hvert trin har sine egne acceptkriterier (se nedenfor).
@@ -104,33 +100,91 @@ Udvikleren bygger og frigiver ét trin ad gangen. Hvert trin har sine egne accep
 **Fravalgt:**
 - *Upload af Excel-filen ved hver udsendelse uden tabel.* Systemet ville ikke kunne huske afmeldinger, give tokens eller føre log.
 - *En fuld CRM-kundetabel.* For stort et scope.
-- *Webshopkunder fra `hsg_woocommerce_orders.customer_email`.* Der er intet dokumenteret samtykke, og det blander to formål sammen.
+- *Webshopkunder fra `hsg_woocommerce_orders.customer_email`.* Det er en anden kundeliste med et andet formål. Kims liste er masterlisten for nyhedsbrevet.
 
-### 2. Afsendelse på et almindeligt webhotel
+### 2. Afsendelse via Microsoft 365 (info@)
 
-**Anbefaling:**
-- **Transport:** En lille SMTP-klient skrevet i projektet (`core/newsletter_mailer.php`) med `stream_socket_client`, STARTTLS (port 587) eller implicit TLS (port 465), AUTH PLAIN/LOGIN og certifikatkontrol slået til. Klienten kan pege på en dedikeret udbyders SMTP-relay. Der bruges ingen Composer og ingen tredjepartskode.
+**Anbefaling: SMTP med OAuth2 (XOAUTH2) til `smtp.office365.com:587` med STARTTLS.**
+
+- **SMTP-klient:** En lille SMTP-klient skrevet i projektet (`core/newsletter_mailer.php`) med `stream_socket_client` og certifikatkontrol slået til. Der bruges ingen Composer og ingen tredjepartskode.
+- **Login:**
+  - Klienten logger ind med `AUTH XOAUTH2` som den postkasse, der står i `newsletter_from_email` (info@).
+  - Login-strengen er base64 af `user=<postkasse>`, tegnet 0x01, `auth=Bearer <token>` og to gange tegnet 0x01.
+  - Strengen bygges af den rene funktion `hsg_newsletter_xoauth2_string(string $user, string $token): string`, så den kan testes uden netværk.
+- **Token:**
+  - Hentes med client credentials fra `https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token` med scope `https://outlook.office365.com/.default`.
+  - Hentes via den eksisterende `hsg_http_request()` (cURL) i `core/onedrive.php`, som indlæses med `require_once` og ikke ændres.
+  - Hentes én gang pr. kald (det er gyldigt i ca. en time) og findes kun i hukommelsen. Det gemmes aldrig i databasen, i loggen eller i fejltekster.
+- **Entra-app:**
+  - Nyhedsbrevet får en **egen Entra-app** med programtilladelsen **`SMTP.SendAsApp`** (API'et "Office 365 Exchange Online").
+  - Appen registreres som service principal i Exchange Online (`New-ServicePrincipal`) og får rettigheden **FullAccess** til info@ (`Add-MailboxPermission`), som Microsofts vejledning beskriver.
+  - SMTP AUTH skal være slået til for info@ (`Set-CASMailbox … -SmtpClientAuthenticationDisabled $false`). Det gælder også med OAuth.
+  - Appen kan kun sende som de postkasser, den udtrykkeligt har fået rettighed til.
+  - Opsætningen står trin for trin i Brugerflow A.
+- **Lokal test-SMTP:**
+  - Forsendelsesmetoden "Lokal test-SMTP" bruger ren SMTP uden TLS og uden login, og kun til `127.0.0.1`, `localhost` eller `::1`.
+  - Den er beregnet til testerens SMTP-opsamler og bruger præcis samme kø, MIME-opbygning og fejlhåndtering som Microsoft 365. Kun login-trinnet er sprunget over.
 - **Én mail pr. modtager:** Feltet `To:` indeholder kun modtageren. Der bruges aldrig Bcc eller Cc. Det er nødvendigt for det personlige afmeldingslink, for `List-Unsubscribe` og for, at én afvist adresse ikke stopper alle de andre.
 - **Kø og batches:** Tabellen `hsg_newsletter_deliveries` er både kø og log. Den afvikles i små batches:
   - **Fra browseren:** Siden for udsendelsen kalder `newsletter_send.php` via AJAX (samme mønster som Billedtjek med `fetch` og `csrf` i FormData), igen og igen, indtil køen er tom.
   - **Fra webhotellets cron:** `cron/newsletter.php` følger mønstret fra `cron/backup.php` (CLI eller `?key=` med `hash_equals` mod `setting_get(...,'newsletter_cron_key')`). Udsendelsen fortsætter derfor, selv om Kim lukker browseren.
-- **Tidsgrænse:** Hvert kald arbejder højst ~15 sekunder (målt i realtid) og højst `newsletter_batch_size` mails. Det ligger langt under typiske grænser for `max_execution_time` og proxy-timeout. Endpointet sætter `ignore_user_abort(true)`, så en lukket fane ikke afbryder midt i en SMTP-transaktion.
-- **Hastighedsgrænser:** `newsletter_max_per_hour` (standard 200) og `newsletter_max_per_day` (standard 1.000) beregnes ud fra antal sendte mails i log-tabellen. Når grænsen er nået, svarer batchen "Timegrænse nået – fortsætter kl. HH:MM".
+- **Tidsgrænse:** Hvert kald fra browseren arbejder højst ~15 sekunder (målt i realtid) og højst `newsletter_batch_size` mails. Cron-kald arbejder højst 240 sekunder fra CLI og 25 sekunder via URL. Det ligger langt under typiske grænser for `max_execution_time` og proxy-timeout. Endpointet sætter `ignore_user_abort(true)`, så en lukket fane ikke afbryder midt i en SMTP-transaktion.
+- **Hastighed tilpasset Exchange Online:**
+  - Exchange Online tillader 30 beskeder pr. minut og 10.000 modtagere pr. døgn (rullende 24 timer) pr. postkasse.
+  - Den planlagte grænse på 2.000 eksterne modtagere pr. døgn pr. postkasse er annulleret (Microsofts opdatering af 06-01-2026).
+  - Organisationen har desuden en samlet grænse for eksterne modtagere pr. døgn, som skalerer med antallet af licenser.
+  - **Standardværdier:** højst **20 pr. minut** (så der er plads til Kims egne mails fra info@ samtidig), 600 pr. time og 2.000 pr. døgn. Grænsen pr. minut kan højst sættes til 30.
+  - Inden for ét kald holdes der mindst `60 / newsletter_max_per_minute` sekunder mellem to mails (3 sekunder ved 20 pr. minut).
+  - Før hver mail tælles de sendte mails i log-tabellen for de seneste 60 sekunder, 60 minutter og 24 timer. Er en grænse nået, stopper kaldet og svarer med `wait_until`.
+  - Kims få hundrede modtagere tager derfor 15–20 minutter (312 modtagere ≈ 16 minutter) og rammer aldrig Microsofts grænser.
 - **Ingen dobbelt-mails ved genoptagelse (højst én mail pr. modtager):**
   1. `UNIQUE (campaign_id, recipient_id)` i køen, så hver modtager kun kan stå i køen én gang pr. udsendelse.
   2. Én afsender ad gangen via MySQL `GET_LOCK(CONCAT(DATABASE(),':hsg_newsletter'),0)`. Låsen frigives automatisk, hvis PHP dør. Optager browser og cron samtidig, svarer den ene "optaget".
   3. Hver række reserveres med en betinget `UPDATE … SET status='sending' WHERE id=? AND status='queued'`, *lige før* den sendes. Rækken bliver først `sent`, når SMTP-serveren har svaret 250 på DATA.
   4. Når en batch starter (med låsen), er alle rækker i `sending` efterladt af en afbrudt proces. De sættes til **`unknown` og sendes ikke automatisk igen**. Administratoren ser antallet og kan vælge "Send igen til disse N" med en advarsel om, at de måske får mailen to gange.
-  5. Fejl *før* den afsluttende `.` i DATA er sikkert ikke afsendt. Rækken går tilbage i køen (op til 3 forsøg med 15 minutters mellemrum) eller bliver `failed` ved en permanent 5xx-fejl. Mistes forbindelsen *efter* den afsluttende `.`, sættes rækken til `unknown`.
-  6. Lykkes login eller forbindelse til SMTP slet ikke, sættes udsendelsen på pause med en dansk forklaring. Reserverede rækker går tilbage i køen.
+  5. Fejl *før* den afsluttende `.` i DATA betyder, at mailen sikkert ikke er sendt.
+     - En midlertidig fejl (4xx) sender rækken tilbage i køen. Der gives op til 3 forsøg med 15 minutters mellemrum.
+     - En permanent fejl (5xx) for netop denne modtager gør rækken `failed`.
+     - Mistes forbindelsen *efter* den afsluttende `.`, sættes rækken til `unknown`.
+  6. **Fejl, der gælder afsenderen, sætter udsendelsen på pause** med en dansk forklaring. Den reserverede række går tilbage i køen og bliver ikke `failed`. Det gælder, når:
+     - tokenet ikke kan hentes (fx forkert client secret, `AADSTS…`)
+     - forbindelsen eller STARTTLS fejler
+     - AUTH afvises (fx `535 5.7.3` eller `535 5.7.139`)
+     - `MAIL FROM` afvises (fx `530 5.7.57` eller `5.7.60`)
+     - et svar nævner afsenderblokering eller kvote (`5.1.8`, `5.1.90`, `SubmissionQuotaExceeded`)
+
+     Fejl ved `RCPT TO` gælder kun den modtager: `failed` ved 5xx, nyt forsøg ved 4xx.
   7. Modtagerens status kontrolleres lige før hver mail. Er modtageren afmeldt efter starten, bliver rækken `skipped`.
-- **SPF, DKIM og DMARC:** DKIM-signeringen sker hos udbyderen. Afsenderdomænet skal have SPF med udbyderens include, DKIM-nøgle fra udbyderen og en DMARC-post (start med `p=none`). Det beskrives i `docs/NEWSLETTER.md`. Under Indstillinger viser knappen "Tjek afsenderdomæne" de TXT-poster, `dns_get_record()` finder for SPF og `_dmarc`. Det er kun til information.
+- **SPF, DKIM og DMARC for Microsoft 365:**
+  - Michael styrer selv DNS (afklaret spørgsmål 4).
+  - SPF skal indeholde `include:spf.protection.outlook.com`.
+  - DKIM slås til for `hsg-whisky.dk` med de to CNAME-poster `selector1._domainkey` og `selector2._domainkey`. Uden DKIM for eget domæne signerer Microsoft med `…onmicrosoft.com`, og så kan DKIM ikke bruges til at bestå DMARC.
+  - Der skal være en DMARC-post på `_dmarc.hsg-whisky.dk`.
+  - Da info@ allerede sender fra Microsoft 365 i dag, er SPF og DKIM sandsynligvis sat op. "Tjek afsenderdomæne" bekræfter det (se S3).
+  - De præcise poster står i Brugerflow A og i `docs/NEWSLETTER.md`.
+- **Sendt post og headere:** Efter vores viden lægger Exchange ingen kopi i info@'s Sendt post, når mails indleveres via SMTP, og egne headere som `List-Unsubscribe` og `List-Unsubscribe-Post` bevares. Det kontrolleres i driftstjekket (Brugerflow A, trin 8). Oversigten over, hvad der er sendt, er HSG's udsendelseslog.
+- **Risici:**
+  - **Masseudsendelse:** Microsofts servicebeskrivelse anbefaler en specialiseret udbyder til kommercielle masseudsendelser. Én månedlig udsendelse til få hundrede kendte modtagere i lavt tempo ligger inden for grænserne. Markerer mange modtagere mailen som spam, kan Microsoft dog begrænse den postkasse, der sender (se åbent spørgsmål 13).
+  - **Port 587:** Nogle webhoteller blokerer udgående forbindelser på port 587. "Test forbindelse" afslører det med det samme. Sker det, er reserven Graph `sendMail` over HTTPS (se Fravalgt).
+  - **Client secret:** Den udløber efter højst 24 måneder. Indstillingen `newsletter_m365_secret_expires` giver en advarsel 30 dage før.
 
 **Fravalgt:**
-- *PHP `mail()`:* giver intet svar pr. modtager (returnerer bare `true` til det lokale MTA), har intet login hos en ekstern udbyder (og dermed ingen DKIM-justering), er typisk forbudt eller begrænset til bulk på webhotellet og giver en større risiko for header-injection.
+- *SMTP AUTH med brugernavn og adgangskode (Basic auth) mod Office 365:* Microsoft slår det fra som standard for eksisterende organisationer ved udgangen af december 2026. Administratorer kan slå det til igen, og den endelige fjernelse annonceres i 2027. Vi bygger ikke på adgangskoder, der er ved at blive udfaset.
+- *Microsoft Graph `sendMail`* (reserve, hvis webhotellet blokerer port 587):
+  - JSON-formatet tillader kun egne headere, der starter med `x-`, så `List-Unsubscribe` kan ikke sættes.
+  - MIME-formatet (base64) er den dokumenterede vej til egne headere, men erfaringerne er modstridende om, hvorvidt `List-Unsubscribe-Post` overlever.
+  - Graph lægger som standard en kopi i Sendt post.
+  - Det kræver en ekstra kodevej, som testerens SMTP-opsamler ikke kan afprøve.
+  - Tilladelsen `Mail.Send` giver adgang til at sende som alle postkasser, medmindre den afgrænses særskilt.
+- *High Volume Email (HVE) og Azure Communication Services:*
+  - HVE er beregnet til automatiske mails inden for organisationen fra dedikerede konti.
+  - ACS kræver et Azure-abonnement og en separat opsætning af domænet.
+  - Begge er for store til få hundrede mails om måneden.
+- *Dedikeret nyhedsbrevsudbyder (Brevo, Mailjet, Amazon SES):* Ikke længere anbefalingen, da info@ ligger i Microsoft 365. Den kan bruges som reserve, hvis Microsoft begrænser postkassen. Det kræver en databehandleraftale, nye DNS-poster og en ny forsendelsesmetode "SMTP med adgangskode", som er uden for scope. Køen og MIME-opbygningen skal ikke ændres.
+- *Webhotellets egen SMTP:* Fx forbyder Simply.com nyhedsbreve via `smtp.simply.com`.
+- *PHP `mail()`:* giver intet svar pr. modtager, har intet login mod Microsoft 365 (og dermed ingen DKIM-justering) og giver en større risiko for header-injection.
 - *PHPMailer:* kræver Composer eller at tredjepartskode lægges ind i projektet. Det er ikke tilladt.
-- *Bcc som i dag:* se begrundelsen ovenfor.
-- *Microsoft Graph `sendMail`* via de eksisterende OneDrive-legitimationsoplysninger: Graph tillader så vidt vides kun egne headere, der starter med `X-`, så `List-Unsubscribe` kan ikke sættes. Desuden giver programtilladelsen `Mail.Send` vid adgang. Det kan blive et senere trin.
+- *Bcc som i dag:* se begrundelsen under "Én mail pr. modtager".
 
 ### 3. Afmelding og GDPR
 
@@ -144,7 +198,9 @@ Udvikleren bygger og frigiver ét trin ad gangen. Hvert trin har sine egne accep
 - **Offentlig side `nyhedsbrev-afmeld.php?t=<token>`** (uden login):
   - **GET ændrer aldrig noget.** Linkscannere som Outlook Safe Links følger GET-links. Siden viser "Vil du afmelde k\*\*\*@firma.dk fra nyhedsbrevet fra HSG Whisky ApS?" med en knap.
   - **POST fra formularen** kræver `csrf_field()` og verificering (session fra `session.php`) og afmelder (`via='link'`).
-  - **POST med body `List-Unsubscribe=One-Click`** (RFC 8058) afmelder uden CSRF (`via='one_click'`) og svarer 200 med teksten `Afmeldt`. Det er en dokumenteret undtagelse (se åbent spørgsmål 8). Det hemmelige token på 256 bit fungerer som autorisation, og den eneste mulige handling er afmelding, som kan gentages uden virkning.
+  - **POST med body `List-Unsubscribe=One-Click`** (RFC 8058) afmelder uden CSRF (`via='one_click'`) og svarer 200 med teksten `Afmeldt`.
+    - Undtagelsen fra CSRF-reglen er **godkendt af Michael den 19-10-2026** (afklaret spørgsmål 8). Den gælder kun denne side, kun med et gyldigt token og kun til afmelding. CLAUDE.md ændres ikke.
+    - Det hemmelige token på 256 bit fungerer som autorisation, og den eneste mulige handling er afmelding, som kan gentages uden virkning.
   - Siden inkluderer **ikke** `auth.php`, fordi den ville afvise uden login og kræve CSRF. Den inkluderer `session.php`, `functions.php`, `db.php`, `core/settings.php`, `core/audit.php`, `core/access_links.php` og `core/newsletter.php`, som `cron/backup.php` gør. Den respekterer `.hsg-maintenance` (503).
   - **Siden virker også, når modulet er deaktiveret.** Det skal altid være muligt at afmelde sig.
   - Headere: `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex, nofollow`, `Cache-Control: no-store`.
@@ -152,14 +208,14 @@ Udvikleren bygger og frigiver ét trin ad gangen. Hvert trin har sine egne accep
 - **Mailen:** Headeren `List-Unsubscribe: <https://…/nyhedsbrev-afmeld.php?t=TOKEN>, <mailto:svar-til?subject=Afmeld>` og `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. Synligt afmeldingslink og teksten "Du kan også svare på denne mail og skrive 'afmeld'" nederst. Administratoren afmelder manuelt på modtagerens side (`via='admin'`).
 - **Mailadresser i URL'er:** Mailadresser må aldrig stå i URL'er. Offentlige links indeholder kun token og udsendelses-id. Administrationssider bruger `?id=`. Søgning i modtagerlisten filtrerer i browseren (JavaScript), så der aldrig sendes en GET-forespørgsel med mailadressen. Eksport og sletning sker via POST.
 - **Mailadresser i audit-loggen:** Audit-loggen indeholder aldrig mailadresser, kun modtager-id og antal.
-- **Afmeldte bevares** med status *Afmeldt* som spærreliste, så en genimport ikke tilmelder dem igen. Genaktivering kræver, at administratoren sætter flueben ved "Modtageren har selv bedt om at blive tilmeldt igen". Det audit-logges.
+- **Afmeldte bevares** med status *Afmeldt* som spærreliste uden automatisk anonymisering (afklaret spørgsmål 7), så en genimport ikke tilmelder dem igen. Genaktivering kræver, at administratoren sætter flueben ved "Modtageren har selv bedt om at blive tilmeldt igen". Det audit-logges.
 - **Sletning (ret til sletning):** Rækken anonymiseres. `email`, `name`, `company`, `token_hash` og `token_cipher` sættes til NULL, og status sættes til `deleted`. Kun `email_hash` bevares, så personen ikke kommer med igen ved næste import. Rækker i køen og loggen peger kun på modtager-id og indeholder ingen mailadresse.
-- **Eksport (ret til indsigt):** CSV med UTF-8 BOM og semikolon. Den indeholder modtagerens felter og (fra trin 2) udsendelseshistorikken. Celler, der starter med `=`, `+`, `-` eller `@`, får et foranstillet `'`, så de ikke kan køre som formler i Excel.
-- **Opbevaring:**
+- **Eksport (ret til indsigt):** CSV med UTF-8 BOM og semikolon. Den indeholder modtagerens felter (mail, navn, firma, type, status, kilde, oprettet, afmeldt) og (fra trin 2) udsendelseshistorikken. Celler, der starter med `=`, `+`, `-` eller `@`, får et foranstillet `'`, så de ikke kan køre som formler i Excel.
+- **Opbevaring (afklaret spørgsmål 7):**
   - Udsendelsesrækker slettes, når udsendelsen blev afsluttet for mere end `newsletter_log_retention_months` (standard 24) måneder siden. Selve udsendelsen (emne og tekst) bevares, da den ikke indeholder personoplysninger.
   - Katalogfiler slettes efter udløb (trin 3).
   - Oprydningen kører i cron og, når en administrator åbner Nyhedsbrev.
-- **Retsgrundlag:** Gemmes pr. modtager (`basis`). Afgørelsen af, om grundlaget er lovligt, er et åbent spørgsmål til Michael (punkt 1).
+- **Grundlag for udsendelsen:** Grundlaget for at sende nyhedsbrevet til modtagerne er HSG's ansvar uden for systemet. Systemet spørger ikke om det og registrerer det ikke.
 
 **Fravalgt:**
 - *Mailadresse i afmeldingslinket (`?email=`):* lækker til logfiler og browserhistorik og lader alle afmelde alle.
@@ -223,27 +279,27 @@ Udvikleren bygger og frigiver ét trin ad gangen. Hvert trin har sine egne accep
 - **CSRF:**
   - Alle POST-formularer har `csrf_field()`. `auth.php` kalder `verify_csrf()` globalt.
   - AJAX-endpointet sender `csrf` i FormData.
-  - Den eneste undtagelse er ét-klik-POST på `nyhedsbrev-afmeld.php` (se punkt 3).
-- **Audit:** `audit_log($pdo, $action, $entityType, $entityId, $details)`. `details` må aldrig indeholde mailadresser eller adgangskoder.
+  - Den eneste undtagelse er ét-klik-POST på `nyhedsbrev-afmeld.php` (godkendt af Michael 19-10-2026, se punkt 3).
+- **Audit:** `audit_log($pdo, $action, $entityType, $entityId, $details)`. `details` må aldrig indeholde mailadresser, client secrets eller tokens.
 
 | Handling | `action` | `entity_type` / `entity_id` | `details` (eksempel) |
 |---|---|---|---|
-| Import gennemført | `newsletter.import` | `newsletter` / – | filnavn, ark, segmentvalg, grundlag, antal nye/opdaterede/uændrede/sprunget over/ugyldige/dubletter/konflikter |
-| Modtager tilføjet manuelt | `newsletter.recipient.create` | `newsletter_recipient` / id | segment, grundlag |
+| Import gennemført | `newsletter.import` | `newsletter` / – | filnavn, ark, segmentvalg, antal nye/opdaterede/uændrede/sprunget over/ugyldige/dubletter/konflikter |
+| Modtager tilføjet manuelt | `newsletter.recipient.create` | `newsletter_recipient` / id | segment |
 | Modtager rettet | `newsletter.recipient.update` | `newsletter_recipient` / id | navnene på de ændrede felter (ingen værdier) |
 | Afmelding | `newsletter.recipient.unsubscribe` | `newsletter_recipient` / id | `via`: link / one_click / admin |
 | Stoppet / genaktiveret | `newsletter.recipient.stop` / `.reactivate` | `newsletter_recipient` / id | `self_requested: true` ved genaktivering af en afmeldt |
 | Slettet (anonymiseret) | `newsletter.recipient.delete` | `newsletter_recipient` / id | – |
 | Dataeksport | `newsletter.recipient.export` | `newsletter_recipient` / id | – |
-| Indstillinger gemt | `newsletter.settings` | `system` / – | nøglerne der er ændret; `smtp_password_changed: true` |
-| SMTP-test | `newsletter.smtp_test` | `system` / – | ok/fejl og SMTP-kode |
+| Indstillinger gemt | `newsletter.settings` | `system` / – | nøglerne der er ændret; `m365_secret_changed: true` |
+| Forbindelsestest | `newsletter.smtp_test` | `system` / – | forsendelsesmetode, ok/fejl, SMTP-kode eller Microsoft-fejlkode (`AADSTS…`) |
 | Ny cron-nøgle | `newsletter.cron_key.rotate` | `system` / – | – |
 | Udsendelse oprettet / rettet / kopieret / slettet | `newsletter.campaign.create` / `.update` / `.copy` / `.delete` | `newsletter_campaign` / id | – |
 | Katalog fastfrosset | `newsletter.campaign.catalog_snapshot` | `newsletter_campaign` / id | varianter, størrelser, de første 12 tegn af SHA-256 |
 | Test sendt | `newsletter.campaign.test` | `newsletter_campaign` / id | antal testadresser, varianter, de første 12 tegn af hashen |
 | Udsendelse startet | `newsletter.campaign.start` | `newsletter_campaign` / id | antal pr. segment, de første 12 tegn af hashen |
 | Pause / genoptag / annullér resten | `newsletter.campaign.pause` / `.resume` / `.cancel` | `newsletter_campaign` / id | antal i kø |
-| Automatisk pause (SMTP-fejl) | `newsletter.campaign.auto_pause` | `newsletter_campaign` / id | årsag (uden adgangskode) |
+| Automatisk pause (afsenderfejl) | `newsletter.campaign.auto_pause` | `newsletter_campaign` / id | årsag og kode (uden secret og token) |
 | Gensend ukendte | `newsletter.campaign.retry_unknown` | `newsletter_campaign` / id | antal |
 | Udsendelse færdig | `newsletter.campaign.complete` | `newsletter_campaign` / id | sendt/fejlet/ukendt/sprunget over |
 | Oprydning | `newsletter.cleanup` | `system` / – | antal slettede logrækker og katalogfiler (logges kun, hvis antallet er større end 0) |
@@ -254,14 +310,30 @@ Der logges **ikke** pr. afsendt mail (loggen findes i `hsg_newsletter_deliveries
 
 **Anbefaling:**
 - Indstillingerne gemmes i `hsg_settings` via `setting_get()` og `setting_set()` (nøgler: se *Data*), på samme måde som `openai_api_key` og `onedrive_client_secret`. Siden er `newsletter_settings.php`.
-- De hemmelige nøgler `newsletter_smtp_password` og `newsletter_cron_key` føjes til `hsg_backup_sensitive_setting_keys()` i `core/backup.php`. De kommer derfor ikke med i backup, ligesom de eksisterende hemmeligheder. Teksterne om, hvilke hemmeligheder der ikke tages med, opdateres i restore-README'en og på `backup.php`.
-- Adgangskodefeltet kan kun skrives i: `type="password"` med tom værdi og teksten "Lad feltet være tomt for at beholde den eksisterende adgangskode". Det er samme mønster som client secret i `backup.php`. Adgangskoden vises, logges og returneres aldrig.
+- **Forsendelsesmetode (`newsletter_transport`):**
+  - `m365` – "Microsoft 365 (OAuth2)". Standard. Vært, port og kryptering ligger fast i koden: `smtp.office365.com`, 587, STARTTLS.
+  - `local` – "Lokal test-SMTP uden login". Vært og port kan indstilles, men værten skal være `127.0.0.1`, `localhost` eller `::1`.
+- **Egen Entra-app med egne indstillinger:** `newsletter_m365_tenant_id`, `newsletter_m365_client_id`, `newsletter_m365_client_secret` og `newsletter_m365_secret_expires` (valgfri dato, som giver en advarsel 30 dage før udløb).
+  - Er feltet Tenant ID tomt, foreslås værdien af `onedrive_tenant_id`. Det er kun et forslag i feltet, og OneDrive-indstillingerne bruges ikke til andet.
+  - **Begrundelse:**
+    - OneDrive-backuppens adfærd forbliver helt uændret, fordi hverken `hsg_onedrive_token()` (fast scope og statisk cache) eller OneDrive-indstillingerne røres.
+    - Nyhedsbrevets secret kan fornyes eller tilbagekaldes uden at påvirke backuppen.
+    - Appen får kun `SMTP.SendAsApp` og kun til de postkasser, Exchange giver den rettighed til.
+    - OneDrive-backuppen er valgfri og findes måske slet ikke.
+- **Hemmelige nøgler:** `newsletter_m365_client_secret` og `newsletter_cron_key` føjes til `hsg_backup_sensitive_setting_keys()` i `core/backup.php`. De kommer derfor ikke med i backup, ligesom de eksisterende hemmeligheder. Teksterne om, hvilke hemmeligheder der ikke tages med, opdateres i restore-README'en og på `backup.php` ("client secret til nyhedsbrevets Microsoft 365-app og nyhedsbrevets cron-nøgle").
+- **Client secret-feltet** kan kun skrives i: `type="password"` med tom værdi og teksten "Lad feltet være tomt for at beholde den eksisterende client secret". Det er samme mønster som client secret i `backup.php`. Secret og tokens vises, logges og returneres aldrig, heller ikke i fejltekster fra Microsoft.
 - **Offentlig adresse (`newsletter_public_base_url`) er obligatorisk.** `base_url()` giver `http://localhost` i CLI-cron og `…/cron` ved kald af cron via URL. Links i mails skal derfor bygges ud fra en fast adresse. Feltet foreslår `base_url()`, når det vises første gang. Det skal starte med `https://`, eller `http://localhost` / `http://127.0.0.1` til test, og må ikke have en afsluttende `/`.
-- Kryptering vælges som `STARTTLS (587)` eller `SSL/TLS (465)`. `Ingen` kan kun vælges, hvis værten er `localhost` eller `127.0.0.1` (til en lokal test-SMTP).
+- **Afsenderoplysninger:** Michael udfylder felterne "Bund i mailen" (adresse og CVR) og "Privatlivspolitik" ved opsætningen med de samme oplysninger som på hsg-whisky.dk (afklaret spørgsmål 9). Der hardkodes intet.
+- **cURL:** Mangler PHP cURL, viser siden "PHP cURL mangler – Microsoft 365 kan ikke bruges", og Test og Start er deaktiveret for `m365`.
 
 **Fravalgt:**
+- *Genbrug af OneDrive-appen med en ekstra tilladelse:*
+  - Én hemmelighed ville give adgang til både filer (`Files.ReadWrite.All`) og afsendelse af mail. Det øger skaden, hvis den lækker.
+  - Fornyelse af secret ville påvirke backup og nyhedsbrev på samme tid.
+  - `hsg_onedrive_token()` skulle ændres for at kunne bruge et andet scope, og det strider mod kravet om uændret OneDrive-adfærd.
 - *`config.php`:* må ikke røres, og administratoren kan ikke redigere den.
-- *Kryptering af SMTP-adgangskoden med nøglen til adgangslinks:* nøglen ligger i samme backup som databasen og giver derfor ingen reel beskyttelse. Det ville afvige fra det eksisterende mønster.
+- *Kryptering af client secret med nøglen til adgangslinks:* nøglen ligger i samme backup som databasen og giver derfor ingen reel beskyttelse. Det ville afvige fra det eksisterende mønster.
+- *Fri SMTP-vært med adgangskode:* uden for scope (se beslutning 2, Fravalgt).
 
 ---
 
@@ -269,15 +341,34 @@ Der logges **ikke** pr. afsendt mail (loggen findes i `hsg_newsletter_deliveries
 
 ### A. Første opsætning (Michael, trin 1 og 2)
 1. Opgrader HSG. Modulet *Nyhedsbrev* bliver oprettet automatisk, og kun superadministratorer har adgang.
-2. *Nyhedsbrev → Indstillinger:* udfyld afsendernavn (forudfyldt "HSG Whisky ApS"), afsenderadresse, svar-til, offentlig adresse, footer (adresse og CVR), link til privatlivspolitik og testadresse.
-3. Udfyld SMTP-oplysninger fra den valgte udbyder → **Test SMTP-forbindelse** → "Forbindelsen virker".
-4. **Tjek afsenderdomæne** → kontrollér, at SPF og DMARC findes (DKIM kontrolleres i udbyderens kontrolpanel).
-5. Opret en cron på webhotellet hvert 5. minut med kommandoen eller URL'en, der vises på siden.
-6. Giv evt. andre login-brugere adgang i *Brugere → Login-brugere*.
+2. **Microsoft 365 – engangsopsætning (ca. 30 minutter).** Samme trin står i `docs/NEWSLETTER.md`.
+   1. *Entra admin center → App-registreringer → Ny registrering:* navn "HSG Administration – Nyhedsbrev", kun konti i denne organisation, ingen omdirigerings-URI. Notér **Application (client) ID** og **Directory (tenant) ID**.
+   2. *Certifikater og hemmeligheder → Ny client secret* (fx 24 måneder). Kopiér **Value** med det samme, og notér udløbsdatoen.
+   3. *API-tilladelser → Tilføj en tilladelse → "APIs my organization uses" → Office 365 Exchange Online → Programtilladelser → `SMTP.SendAsApp`* → **Giv administratorsamtykke**.
+   4. *Enterprise-programmer → appen → Oversigt:* kopiér **Object ID**. Det skal være enterprise-appens (service principalens) ID, ikke app-registreringens.
+   5. *Exchange Online PowerShell* (`Connect-ExchangeOnline`):
+      - `New-ServicePrincipal -AppId <client-id> -ObjectId <enterprise-object-id> -DisplayName "HSG Nyhedsbrev"`
+      - `Add-MailboxPermission -Identity info@hsg-whisky.dk -User <enterprise-object-id> -AccessRights FullAccess`
+      - `Set-CASMailbox -Identity info@hsg-whisky.dk -SmtpClientAuthenticationDisabled $false`. Det slår SMTP AUTH til for netop info@ og kræves også med OAuth. Det samme kan gøres i Microsoft 365 Admin Center under brugeren → Mail → Administrer mailapps → "Authenticated SMTP".
+   6. **DNS for `hsg-whisky.dk`** (Michael styrer DNS). Sandsynligvis er SPF og DKIM allerede sat op, fordi info@ sender fra Microsoft 365 i dag:
+      - **SPF** (TXT på `hsg-whisky.dk`): `v=spf1 include:spf.protection.outlook.com -all`. Sender andre tjenester (fx webshop eller webhotel) også som @hsg-whisky.dk, skal deres `include:` med i *samme* post. Der må kun være én SPF-post.
+      - **DKIM**: Gå til *Microsoft Defender → E-mail og samarbejde → Politikker og regler → Trusselspolitikker → Indstillinger for mailgodkendelse → DKIM → hsg-whisky.dk*. Opret de to CNAME-poster `selector1._domainkey` og `selector2._domainkey` med præcis de mål, portalen viser (fx `selector1-hsg-whisky-dk._domainkey.<tenant>.onmicrosoft.com`; nyere domæner kan få et mål under `…dkim.mail.microsoft`). Slå signering til, når posterne er slået igennem.
+      - **DMARC** (TXT på `_dmarc.hsg-whisky.dk`): start med `v=DMARC1; p=none; rua=mailto:<adresse til rapporter>`. Efter 2–4 uger uden fejl i rapporterne skiftes til `p=quarantine`.
+3. *Nyhedsbrev → Indstillinger:* udfyld afsendernavn (forudfyldt "HSG Whisky ApS"), afsenderadresse (`info@hsg-whisky.dk`), svar-til, offentlig adresse, "Bund i mailen" og "Privatlivspolitik" med oplysningerne fra hsg-whisky.dk samt testadresse.
+4. Forsendelse: vælg **Microsoft 365 (OAuth2)**, og udfyld tenant ID, client ID, client secret og udløbsdato → **Test forbindelse** → "Forbindelsen virker (smtp.office365.com:587, STARTTLS, OAuth2 som info@hsg-whisky.dk)".
+5. **Tjek afsenderdomæne** → SPF, DKIM og DMARC skal stå som "OK".
+6. Opret en cron på webhotellet hvert 5. minut (eller hvert minut, hvis webhotellet tillader det) med kommandoen eller URL'en, der vises på siden.
+7. Giv evt. andre login-brugere adgang i *Brugere → Login-brugere* (afklaret spørgsmål 10).
+8. **Driftstjek, før den første rigtige udsendelse:**
+   - Send en test til en Gmail- og en Outlook.com-adresse.
+   - Under "Vis original" skal der stå SPF = PASS, DKIM = PASS med `d=hsg-whisky.dk` og DMARC = PASS.
+   - Headerne `List-Unsubscribe` og `List-Unsubscribe-Post` skal være med, og Gmail skal vise "Afmeld".
+   - Se efter, om der ligger kopier i info@'s Sendt post.
+   - Mangler `List-Unsubscribe-Post`, eller lægger Exchange kopier i Sendt post, meldes det til udvikleren, før systemet tages i brug.
 
 ### B. Månedlig import af kundelisten (Kim, trin 1)
 1. *Nyhedsbrev → Import* → vælg Excel/CSV-fil.
-2. Vælg "Hvem er i filen?" (Kunder / Forhandlere / Brug kolonne) og "Grundlag" (Samtykke / Eksisterende kunde), og sæt flueben ved bekræftelsen → **Analysér fil**.
+2. Vælg "Hvem er i filen?" (Kunder / Forhandlere / Brug kolonne) → **Analysér fil**.
 3. Forhåndsvisningen viser den valgte mailkolonne (fx "Kolonne D – E-mail") og tal for: nye, opdateres, uændrede, afmeldte/stoppede/slettede (springes over), ugyldige, dubletter, konflikter, typeskift og "N aktive modtagere står ikke i filen". Kim kan ændre kolonnevalget og genberegne.
 4. **Importér 25 nye og opdatér 3** → besked om resultatet, og importen audit-logges.
 
@@ -288,7 +379,7 @@ Der logges **ikke** pr. afsendt mail (loggen findes i `hsg_newsletter_deliveries
 4. Se forhåndsvisningen for *Forhandler* og *Kunde*.
 5. **Send test** → åbn testmailen i Outlook eller på mobilen, og klik på katalog- og afmeldingslinket.
 6. Sæt flueben ved "Jeg har modtaget og kontrolleret testmailen" → **Start udsendelse til 312 modtagere** → bekræft.
-7. Siden viser fremdriften. Kim kan lade siden stå åben eller lukke den, hvis cron er sat op ("Sidste cron-kørsel kl. 10.55").
+7. Siden viser fremdriften (ca. 16 minutter for 312 modtagere ved 20 pr. minut). Kim kan lade siden stå åben eller lukke den, hvis cron er sat op ("Sidste cron-kørsel kl. 10.55").
 8. Når udsendelsen er færdig, vises en opsummering med en liste over fejlede og ukendte modtagere.
 
 ### D. Modtager afmelder sig
@@ -304,11 +395,15 @@ Der logges **ikke** pr. afsendt mail (loggen findes i `hsg_newsletter_deliveries
 1. Browseren lukkes, eller PHP dør → køen står uændret. Cron eller det næste besøg på siden fortsætter med rækkerne `queued`.
 2. Var en mail undervejs, sættes den til *Ukendt*. Siden viser "1 modtager har ukendt status (afbrudt under afsendelse). Sendes ikke igen automatisk." og knappen **Send igen til disse 1** med en advarsel.
 
+### G. Client secret udløber (Michael)
+1. 30 dage før `newsletter_m365_secret_expires` viser alle Nyhedsbrev-sider en advarsel: "Client secret til Microsoft 365 udløber 19.10.2028 – opret en ny i Entra, og indsæt den under Indstillinger."
+2. Michael opretter en ny secret på appen, indsætter den og den nye udløbsdato → **Test forbindelse**.
+
 ---
 
 ## Skærme
 
-Alle sider bruger `page_header()` og `page_footer()` og de eksisterende komponenter: `.card`, `.grid` med `.card.metric`, `.split`, `.three`, `.simple-tabs`, `.table-wrap`, `.badge` (`green` / `amber` / `red` / `blue`), `.actions`, `.check`, `.muted`, `.flash`, og til forhåndsvisningen `.catalog-pdf-wrapper` og `.catalog-pdf-iframe`. De offentlige sider bruger samme opbygning som skærmen for manglende login i `auth.php` (`<main class="public"><div class="card narrow">`). Den eneste nye CSS er `.newsletter-progress{width:100%;height:14px}` til det indbyggede `<progress>`-element. På skærme under 900 px falder `.split` og `.three` automatisk sammen til én kolonne, og tabeller scroller vandret inde i `.table-wrap`.
+Alle sider bruger `page_header()` og `page_footer()` og de eksisterende komponenter: `.card`, `.grid` med `.card.metric`, `.split`, `.three`, `.simple-tabs`, `.table-wrap`, `.badge` (`green` / `amber` / `red` / `blue`), `.actions`, `.check`, `.muted`, `.flash` (inkl. `.flash.warning` til advarslen om secret-udløb), og til forhåndsvisningen `.catalog-pdf-wrapper` og `.catalog-pdf-iframe`. De offentlige sider bruger samme opbygning som skærmen for manglende login i `auth.php` (`<main class="public"><div class="card narrow">`). Den eneste nye CSS er `.newsletter-progress{width:100%;height:14px}` til det indbyggede `<progress>`-element. På skærme under 900 px falder `.split` og `.three` automatisk sammen til én kolonne, og tabeller scroller vandret inde i `.table-wrap`.
 
 **Menu:**
 - I `page_header()` (`functions.php`) tilføjes under sektionen **SALG**: `'newsletter' => ['newsletter.php','✉','Nyhedsbrev']`. Menupunktet vises kun, når modulet er aktivt og brugeren har modulet (den eksisterende kontrol `hsg_admin_can_view_module`).
@@ -341,11 +436,11 @@ Søg i listen [______________]  (filtrerer i browseren)  [+ Tilføj modtager]
 
 - Typen vises som badge: Forhandler = `blue`, Kunde = standard. Status: Aktiv = `green`, Afmeldt = `amber`, Stoppet = `red`. Slettede vises ikke i listen.
 - **Tilføj modtager** (foldes ud med `<details>`):
-  - Felter: Mail*, Navn, Firma, Type (Kunde/Forhandler), Grundlag (Samtykke / Eksisterende kunde (soft opt-in))*.
+  - Felter: Mail*, Navn, Firma, Type (Kunde/Forhandler).
   - Knappen hedder **Tilføj**.
   - Var adressen tidligere afmeldt eller slettet, vises fejlen "Adressen er tidligere afmeldt/slettet. Sæt flueben, hvis modtageren selv har bedt om at blive tilmeldt igen." sammen med fluebenet.
 - **Rediger** (`?id=N`):
-  - Felter: Mail, Navn, Firma, Type og Grundlag, plus (kun læsning) Kilde, Oprettet, Sidst set i import, Afmeldt (tidspunkt og hvordan).
+  - Felter: Mail, Navn, Firma og Type, plus (kun læsning) Kilde, Oprettet, Sidst set i import, Afmeldt (tidspunkt og hvordan).
   - Feltet "Personligt afmeldingslink" er kun til læsning med `onclick="this.select()"`. Det er beregnet til manuel hjælp og test. I trin 1 bygges linket med `base_url()` (den aktuelle browserforespørgsel), fra trin 2 med `newsletter_public_base_url`, når den er udfyldt.
   - Knapper: **Gem** · **Afmeld** (hvis aktiv) · **Stop** (fx afviste mails) / **Genaktivér** (genaktivering fra Afmeldt kræver fluebenet "selv bedt om") · **Eksportér data (CSV)** · **Slet modtager** (`button.danger` + `confirm('Slet modtageren permanent? Mailadressen gemmes kun som en uigenkendelig spærring, så den ikke importeres igen.')`).
   - Fra trin 2 vises også tabellen *Udsendelseshistorik* (Udsendelse, Emne, Status, Sendt).
@@ -358,8 +453,6 @@ Import af modtagere
 +------------------------------------------------------------------+
 | Excel/CSV-fil  [Vælg fil]   (.xlsx eller .csv, højst 5.000 rækker)|
 | Hvem er i filen?   (o) Kunder  ( ) Forhandlere  ( ) Brug kolonne   |
-| Grundlag*          ( ) Samtykke  ( ) Eksisterende kunde (soft opt-in)
-| [ ] Jeg bekræfter, at modtagerne i filen har dette grundlag.      |
 | [Analysér fil]                                                    |
 +------------------------------------------------------------------+
 
@@ -389,7 +482,6 @@ Skifter type: 2 · Aktive modtagere, der ikke står i filen: 5
 - Afmeldte adresser vises maskeret (`a***@x.dk`).
 - Fejltekster (vises med `flash('error', …)`):
   - "Vælg en Excel-fil (.xlsx) eller CSV-fil."
-  - "Vælg grundlag for modtagerne, og bekræft det."
   - "Filen indeholder ingen gyldige mailadresser."
   - "Filen har mere end 5.000 rækker."
   - "Forhåndsvisningen er udløbet – upload filen igen."
@@ -399,29 +491,59 @@ Skifter type: 2 · Aktive modtagere, der ikke står i filen: 5
 ```
 Afsender
   Afsendernavn      [HSG Whisky ApS        ]
-  Afsenderadresse*  [info@hsg-whisky.dk    ]
+  Afsenderadresse*  [info@hsg-whisky.dk    ]  (postkassen i Microsoft 365)
   Svar-til          [                      ]  (tom = afsenderadresse)
   Offentlig adresse*[https://lager.hsg-whisky.dk]  (bruges i links i mails)
-  Bund i mailen     [HSG Whisky ApS · adresse · CVR ...]  (textarea)
-  Privatlivspolitik [https://...           ]  (valgfri)
+  Bund i mailen     [adresse og CVR som på hsg-whisky.dk]  (textarea)
+  Privatlivspolitik [https://hsg-whisky.dk/...]
   Testadresse       [michael@...           ]
-SMTP
-  Vært* [smtp-relay.eksempel.dk]  Port* [587]  Kryptering [STARTTLS v]
-  Brugernavn [........]  Adgangskode [••••] (Lad feltet være tomt for at beholde)
+Forsendelse
+  Metode  (o) Microsoft 365 (OAuth2) – smtp.office365.com:587, STARTTLS
+          ( ) Lokal test-SMTP uden login (kun 127.0.0.1 / localhost)
+  Microsoft 365
+    Tenant ID*      [........-....-....]   Client ID* [........-....-....]
+    Client secret*  [••••] (Lad feltet være tomt for at beholde den eksisterende client secret)
+    Secret udløber  [2028-10-19] (valgfri – advarsel 30 dage før)
+  Lokal test-SMTP
+    Vært [127.0.0.1]  Port [2525]
 Hastighed og opbevaring
-  Mails pr. kald [20]  Maks. pr. time [200]  Maks. pr. døgn [1000]
+  Mails pr. kald [10]  Maks. pr. minut [20]  pr. time [600]  pr. døgn [2000]
   Gem udsendelseslog i [24] måneder   Kataloglink gyldigt i [90] dage (trin 3)
-[Gem indstillinger]  [Test SMTP-forbindelse]  [Tjek afsenderdomæne]
+[Gem indstillinger]  [Test forbindelse]  [Tjek afsenderdomæne]
+
+Afsenderdomæne hsg-whisky.dk                (vises efter "Tjek afsenderdomæne")
+  SPF    OK      v=spf1 include:spf.protection.outlook.com -all
+  DKIM   OK      selector1 og selector2 peger på Microsoft
+  DMARC  OK      v=DMARC1; p=none; rua=...
 
 Webhotel-cron
-  Anbefalet CLI-kommando [php /sti/cron/newsletter.php]
+  Anbefalet CLI-kommando [php /sti/cron/newsletter.php]   (hvert 5. minut)
   Beskyttet cron-URL     [https://…/cron/newsletter.php?key=…]
   Sidste cron-kørsel: 19.10.2026 10.55        [Generér ny cron-nøgle]
 ```
 
-- **Gyldige værdier:** port 1–65535; mails pr. kald 1–100; pr. time 1–10.000; pr. døgn 1–100.000; log 6–60 måneder; kataloglink 7–365 dage. Ugyldige værdier afvises med en dansk fejltekst, og intet gemmes.
-- "Test SMTP-forbindelse" forbinder, starter TLS, logger ind og afslutter med QUIT, uden at sende en mail. Resultatet vises som flash: "Forbindelsen virker (smtp…:587, STARTTLS, logget ind som …)" eller "SMTP-test fejlede: 535 Authentication failed".
-- Kun cron-URL'en og CLI-kommandoen vises i klartekst (som i `backup.php`). SMTP-adgangskoden vises aldrig.
+- **Gyldige værdier:**
+  - mails pr. kald 1–30; pr. minut 1–30 (Exchange Onlines grænse er 30); pr. time 1–1.800; pr. døgn 1–9.000 (under Exchange Onlines 10.000)
+  - log 6–60 måneder; kataloglink 7–365 dage
+  - port for lokal test-SMTP 1–65535; udløbsdato tom eller en gyldig dato
+  - værten for lokal test-SMTP skal være `127.0.0.1`, `localhost` eller `::1`
+
+  Ugyldige værdier afvises med en dansk fejltekst, og intet gemmes.
+- **"Test forbindelse" med Microsoft 365** henter et token, forbinder, starter TLS, logger ind med XOAUTH2 og afslutter med QUIT, uden at sende en mail. Resultatet vises som flash:
+  - OK: "Forbindelsen virker (smtp.office365.com:587, STARTTLS, OAuth2 som info@hsg-whisky.dk)".
+  - Token kunne ikke hentes: "Microsoft-login fejlede: <Microsofts fejlkode og tekst, fx AADSTS7000215>" (aldrig secret eller token).
+  - `535 5.7.3`: "Exchange afviste login (535 5.7.3). Kontrollér service principal og FullAccess til postkassen – se vejledningen."
+  - `535 5.7.139`: "SMTP AUTH er slået fra for postkassen (535 5.7.139). Slå 'Authenticated SMTP' til for postkassen."
+  - Forbindelsen fejler: "Kunne ikke forbinde til smtp.office365.com:587. Webhotellet blokerer måske udgående port 587."
+- **"Test forbindelse" med lokal test-SMTP:** forbinder, EHLO, QUIT.
+- **"Tjek afsenderdomæne"** bruger `dns_get_record()` på domænet i afsenderadressen og er kun til læsning:
+  - **SPF:** OK, hvis der er præcis én `v=spf1`-post, og den indeholder `include:spf.protection.outlook.com`. Ellers "Mangler" eller "Flere SPF-poster".
+  - **DKIM:** OK, hvis `selector1._domainkey` og `selector2._domainkey` er CNAME-poster, der ender på `.onmicrosoft.com` eller indeholder `dkim.mail.microsoft`.
+  - **DMARC:** OK, hvis `_dmarc.<domæne>` har en TXT-post, der starter med `v=DMARC1`. Politikken (`p=`) vises.
+
+  Resultatet vises med badges (`green` OK, `amber` mangler) og de fundne poster. Der kommer ingen PHP-fejl, hvis DNS-opslaget fejler.
+- Kun cron-URL'en og CLI-kommandoen vises i klartekst (som i `backup.php`). Client secret vises aldrig.
+- Mangler PHP cURL, vises "PHP cURL mangler – Microsoft 365 kan ikke bruges".
 
 ### S4. Udsendelser – `newsletter.php` (trin 2)
 
@@ -467,7 +589,8 @@ Udsendelse #12                                              [Kladde]
 | 312 modtagere (48 forhandlere, 264 kunder)                      |
 | [ ] Jeg har modtaget og kontrolleret testmailen                 |
 | [Start udsendelse til 312 modtagere]   (deaktiveret før test)   |
-| Mangler: Afsenderadresse, SMTP-vært   (hvis indstillinger mangler)
+| Mangler: Afsenderadresse, Microsoft 365-oplysninger             |
+|          (vises kun, hvis indstillinger mangler)                 |
 +-----------------------------------------------------------------+
 ```
 
@@ -487,14 +610,15 @@ Afsendelsen kører. Hold siden åben
 - **Tilstande og knapper:**
   - *Kladde:* som skitsen.
   - *Sender:* **Pause**, **Annullér resten**.
-  - *På pause:* **Genoptag**, **Annullér resten**, plus årsagen (fx "Automatisk pause: SMTP-login fejlede (535). Ret indstillingerne og tryk Genoptag.").
+  - *På pause:* **Genoptag**, **Annullér resten**, plus årsagen (fx "Automatisk pause: Exchange afviste login (535 5.7.3). Ret indstillingerne og tryk Genoptag." eller "Automatisk pause: Microsoft 365's sendegrænse er nået. Tryk Genoptag senere.").
   - *Færdig/Annulleret:* opsummering, tabellen *Fejlede* (Mail, Fejl), antal *Ukendte* med **Send igen til disse N** (`confirm` med advarsel om mulig dobbelt-mail), og **Kopiér til ny kladde** i alle tilstande.
 - Når udsendelsen er startet, er emne, tekst, målgruppe og katalog låst og vises kun til læsning.
 - Kun én udsendelse kan være *Sender* eller *På pause* ad gangen. Start af en anden afvises med "En anden udsendelse er i gang (#11)."
 - **Fremdrift via JavaScript:**
   - Mens status er *Sender*, kaldes `newsletter_send.php` (POST med `csrf`, `campaign_id`).
   - Svaret er JSON: `{ok, status, counts:{total,queued,sending,sent,failed,unknown,skipped}, sent_now, busy, wait_until, message}`.
-  - Næste kald sker efter 0,5 s. Ved `busy` ventes 5 s. Ved `wait_until` vises "Timegrænse nået (200 pr. time). Fortsætter kl. 11.42." og der prøves igen hvert 60. sekund.
+  - Næste kald sker efter 0,5 s. Ved `busy` ventes 5 s.
+  - Ved `wait_until` vises fx "Sendegrænse nået (20 pr. minut). Fortsætter kl. 11.42.", og næste kald sker på det tidspunkt (højst 60 s ad gangen).
   - Kaldene stopper ved `paused`, `done` eller `cancelled`, og siden genindlæses.
 - Uden JavaScript sker afsendelsen kun via cron. Siden viser tallene ved genindlæsning.
 
@@ -536,6 +660,7 @@ Siden returnerer kun mailens HTML (ingen `page_header`). Links til afmelding og 
 
 - **Headere:**
   - `Date`, `From: "<afsendernavn>" <afsenderadresse>` (navnet kodet efter RFC 2047, UTF-8), `To: <modtager>`, `Reply-To` (hvis udfyldt), `Subject` (RFC 2047), `Message-ID: <32hex@afsenderdomæne>`, `MIME-Version: 1.0`, `List-Unsubscribe`, `List-Unsubscribe-Post`.
+  - `From` og `MAIL FROM` er altid afsenderadressen, dvs. den postkasse, appen har rettighed til.
   - Linjeskift og CR i alle headerværdier fjernes.
   - Der bruges ingen `Cc` eller `Bcc` og ingen sporing.
 - **Krop:** `multipart/alternative` med en `text/plain`- og en `text/html`-del, begge UTF-8 og quoted-printable. Linjer i SMTP er højst 998 tegn, linjeskift er CRLF, og der bruges dot-stuffing.
@@ -584,7 +709,6 @@ Alle tabeller bruger `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unic
 | `company` | VARCHAR(180) NULL | |
 | `segment` | ENUM('dealer','customer') NOT NULL DEFAULT 'customer' | Forhandler / Kunde |
 | `status` | ENUM('active','unsubscribed','stopped','deleted') NOT NULL DEFAULT 'active' | Aktiv / Afmeldt / Stoppet / Slettet |
-| `basis` | ENUM('consent','existing_customer') NOT NULL | Samtykke / Eksisterende kunde (soft opt-in) |
 | `source` | ENUM('import','manual') NOT NULL | |
 | `token_hash` | CHAR(64) NULL, **UNIQUE** | SHA-256 af afmeldingstokenet. NULL når slettet. |
 | `token_cipher` | TEXT NULL | `hsg_access_link_encrypt(token)`. NULL når slettet. |
@@ -637,9 +761,9 @@ Indeks: `idx_nl_camp_status (status)`.
 | `attempts` | TINYINT UNSIGNED NOT NULL DEFAULT 0 | |
 | `next_attempt_at` | DATETIME NULL | Ved midlertidig fejl |
 | `claimed_at` | DATETIME NULL | |
-| `sent_at` | DATETIME NULL | |
+| `sent_at` | DATETIME NULL | Bruges også til hastighedsgrænserne pr. minut, time og døgn |
 | `message_id` | VARCHAR(190) NULL | |
-| `last_error` | VARCHAR(500) NULL | SMTP-kode og tekst, aldrig adgangskode |
+| `last_error` | VARCHAR(500) NULL | SMTP-kode og tekst, aldrig secret eller token |
 
 Indeks: **UNIQUE `uniq_nl_deliv (campaign_id, recipient_id)`**, `idx_nl_deliv_status (campaign_id, status)`, `idx_nl_deliv_sent (status, sent_at)`, `idx_nl_deliv_recipient (recipient_id)`.
 
@@ -648,23 +772,28 @@ Indeks: **UNIQUE `uniq_nl_deliv (campaign_id, recipient_id)`**, `idx_nl_deliv_st
 | Nøgle | Standard | Bemærkning |
 |---|---|---|
 | `newsletter_from_name` | værdien af `company_name` eller "HSG Whisky ApS" | |
-| `newsletter_from_email` | '' | Obligatorisk før test/start |
+| `newsletter_from_email` | '' | Obligatorisk før test/start. Postkassen i Microsoft 365, som appen har FullAccess til (antaget `info@hsg-whisky.dk`). |
 | `newsletter_reply_to` | '' | Tom = afsenderadresse |
 | `newsletter_public_base_url` | '' | Obligatorisk; https |
-| `newsletter_footer_text` | '' | Adresse og CVR |
-| `newsletter_privacy_url` | '' | Valgfri |
+| `newsletter_footer_text` | '' | Udfyldes af Michael med adresse og CVR som på hsg-whisky.dk |
+| `newsletter_privacy_url` | '' | Udfyldes af Michael med privatlivspolitikken på hsg-whisky.dk |
 | `newsletter_test_email` | '' | Senest brugte testadresse(r) |
-| `newsletter_smtp_host` | '' | |
-| `newsletter_smtp_port` | '587' | |
-| `newsletter_smtp_encryption` | 'starttls' | 'starttls' / 'ssl' / 'none' (kun localhost) |
-| `newsletter_smtp_username` | '' | |
-| `newsletter_smtp_password` | '' | **Hemmelig** – føjes til `hsg_backup_sensitive_setting_keys()` |
-| `newsletter_batch_size` | '20' | |
-| `newsletter_max_per_hour` | '200' | |
-| `newsletter_max_per_day` | '1000' | |
-| `newsletter_log_retention_months` | '24' | |
+| `newsletter_transport` | 'm365' | 'm365' (Microsoft 365, OAuth2) / 'local' (lokal test-SMTP uden login) |
+| `newsletter_m365_tenant_id` | '' | Directory (tenant) ID |
+| `newsletter_m365_client_id` | '' | Application (client) ID for nyhedsbrevets egen Entra-app |
+| `newsletter_m365_client_secret` | '' | **Hemmelig** – føjes til `hsg_backup_sensitive_setting_keys()` |
+| `newsletter_m365_secret_expires` | '' | Dato (ÅÅÅÅ-MM-DD), valgfri; advarsel 30 dage før |
+| `newsletter_local_smtp_host` | '127.0.0.1' | Kun for 'local'; skal være `127.0.0.1`, `localhost` eller `::1` |
+| `newsletter_local_smtp_port` | '2525' | Kun for 'local' |
+| `newsletter_batch_size` | '10' | Mails pr. kald |
+| `newsletter_max_per_minute` | '20' | Højst 30 (Exchange Onlines grænse) |
+| `newsletter_max_per_hour` | '600' | |
+| `newsletter_max_per_day` | '2000' | Under Exchange Onlines 10.000 modtagere pr. døgn |
+| `newsletter_log_retention_months` | '24' | Afklaret spørgsmål 7 |
 | `newsletter_cron_key` | `bin2hex(random_bytes(24))` | **Hemmelig** – føjes til `hsg_backup_sensitive_setting_keys()` |
 | `newsletter_cron_last_run` | '' | Tidspunkt i ISO-format |
+
+`onedrive_*`-indstillingerne ændres ikke af modulet.
 
 ### Migration `1.2.0` (trin 3)
 
@@ -699,10 +828,10 @@ Indeks: **UNIQUE `uniq_nl_cat (campaign_id, price)`**.
   - En import ændrer aldrig `status`, undtagen når den opretter nye rækker som `active`.
 - **Udsendelse:**
   - `draft` → `sending` (start) → `done`, når der ikke er flere `queued` eller `sending`.
-  - `sending` ⇄ `paused` (manuelt eller automatisk ved SMTP-fejl). `sending`/`paused` → `cancelled` (resten sættes til `skipped`).
+  - `sending` ⇄ `paused` (manuelt eller automatisk ved afsenderfejl). `sending`/`paused` → `cancelled` (resten sættes til `skipped`).
   - `done` → `sending` igen kun via "Send igen til ukendte".
 - **Udsendelsesrække:**
-  - `queued` → `sending` (reserveret) → `sent` | `failed` | `queued` (midlertidig fejl, `attempts`<3) | `unknown`.
+  - `queued` → `sending` (reserveret) → `sent` | `failed` | `queued` (midlertidig fejl, `attempts`<3, eller afsenderfejl) | `unknown`.
   - `queued` → `skipped` (modtageren er ikke længere aktiv, eller resten er annulleret).
   - `unknown` → `queued` kun via "Send igen til disse".
 
@@ -713,10 +842,11 @@ Indeks: **UNIQUE `uniq_nl_cat (campaign_id, price)`**.
 | Hvem | Adgang |
 |---|---|
 | Superadministrator | Alt (`*`) |
-| Login-bruger (ikke superadmin) | Kun hvis modulet *Nyhedsbrev* er markeret i `users.php`. Standard efter migrationen: **ingen adgang**. Med adgang gælder `newsletter.send` til alle sider og handlinger, inkl. indstillinger. |
+| Login-bruger (ikke superadmin) | Kun hvis modulet *Nyhedsbrev* er markeret i `users.php` (afklaret spørgsmål 10). Standard efter migrationen: **ingen adgang**. Med adgang gælder `newsletter.send` til alle sider og handlinger, inkl. indstillinger. |
 | Direkte link (linkbruger) | **Ingen adgang** (403). `link_access => false`, ingen menupunkter, og modulet vises ikke i `user_permissions.php`. |
 | Ikke logget ind | Administrationssider: 401 (som i dag via `auth.php`). Kun de offentlige sider med token: `nyhedsbrev-afmeld.php` (læs og afmeld) og `nyhedsbrev-katalog.php` (kun læsning af egen PDF). |
 | Cron | `cron/newsletter.php`: CLI uden nøgle eller URL med `?key=` (`hash_equals` mod `newsletter_cron_key`). Forkert eller manglende nøgle giver 403. Når modulet er deaktiveret, gør scriptet intet og svarer "Modulet er deaktiveret." |
+| Entra-appen | Kun `SMTP.SendAsApp` og kun til de postkasser, Michael har givet den FullAccess til i Exchange (info@). Ingen Graph-tilladelser. |
 
 - **Kapabilitet:** `newsletter.send` (manifestets `capability`).
 - **Moduldeaktivering** (System → Moduler) fungerer som nødstop. Administrationssider, AJAX-endpointet og kataloglinks svarer 404, og cron sender intet. **Afmeldingssiden virker fortsat.**
@@ -750,20 +880,21 @@ Indeks: **UNIQUE `uniq_nl_cat (campaign_id, price)`**.
 | Fil | Ny/ændret | Indhold |
 |---|---|---|
 | `modules/newsletter/module.php`, `migrations.php` | Ændret | Version '1.1.0', migration '1.1.0' |
-| `core/newsletter_mailer.php` | Ny | SMTP-klient (forbind, STARTTLS/SSL, AUTH, send, RSET, QUIT, fejlfase) og MIME-bygger som ren funktion uden netværk (testbar) |
-| `core/newsletter.php` | Ændret | Udsendelser, indholdshash, start/kø, batch (GET_LOCK, reservering, grænser), oprydning, skabeloner til tekst og HTML |
+| `core/newsletter_mailer.php` | Ny | SMTP-klient (forbind, STARTTLS, `AUTH XOAUTH2`, send, RSET, QUIT; fejlens fase og om den gælder afsender eller modtager), token til Microsoft 365 via `hsg_http_request()`, og de rene funktioner `hsg_newsletter_xoauth2_string()` og MIME-byggeren (testbare uden netværk) |
+| `core/onedrive.php` | **Uændret** | `hsg_http_request()` genbruges via `require_once`. `hsg_onedrive_token()` og OneDrive-backuppen røres ikke. |
+| `core/newsletter.php` | Ændret | Udsendelser, indholdshash, start/kø, batch (GET_LOCK, reservering, grænser pr. minut/time/døgn, pause ved afsenderfejl), oprydning, skabeloner til tekst og HTML, advarsel om secret-udløb, DNS-tjek |
 | `newsletter.php` | Ændret | S4 |
 | `newsletter_campaign.php` | Ny | S5 |
 | `newsletter_send.php` | Ny | AJAX-batch (JSON) |
 | `newsletter_preview.php` | Ny | S6 |
 | `newsletter_settings.php` | Ny | S3 |
-| `cron/newsletter.php` | Ny | Som `cron/backup.php`: oprydning og batches i højst 50 s (CLI) / 25 s (URL), opdaterer `newsletter_cron_last_run` |
+| `cron/newsletter.php` | Ny | Som `cron/backup.php`: oprydning og batches i højst 240 s (CLI) / 25 s (URL), opdaterer `newsletter_cron_last_run` |
 | `newsletter_recipients.php` | Ændret | Udsendelseshistorik pr. modtager, historik i CSV-eksporten |
 | `nyhedsbrev-afmeld.php` | Ændret | Testtoken |
-| `core/backup.php` | Ændret | `newsletter_smtp_password` og `newsletter_cron_key` i `hsg_backup_sensitive_setting_keys()`, tekst i `hsg_restore_readme()` |
+| `core/backup.php` | Ændret | `newsletter_m365_client_secret` og `newsletter_cron_key` i `hsg_backup_sensitive_setting_keys()`, tekst i `hsg_restore_readme()` |
 | `backup.php` | Ændret | Teksten om hemmeligheder, der ikke kommer med i backup |
 | `assets/style.css` | Ændret | `.newsletter-progress` |
-| `docs/NEWSLETTER.md` | Ændret | SMTP-udbyder, SPF/DKIM/DMARC, cron |
+| `docs/NEWSLETTER.md` | Ændret | Vejledning til Michael: Entra-app og Exchange PowerShell trin for trin, SPF-, DKIM- og DMARC-poster for Microsoft 365, cron, driftstjek og fornyelse af client secret (indhold som Brugerflow A og G) |
 | `tests/run.sh` | Ændret | Nye sider i røgtesten |
 
 ### Trin 3 (modul 1.2.0)
@@ -781,13 +912,15 @@ Indeks: **UNIQUE `uniq_nl_cat (campaign_id, price)`**.
 
 **Ved hver release** (CLAUDE.md): `app_version.php`, README og manifest opdateres konsekvent, `hsg-package.json` laves igen med `php tools/build-release.php <version>`, og `bash tests/run.sh` skal være grøn.
 
-**Rør ikke:** `config.php`, `config.local.php`, `.env`, `uploads/`, `storage/backups/`, `storage/data/`, `core/updater.php`, `tools/build-release.php` og `.gitignore`. De sidste tre er ikke nødvendige, fordi `storage/tmp/` allerede er beskyttet.
+**Rør ikke:** `config.php`, `config.local.php`, `.env`, `uploads/`, `storage/backups/`, `storage/data/`, `core/updater.php`, `tools/build-release.php`, `.gitignore`, `core/onedrive.php` og `CLAUDE.md`. Updater, release-byggeren og `.gitignore` behøver ingen ændringer, fordi `storage/tmp/` allerede er beskyttet.
 
 ---
 
 ## Acceptkriterier
 
-Testeren kan bruge en lokal SMTP-opsamler, fx et lille PHP-script i `tests/`, der lytter på `127.0.0.1:2525` med `stream_socket_server` og gemmer hver modtaget besked som en fil. Der bruges `newsletter_smtp_encryption='none'`, som kun er tilladt mod localhost. Hvor der står "mail", menes en besked modtaget af opsamleren.
+Testeren bruger forsendelsesmetoden **Lokal test-SMTP** og en lokal SMTP-opsamler, fx et lille PHP-script i `tests/`, der lytter på `127.0.0.1:2525` med `stream_socket_server` og gemmer hver modtaget besked som en fil. Opsamleren skal kunne svare med en bestemt kode på et bestemt trin (fx `MAIL FROM`, `RCPT TO` eller efter DATA). Hvor der står "mail", menes en besked modtaget af opsamleren.
+
+Kriterier mærket **(M365)** kræver internetadgang. Kan testeren ikke nå Microsoft, dækkes de af Michaels driftstjek (Brugerflow A, trin 8).
 
 ### Trin 1 – modtagere, import og afmelding
 
@@ -804,7 +937,7 @@ Testeren kan bruge en lokal SMTP-opsamler, fx et lille PHP-script i `tests/`, de
 11. **Givet** en afmeldt modtager, **når** en fil med samme adresse (anden skrivemåde med store bogstaver) importeres, **så** står adressen under "Springes over" maskeret, og status er fortsat `unsubscribed`. Det samme gælder `stopped` og `deleted` (slettede genkendes på `email_hash`).
 12. **Givet** valget "Alle i filen er forhandlere" og en eksisterende kunde i filen, **når** filen analyseres, **så** vises "Skifter type: Kunde -> Forhandler". Efter importen har modtageren `segment = dealer`.
 13. **Givet** valget "Brug kolonne" og samme adresse to gange med værdierne "Forhandler" og "Kunde", **når** filen importeres, **så** bliver modtageren `customer`, og forhåndsvisningen viser én konflikt.
-14. **Givet** at der ikke er valgt grundlag eller ikke sat flueben ved bekræftelsen, **når** der trykkes "Analysér fil", **så** vises fejlen "Vælg grundlag for modtagerne, og bekræft det.", og intet importeres. Nye modtagere fra en gennemført import har det valgte `basis` og `source = import`.
+14. **Givet** importformularen og formularen "Tilføj modtager", **når** HTML'en hentes, **så** indeholder de ingen felter eller flueben om retsgrundlag, og tabellen `hsg_newsletter_recipients` har ingen kolonne `basis`. Nye modtagere fra en gennemført import har `source = import` og `last_import_at` sat, og manuelt tilføjede har `source = manual`.
 15. **Givet** at mailkolonnen er ændret manuelt til en kolonne med overskriften "Mail", **når** en ny fil med samme overskrifter importeres, **så** er "Mail" valgt på forhånd.
 16. **Givet** en gennemført import, **når** `hsg_audit_log` læses, **så** findes `newsletter.import` med antal, og `details_json` indeholder ikke tegnet `@`.
 17. **Givet** manuel tilføjelse, **når** en ugyldig adresse indtastes, **så** vises en fejl. Ved en eksisterende aktiv adresse vises "Adressen findes allerede". Ved en afmeldt eller slettet adresse kræves fluebenet "selv bedt om". Med fluebenet genaktiveres modtageren, og `newsletter.recipient.reactivate` logges med `self_requested: true`.
@@ -816,56 +949,68 @@ Testeren kan bruge en lokal SMTP-opsamler, fx et lille PHP-script i `tests/`, de
 23. **Givet** at modulet er deaktiveret under System, **når** afmeldingslinket bruges, **så** virker afmeldingen stadig. Administrationssiderne svarer 404.
 24. **Givet** afmeldingssiden, **når** dens headere hentes, **så** indeholder de `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex` og `Cache-Control: no-store`.
 25. **Givet** en aktiv modtager, **når** "Slet modtager" bekræftes, **så** er `email`, `name`, `company`, `token_hash` og `token_cipher` NULL, status er `deleted`, modtageren vises ikke i listen, det gamle afmeldingslink giver 404, og `newsletter.recipient.delete` logges.
-26. **Givet** en modtager, **når** "Eksportér data (CSV)" bruges, **så** downloades en CSV med UTF-8 BOM, `;` og modtagerens felter. Et navn som `=CMD()` står som `'=CMD()`, og `newsletter.recipient.export` logges.
+26. **Givet** en modtager, **når** "Eksportér data (CSV)" bruges, **så** downloades en CSV med UTF-8 BOM, `;` og modtagerens felter (mail, navn, firma, type, status, kilde, oprettet, afmeldt). Et navn som `=CMD()` står som `'=CMD()`, og `newsletter.recipient.export` logges.
 27. **Givet** modtagerlisten, importsiden og redigeringssiden, **når** HTML'en hentes, **så** indeholder ingen `href`, `src` eller `action` en mailadresse (bortset fra `mailto:`), og søgefeltet ligger ikke i en GET-formular.
 28. **Givet** et navn med `<script>alert(1)</script>` i Excel-filen, **når** forhåndsvisningen og listen vises, **så** står teksten escaped, og intet script kører.
 29. **Givet** en skærmbredde på 375 px, **når** S1, S2 og S7 vises, **så** er der ingen vandret scroll på selve siden (kun inde i `.table-wrap`), og knapper og felter kan bruges.
 
-### Trin 2 – indstillinger, test og udsendelse
+### Trin 2 – indstillinger, Microsoft 365, test og udsendelse
 
-30. **Givet** at migration 1.1.0 er kørt, **så** findes `hsg_newsletter_campaigns` og `hsg_newsletter_deliveries`, `newsletter_cron_key` er en tilfældig værdi, og modulversionen er 1.1.0.
-31. **Givet** en gemt SMTP-adgangskode, **når** indstillingerne gemmes med et tomt adgangskodefelt, **så** bevares adgangskoden. Siden indeholder aldrig adgangskoden i HTML, og `newsletter.settings` logger kun `smtp_password_changed`.
-32. **Givet** en ny DATA-backup, **når** `database.sql` gennemsøges, **så** findes hverken `newsletter_smtp_password` eller `newsletter_cron_key`.
-33. **Givet** den offentlige adresse `http://lager.example.dk` eller kryptering `none` mod en anden vært end localhost, **når** der gemmes, **så** afvises det med en dansk fejltekst, og intet gemmes.
-34. **Givet** SMTP-opsamleren kører, **når** der trykkes "Test SMTP-forbindelse", **så** vises "Forbindelsen virker", og der modtages ingen mail. Mod en lukket port vises en dansk fejltekst uden PHP-advarsler.
-35. **Givet** "Ny udsendelse" i oktober 2026, **så** er emnet forudfyldt med "Nyhedsbrev fra HSG Whisky ApS (Oktober 2026)".
-36. **Givet** en tekst med `<b>fed</b>` og `https://hsg-whisky.dk`, **når** forhåndsvisningen vises for begge varianter, **så** står `<b>` som tekst, URL'en er et link, og afmeldingslinket er `#`. Svaret har CSP-headeren, og iframen har `sandbox`.
-37. **Givet** en kladde uden test, **når** der sendes POST med "start" (også selv om knappen er deaktiveret), **så** afvises det, der oprettes ingen udsendelsesrækker, og status er fortsat `draft`.
-38. **Givet** en kladde, **når** "Send test" sendes til én testadresse med målgruppen *Alle*, **så** modtager opsamleren 2 mails med emnet `[TEST] …` (én pr. variant), `tested_hash` gemmes, og `newsletter.campaign.test` logges.
-39. **Givet** en testet kladde, **når** emnet eller afsendernavnet ændres, **så** viser siden "Ændret siden testen – send en ny test", og start afvises, indtil der er sendt en ny test.
-40. **Givet** en testet kladde med 10 aktive modtagere, **når** der startes med `expected_count = 9`, **så** vises "Modtagerlisten er ændret – kontroller antallet igen.", og intet startes. Med `expected_count = 10` og flueben oprettes 10 udsendelsesrækker, status bliver `sending`, og `newsletter.campaign.start` logges.
-41. **Givet** en igangværende udsendelse, **når** batch-endpointet kaldes, indtil det svarer `done`, **så** har opsamleren præcis én mail pr. modtager. Hver mail har kun modtageren i `To`, ingen `Cc`/`Bcc`, headerne `List-Unsubscribe` (https-URL med `t=` og `mailto:`), `List-Unsubscribe-Post: List-Unsubscribe=One-Click` og `Message-ID`, afsender og svar-til fra indstillingerne, og afmeldingslinket i teksten. Ingen URL i mailen indeholder en mailadresse.
-42. **Givet** `newsletter_batch_size = 3`, **når** batch-endpointet kaldes én gang, **så** sendes højst 3 mails, og JSON-svaret indeholder `counts` og `status`.
-43. **Givet** en igangværende udsendelse, **når** to batch-kald (og eventuelt cron) køres samtidig, **så** svarer det ene `busy: true`, og efter færdiggørelse har hver modtager præcis én mail.
-44. **Givet** en udsendelsesrække, der manuelt er sat til `sending`, **når** den næste batch kører, **så** sættes rækken til `unknown`, og der sendes ingen mail til den modtager. Siden viser "1 modtager har ukendt status". "Send igen til disse 1" sætter rækken i `queued` og logger `newsletter.campaign.retry_unknown`.
-45. **Givet** en modtager, der afmelder sig efter start, **når** hans række behandles, **så** bliver den `skipped`, og der sendes ingen mail.
-46. **Givet** `newsletter_max_per_hour = 5` og 10 modtagere, **når** der kaldes batches, **så** sendes 5, svaret indeholder `wait_until`, og der sendes ikke flere, før `sent_at` er mere end en time gammel (testeren kan flytte `sent_at` tilbage).
-47. **Givet** at SMTP-opsamleren afviser AUTH (535), **når** en batch kører, **så** bliver udsendelsen `paused` med `pause_reason`, reserverede rækker står igen i `queued`, der er ingen `unknown`-rækker, og `newsletter.campaign.auto_pause` logges.
-48. **Givet** at opsamleren svarer 550 på `RCPT` for én adresse, **når** batchen kører, **så** bliver den række `failed` med fejlteksten, og de øvrige sendes.
-49. **Givet** en igangværende udsendelse, **når** der trykkes Pause, **så** sender batch-kald intet. Efter Genoptag fortsætter udsendelsen. Annullér resten sætter rækker i `queued` til `skipped` og status til `cancelled`. Alle tre handlinger logges.
-50. **Givet** en igangværende udsendelse, **når** der startes en anden, **så** afvises den med "En anden udsendelse er i gang".
-51. **Givet** `cron/newsletter.php` kaldt via URL uden nøgle eller med forkert nøgle, **så** svarer det 403. Med korrekt nøgle eller fra CLI behandles køen, og `newsletter_cron_last_run` opdateres. Links i mails sendt fra cron begynder med `newsletter_public_base_url`, ikke `localhost` eller `/cron`.
-52. **Givet** en udsendelse afsluttet for 25 måneder siden og `newsletter_log_retention_months = 24`, **når** cron eller `newsletter.php` kører oprydningen, **så** er dens udsendelsesrækker slettet, mens selve udsendelsen stadig findes.
-53. **Givet** en færdig udsendelse, **når** der trykkes "Kopiér til ny kladde", **så** findes en ny kladde med samme emne og tekst, og uden `tested_hash`.
-54. **Givet** en testmail, **når** dens afmeldingslink åbnes og bekræftes, **så** vises "Dette er et testlink …", og ingen modtager ændres.
-55. **Givet** en linkbruger eller en login-bruger uden moduladgang, **når** `newsletter.php`, `newsletter_campaign.php`, `newsletter_settings.php`, `newsletter_preview.php` eller `newsletter_send.php` kaldes, **så** svarer de 403. AJAX-endpointet uden `csrf` svarer 419.
+30. **Givet** at migration 1.1.0 er kørt, **så** findes `hsg_newsletter_campaigns` og `hsg_newsletter_deliveries`, `newsletter_cron_key` er en tilfældig værdi, `newsletter_transport = m365`, standardværdierne for hastighed er 10 / 20 / 600 / 2000, og modulversionen er 1.1.0.
+31. **Givet** en gemt client secret, **når** indstillingerne gemmes med et tomt secret-felt, **så** bevares den. Siden indeholder aldrig secret i HTML, og `newsletter.settings` logger kun `m365_secret_changed`.
+32. **Givet** en ny DATA-backup, **når** `database.sql` gennemsøges, **så** findes hverken `newsletter_m365_client_secret` eller `newsletter_cron_key`.
+33. **Givet** den offentlige adresse `http://lager.example.dk`, forsendelsesmetoden *Lokal test-SMTP* med værten `smtp.example.dk`, eller *Maks. pr. minut* = 31, **når** der gemmes, **så** afvises det med en dansk fejltekst, og intet gemmes.
+34. **Givet** forsendelsesmetoden *Lokal test-SMTP* og en kørende SMTP-opsamler, **når** der trykkes "Test forbindelse", **så** vises "Forbindelsen virker", og der modtages ingen mail. Mod en lukket port vises en dansk fejltekst uden PHP-advarsler.
+35. **Givet** funktionen `hsg_newsletter_xoauth2_string()`, **når** den kaldes med `info@hsg-whisky.dk` og `abc`, **så** returnerer den base64 af `user=info@hsg-whisky.dk`, tegnet 0x01, `auth=Bearer abc` og to gange tegnet 0x01.
+36. **(M365)** **Givet** forsendelsesmetoden *Microsoft 365* med et ugyldigt client secret, **når** der trykkes "Test forbindelse", **så** vises "Microsoft-login fejlede:" efterfulgt af Microsofts fejlkode (`AADSTS…`), uden PHP-advarsler, og hverken secret eller token står på siden eller i audit-loggen. Bagefter er alle `onedrive_*`-indstillinger uændrede, og "Test OneDrive" på `backup.php` opfører sig som før.
+37. **Givet** `newsletter_m365_secret_expires` sat til i dag + 20 dage, **når** en Nyhedsbrev-side åbnes, **så** vises advarslen "Client secret til Microsoft 365 udløber …". Ved i dag + 40 dage vises den ikke.
+38. **Givet** "Ny udsendelse" i oktober 2026, **så** er emnet forudfyldt med "Nyhedsbrev fra HSG Whisky ApS (Oktober 2026)".
+39. **Givet** en tekst med `<b>fed</b>` og `https://hsg-whisky.dk`, **når** forhåndsvisningen vises for begge varianter, **så** står `<b>` som tekst, URL'en er et link, og afmeldingslinket er `#`. Svaret har CSP-headeren, og iframen har `sandbox`.
+40. **Givet** en kladde uden test, **når** der sendes POST med "start" (også selv om knappen er deaktiveret), **så** afvises det, der oprettes ingen udsendelsesrækker, og status er fortsat `draft`.
+41. **Givet** en kladde, **når** "Send test" sendes til én testadresse med målgruppen *Alle*, **så** modtager opsamleren 2 mails med emnet `[TEST] …` (én pr. variant), `tested_hash` gemmes, og `newsletter.campaign.test` logges.
+42. **Givet** en testet kladde, **når** emnet eller afsendernavnet ændres, **så** viser siden "Ændret siden testen – send en ny test", og start afvises, indtil der er sendt en ny test.
+43. **Givet** en testet kladde med 10 aktive modtagere, **når** der startes med `expected_count = 9`, **så** vises "Modtagerlisten er ændret – kontroller antallet igen.", og intet startes. Med `expected_count = 10` og flueben oprettes 10 udsendelsesrækker, status bliver `sending`, og `newsletter.campaign.start` logges.
+44. **Givet** en igangværende udsendelse, **når** batch-endpointet kaldes, indtil det svarer `done`, **så** har opsamleren præcis én mail pr. modtager. Hver mail har:
+    - kun modtageren i `To` og ingen `Cc`/`Bcc`
+    - headerne `List-Unsubscribe` (https-URL med `t=` og `mailto:`), `List-Unsubscribe-Post: List-Unsubscribe=One-Click` og `Message-ID`
+    - `From` og `MAIL FROM` lig afsenderadressen, og svar-til fra indstillingerne
+    - afmeldingslinket i teksten
+
+    Ingen URL i mailen indeholder en mailadresse.
+45. **Givet** `newsletter_batch_size = 3`, **når** batch-endpointet kaldes én gang, **så** sendes højst 3 mails, og JSON-svaret indeholder `counts` og `status`.
+46. **Givet** en igangværende udsendelse, **når** to batch-kald (og eventuelt cron) køres samtidig, **så** svarer det ene `busy: true`, og efter færdiggørelse har hver modtager præcis én mail.
+47. **Givet** en udsendelsesrække, der manuelt er sat til `sending`, **når** den næste batch kører, **så** sættes rækken til `unknown`, og der sendes ingen mail til den modtager. Siden viser "1 modtager har ukendt status". "Send igen til disse 1" sætter rækken i `queued` og logger `newsletter.campaign.retry_unknown`.
+48. **Givet** en modtager, der afmelder sig efter start, **når** hans række behandles, **så** bliver den `skipped`, og der sendes ingen mail.
+49. **Givet** `newsletter_max_per_minute = 2`, `newsletter_max_per_hour = 4` og 10 modtagere, **når** batch-endpointet kaldes gentagne gange, **så** gælder:
+    - Ingen periode på 60 sekunder har mere end 2 sendte mails.
+    - Der sendes højst 4 i alt, og svaret indeholder `wait_until`.
+    - Der sendes ikke flere, før de ældste `sent_at` er mere end en time gamle. Testeren kan flytte `sent_at` tilbage.
+50. **Givet** at opsamleren svarer `530 5.7.57` på `MAIL FROM`, **når** en batch kører, **så** bliver udsendelsen `paused` med `pause_reason`, den reserverede række står igen i `queued`, der er ingen `unknown`- eller `failed`-rækker, og `newsletter.campaign.auto_pause` logges. Det samme gælder, når opsamleren svarer `554 5.2.0 STOREDRV.Submission.Exception:SubmissionQuotaExceededException` efter DATA.
+51. **Givet** at opsamleren svarer 550 på `RCPT TO` for én adresse, **når** batchen kører, **så** bliver den række `failed` med fejlteksten, og de øvrige sendes.
+52. **Givet** en igangværende udsendelse, **når** der trykkes Pause, **så** sender batch-kald intet. Efter Genoptag fortsætter udsendelsen. Annullér resten sætter rækker i `queued` til `skipped` og status til `cancelled`. Alle tre handlinger logges.
+53. **Givet** en igangværende udsendelse, **når** der startes en anden, **så** afvises den med "En anden udsendelse er i gang".
+54. **Givet** `cron/newsletter.php` kaldt via URL uden nøgle eller med forkert nøgle, **så** svarer det 403. Med korrekt nøgle eller fra CLI behandles køen, og `newsletter_cron_last_run` opdateres. Links i mails sendt fra cron begynder med `newsletter_public_base_url`, ikke `localhost` eller `/cron`.
+55. **Givet** en udsendelse afsluttet for 25 måneder siden og `newsletter_log_retention_months = 24`, **når** cron eller `newsletter.php` kører oprydningen, **så** er dens udsendelsesrækker slettet, mens selve udsendelsen stadig findes.
+56. **Givet** en færdig udsendelse, **når** der trykkes "Kopiér til ny kladde", **så** findes en ny kladde med samme emne og tekst, og uden `tested_hash`.
+57. **Givet** en testmail, **når** dens afmeldingslink åbnes og bekræftes, **så** vises "Dette er et testlink …", og ingen modtager ændres.
+58. **Givet** en linkbruger eller en login-bruger uden moduladgang, **når** `newsletter.php`, `newsletter_campaign.php`, `newsletter_settings.php`, `newsletter_preview.php` eller `newsletter_send.php` kaldes, **så** svarer de 403. AJAX-endpointet uden `csrf` svarer 419.
 
 ### Trin 3 – katalog
 
-56. **Givet** `catalog_pdf.php` før og efter ændringen, **når** den kaldes med `price=retail` og `price=wholesale` samt `news=0` og `news=1`, **så** er filnavn, `Content-Type`, `Content-Disposition` og antal sider uændrede, og filen begynder med `%PDF-` og slutter med `%%EOF`. Linkbrugere med `catalog.view` har samme adgang som før.
-57. **Givet** en kladde med målgruppen *Alle* og "Hele kataloget", **når** der trykkes "Frys katalog nu", **så** oprettes 2 filer i `storage/tmp/newsletter/<id>/` med tilfældige navne og 2 rækker i `hsg_newsletter_catalogs` med korrekt `sha256` og `file_size`. En tidligere test bliver ugyldig ("Ændret siden testen"). Med målgruppen *Kunder* oprettes kun `retail`.
-58. **Givet** valget af et katalog, der ikke er frosset, **når** der trykkes "Send test", **så** afvises det med "Frys kataloget først".
-59. **Givet** en afsluttet udsendelse, **når** en forhandlers kataloglink åbnes, **så** returneres engros-PDF'en (samme SHA-256 som i tabellen), og en kundes link returnerer udsalgsprisvarianten. Det er ikke muligt at få den anden variant ved at ændre URL'en.
-60. **Givet** et gyldigt modtagertoken for en modtager uden udsendelsesrække i udsendelse `c`, **når** `nyhedsbrev-katalog.php?t=…&c=…` åbnes, **så** svarer siden 404.
-61. **Givet** at `expires_at` er passeret, **når** linket åbnes, **så** svarer siden 410. Efter oprydning er filen slettet, og `deleted_at` er sat.
-62. **Givet** en webserver, der respekterer `.htaccess`, **når** `storage/tmp/newsletter/<id>/<fil>.pdf` hentes direkte, **så** svarer den 403.
-63. **Givet** to downloads af samme fil, **så** er `download_count = 2`, og der findes ingen log over downloads pr. modtager.
-64. **Givet** et release-build (`php tools/build-release.php`), **så** indeholder ZIP-filen ingen filer fra `storage/tmp/`, og negativtesten er grøn.
+59. **Givet** `catalog_pdf.php` før og efter ændringen, **når** den kaldes med `price=retail` og `price=wholesale` samt `news=0` og `news=1`, **så** er filnavn, `Content-Type`, `Content-Disposition` og antal sider uændrede, og filen begynder med `%PDF-` og slutter med `%%EOF`. Linkbrugere med `catalog.view` har samme adgang som før.
+60. **Givet** en kladde med målgruppen *Alle* og "Hele kataloget", **når** der trykkes "Frys katalog nu", **så** oprettes 2 filer i `storage/tmp/newsletter/<id>/` med tilfældige navne og 2 rækker i `hsg_newsletter_catalogs` med korrekt `sha256` og `file_size`. En tidligere test bliver ugyldig ("Ændret siden testen"). Med målgruppen *Kunder* oprettes kun `retail`.
+61. **Givet** valget af et katalog, der ikke er frosset, **når** der trykkes "Send test", **så** afvises det med "Frys kataloget først".
+62. **Givet** en afsluttet udsendelse, **når** en forhandlers kataloglink åbnes, **så** returneres engros-PDF'en (samme SHA-256 som i tabellen), og en kundes link returnerer udsalgsprisvarianten. Det er ikke muligt at få den anden variant ved at ændre URL'en.
+63. **Givet** et gyldigt modtagertoken for en modtager uden udsendelsesrække i udsendelse `c`, **når** `nyhedsbrev-katalog.php?t=…&c=…` åbnes, **så** svarer siden 404.
+64. **Givet** at `expires_at` er passeret, **når** linket åbnes, **så** svarer siden 410. Efter oprydning er filen slettet, og `deleted_at` er sat.
+65. **Givet** en webserver, der respekterer `.htaccess`, **når** `storage/tmp/newsletter/<id>/<fil>.pdf` hentes direkte, **så** svarer den 403.
+66. **Givet** to downloads af samme fil, **så** er `download_count = 2`, og der findes ingen log over downloads pr. modtager.
+67. **Givet** et release-build (`php tools/build-release.php`), **så** indeholder ZIP-filen ingen filer fra `storage/tmp/`, og negativtesten er grøn.
 
 ### Fælles
 
-65. **Givet** hvert trin, **når** `bash tests/run.sh` køres, **så** er resultatet grønt. Røgtesten omfatter de nye administrationssider, og de offentlige sider med et ugyldigt token giver 404 uden PHP-fejl.
-66. **Givet** alle nye sider, mails og fejltekster, **så** er al tekst, brugeren ser, på dansk.
+68. **Givet** hvert trin, **når** `bash tests/run.sh` køres, **så** er resultatet grønt. Røgtesten omfatter de nye administrationssider, og de offentlige sider med et ugyldigt token giver 404 uden PHP-fejl.
+69. **Givet** alle nye sider, mails og fejltekster, **så** er al tekst, brugeren ser, på dansk.
 
 ---
 
@@ -875,10 +1020,12 @@ Testeren kan bruge en lokal SMTP-opsamler, fx et lille PHP-script i `tests/`, de
 - WYSIWYG-editor, HTML-indtastning, billeder og logo i mailen, flere skabeloner.
 - Flettefelter og personlig hilsen ("Kære {navn}").
 - Sporing af åbninger og klik (pixels, omdirigerede links). Det er bevidst fravalgt af hensyn til databeskyttelse.
-- Automatisk håndtering af afviste mails (IMAP eller webhooks fra udbyderen). Afviste mails lander i afsenderens indbakke, og administratoren sætter modtageren til *Stoppet*.
+- Registrering af retsgrundlag pr. modtager (afklaret spørgsmål 1).
+- Automatisk håndtering af afviste mails (IMAP eller webhooks). Afviste mails lander i info@'s indbakke, og administratoren sætter modtageren til *Stoppet*.
 - Tilmeldingsformular og double opt-in på hjemmesiden.
 - Planlagt afsendelse ("send kl. 08.00").
-- Microsoft Graph eller udbyderspecifikke API'er som transport. DKIM-signering i PHP.
+- Andre forsendelsesmetoder end Microsoft 365 (OAuth2) og lokal test-SMTP: SMTP med brugernavn/adgangskode, dedikerede udbydere (Brevo, Mailjet, SES), Microsoft Graph `sendMail`, HVE og Azure Communication Services. De kan tilføjes senere som en ny forsendelsesmetode uden at ændre køen.
+- Certifikatbaseret login til Entra-appen i stedet for client secret. DKIM-signering i PHP.
 - Mailadresser med æøå i domænet (IDN). De vises som ugyldige.
 - Automatisk stop af modtagere, der ikke længere står i Kims fil (se åbent spørgsmål 12). Forhåndsvisningen viser kun antallet.
 - Eksport af hele modtagerlisten til Excel.
@@ -889,13 +1036,19 @@ Testeren kan bruge en lokal SMTP-opsamler, fx et lille PHP-script i `tests/`, de
 
 ---
 
-## Kilder (juridiske og tekniske forudsætninger)
+## Kilder (tekniske forudsætninger)
 
-- Dansk Erhverv: [Må du sende nyhedsbreve uden samtykke?](https://www.danskerhverv.dk/presse-og-nyheder/nyheder/2021/september/ma-du-sende-nyhedsbreve-uden-samtykke/)
+**Microsoft 365 / Exchange Online**
+- Basic auth for SMTP AUTH (MC786329, opdateret 27-01-2026): [mc.merill.net](https://mc.merill.net/message/MC786329) og [Tech Community](https://techcommunity.microsoft.com/blog/exchange/exchange-online-to-retire-basic-auth-for-client-submission-smtp-auth/4114750)
+- SMTP med OAuth og `SMTP.SendAsApp`, service principal og postkasserettighed: [Microsoft Learn – Authenticate an IMAP, POP or SMTP connection using OAuth](https://learn.microsoft.com/en-us/exchange/client-developer/legacy-protocols/how-to-authenticate-an-imap-pop-smtp-application-by-using-oauth) og [Microsoft Q&A – 535 5.7.3 med client credentials](https://learn.microsoft.com/en-ie/answers/questions/5872803/smtp-auth-with-oauth-2-0-client-credentials-flow-r)
+- Graph `sendMail` og MIME: [user: sendMail](https://learn.microsoft.com/en-us/graph/api/user-sendmail?view=graph-rest-1.0), [Send MIME](https://learn.microsoft.com/en-us/graph/outlook-send-mime-message) og [Q&A om List-Unsubscribe via Graph](https://learn.microsoft.com/en-us/answers/questions/2128545/how-to-set-both-list-unsubscribe-post-and-list-uns)
+- Sendegrænser: [Microsoft Defender – outbound sending limits](https://learn.microsoft.com/en-us/defender-office-365/outbound-spam-sending-limits-troubleshoot), [External Recipient Rate Limit (annulleret)](https://techcommunity.microsoft.com/blog/exchange/exchange-online-to-introduce-external-recipient-rate-limit/4114733), [BleepingComputer](https://www.bleepingcomputer.com/news/microsoft/microsoft-cancels-plans-to-rate-limit-exchange-online-bulk-emails/) og [Tenant outbound email limits](https://techcommunity.microsoft.com/blog/exchange/introducing-exchange-online-tenant-outbound-email-limits/4372797)
+- Masseudsendelse og servicebeskrivelsen (gengivet af en udbyder): [Retarus](https://www.retarus.com/blog/en/sending-out-newsletters-rather-not-with-exchange-online)
+- DKIM i Microsoft 365: [MailReach-guide](https://www.mailreach.co/blog/set-up-dkim-office-365)
+
+**Øvrige**
 - Dansk Erhverv: [Forbrugerombudsmanden: det er for svært at framelde sig jeres nyhedsbrev](https://www.danskerhverv.dk/presse-og-nyheder/nyheder/2024/februar/forbrugerombudsmanden-til-virksomhed-det-er-for-svart-at-framelde-sig-jeres-nyhedsbrev/)
-- Folketinget, L 40 (2016-17), svar om § 10: [eu.dk](https://www.eu.dk/samling/20161/lovforslag/L40/spm/5/svar/1371546/1707162.pdf)
-- Simply.com: [Mail restrictions and policies](https://www.simply.com/en/support/faq/mail/639/) og [Mail limits and policies](https://www.simply.com/en/support/faq/mail/612-e-maillimieten-en-beleid/)
-- Microsoft Message Center MC786329 (SMTP AUTH Basic Auth): [itelio-kopi](https://www.itelio.com/en/microsoft-message-center/MC786329)
+- Simply.com: [Mail restrictions and policies](https://www.simply.com/en/support/faq/mail/639/)
 - RFC 8058 – One-Click Unsubscribe: [rfc-editor.org](https://www.rfc-editor.org/rfc/rfc8058)
 
-Kilderne er brugt som baggrund for de åbne spørgsmål og er ikke juridisk rådgivning. Michael bør kontrollere den gældende lovtekst og Forbrugerombudsmandens vejledning.
+Microsoft ændrer jævnligt grænser og datoer. Michael bør kontrollere Message Center og Microsoft Learn, før systemet tages i drift. Det gælder især datoen for den endelige fjernelse af Basic auth og grænsen for eksterne modtagere i organisationen.
