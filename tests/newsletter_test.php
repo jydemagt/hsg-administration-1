@@ -101,6 +101,20 @@ $c2 = hsg_newsletter_detect_columns([['Navn', 'Firma', 'Telefon', 'E-mail', 'Mai
 eq('kriterie 15: "Mail" er valgt på forhånd', 4, $c2['email']);
 eq('kriterie 15: navn huskes', 0, $c2['name']);
 
+// En række med en mailadresse er aldrig en overskriftsrække (fx en kunde ved navn "Firma")
+$c = hsg_newsletter_detect_columns([['Kim', 'Firma', 'x', 'a@x.dk'], ['', '', '', 'b@y.dk']]);
+eq('datarække med "Firma" er ikke overskrift', null, $c['header_row']);
+// Mailkolonnen genkendes, selv om "E-mail" ikke blev brugt sidst, når den huskede "Mail" mangler
+$c = hsg_newsletter_detect_columns([['Navn', 'E-mail'], ['Pia', 'pia@x.dk']], ['navn' => 'name', 'email' => '', 'mail' => 'email']);
+eq('mailkolonne falder ikke tilbage til D', 1, $c['email']);
+eq('navn fra husket valg', 0, $c['name']);
+// Rækkenumre fra filen bruges, når de findes (tomme rækker i xlsx springes over af læseren)
+$a = hsg_newsletter_analyse([['E-mail'], ['kim(at)firma.dk'], ['kim@']], ['header_row' => 0, 'email' => 0, 'name' => null, 'company' => null, 'segment' => null], 'customer', [], [1, 2, 4]);
+eq('rækkenumre fra filen', [2, 4], array_column($a['invalid'], 'row'));
+$cs = hsg_newsletter_clean_sheets(['Ark 1' => [['E-mail'], ['a@x.dk'], ['', ''], ['']]], ['Ark 1' => [1, 3, 7, 9]]);
+eq('rensning fjerner tomme rækker i slutningen', [['E-mail'], ['a@x.dk']], $cs['sheets']['Ark 1']);
+eq('rensning bevarer rækkenumre', [1, 3], $cs['rownums']['Ark 1']);
+
 // Kriterie 7: dublet med anden skrivemåde
 $a = hsg_newsletter_analyse([['', '', '', ' Kim@Firma.DK '], ['', '', '', 'kim@firma.dk']], ['header_row' => null, 'email' => 3, 'name' => null, 'company' => null, 'segment' => null], 'customer', []);
 eq('kriterie 7: én modtager', 1, count($a['entries']));

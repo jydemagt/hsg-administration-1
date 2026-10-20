@@ -16,12 +16,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $mode = hsg_newsletter_mode((string)($_POST['mode'] ?? 'customer'));
             $file = is_array($_FILES['file'] ?? null) ? $_FILES['file'] : [];
-            $sheets = hsg_newsletter_read_upload($file);
-            $sheet = (string)array_key_first($sheets);
-            $cols = hsg_newsletter_detect_columns($sheets[$sheet], hsg_newsletter_saved_columns($pdo));
+            $data = hsg_newsletter_read_upload($file);
+            $sheet = (string)array_key_first($data['sheets']);
+            $cols = hsg_newsletter_detect_columns($data['sheets'][$sheet], hsg_newsletter_saved_columns($pdo));
             $token = hsg_newsletter_preview_create([
                 'filename' => hsg_newsletter_clean_text(basename(str_replace('\\', '/', (string)($file['name'] ?? 'fil'))), 180),
-                'sheets' => $sheets, 'sheet' => $sheet, 'mode' => $mode, 'cols' => $cols,
+                'sheets' => $data['sheets'], 'rownums' => $data['rownums'], 'sheet' => $sheet, 'mode' => $mode, 'cols' => $cols,
             ]);
             redirect('newsletter_import.php?preview='.$token);
         } catch (PDOException $e) {
@@ -104,9 +104,11 @@ $listLimit = 200;
 
 if ($p) {
     $rows = $p['sheets'][$p['sheet']] ?? [];
+    $rowNumbers = (array)($p['rownums'][$p['sheet']] ?? []);
     $cols = (array)$p['cols'];
     $mode = (string)$p['mode'];
-    $a = hsg_newsletter_analyse($rows, $cols, $mode, hsg_newsletter_existing_map($pdo));
+    $a = hsg_newsletter_analyse($rows, $cols, $mode, hsg_newsletter_existing_map($pdo), $rowNumbers);
+    $headerRowNo = $cols['header_row'] !== null ? (int)($rowNumbers[(int)$cols['header_row']] ?? ((int)$cols['header_row'] + 1)) : null;
     $n = hsg_newsletter_analysis_counts($a);
     if ($n['valid'] === 0) flash('error', 'Filen indeholder ingen gyldige mailadresser.');
     if ($a['segment_missing']) flash('error', 'Vælg den kolonne, der angiver forhandler eller kunde, under "Type-kolonne", og tryk Genberegn.');
@@ -144,7 +146,7 @@ echo hsg_newsletter_tabs_html('import');
 <?php if ($p): ?>
 <div class="card">
   <h2 style="margin-bottom:4px">Forhåndsvisning: <?=h($p['filename'])?></h2>
-  <p class="muted" style="margin-top:0">(<?=h($p['sheet'])?>, <?=$cols['header_row'] !== null ? 'overskrift i række '.((int)$cols['header_row'] + 1) : 'ingen overskriftsrække fundet'?>) · <?=h(hsg_newsletter_mode_label($mode))?></p>
+  <p class="muted" style="margin-top:0">(<?=h($p['sheet'])?>, <?=$headerRowNo !== null ? 'overskrift i række '.$headerRowNo : 'ingen overskriftsrække fundet'?>) · <?=h(hsg_newsletter_mode_label($mode))?></p>
 
   <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="remap"><input type="hidden" name="preview_token" value="<?=h($p['token'])?>">
     <?php if (count($p['sheets']) > 1): ?>

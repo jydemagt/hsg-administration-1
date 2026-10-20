@@ -191,9 +191,11 @@ function hsg_newsletter_column_count(array $rows): int {
 /**
  * Finder overskriftsrække og kolonner.
  *  - Overskriftsrækken er den af de første 10 rækker, der har flest kendte overskrifter
- *    (aliaser eller overskrifter fra seneste import). Findes ingen, har filen ingen overskrifter.
+ *    (aliaser eller overskrifter fra seneste import). En række med en mailadresse er aldrig
+ *    en overskriftsrække. Findes ingen, har filen ingen overskrifter.
  *  - Overskrifter fra seneste import får præcis det valg, der blev brugt sidst (også "ingen").
- *  - Ellers genkendes mail, navn og firma ud fra aliaser. Mailkolonnen er ellers kolonne D.
+ *  - Ellers genkendes mail, navn og firma ud fra aliaser. Mailkolonnen er obligatorisk og
+ *    genkendes derfor også på en overskrift, der ikke blev brugt sidst. Ellers er den kolonne D.
  *
  * @param array $saved Husket valg: normaliseret overskrift => felt ('' = ikke brugt)
  * @return array{header_row:?int,email:int,name:?int,company:?int,segment:?int}
@@ -206,9 +208,10 @@ function hsg_newsletter_detect_columns(array $rows, array $saved = []): array {
     $headerRow = null; $best = 0;
     foreach (array_slice($rows, 0, 10, true) as $ri => $row) {
         $cells = array_map(static fn($c): string => (string)$c, (array)$row);
+        if (str_contains(implode("\n", $cells), '@')) continue;
         $score = 0;
-        foreach (hsg_supplier_header_keys($cells) as $ci => $key) {
-            if ($key === '' || str_contains($cells[$ci] ?? '', '@')) continue;
+        foreach (hsg_supplier_header_keys($cells) as $key) {
+            if ($key === '') continue;
             if (array_key_exists($key, $saved)) $score += 2;
             elseif (isset($reverse[$key])) $score += 1;
         }
@@ -223,12 +226,14 @@ function hsg_newsletter_detect_columns(array $rows, array $saved = []): array {
             if ($key === '' || !array_key_exists($key, $saved)) continue;
             $seen[$ci] = true;
             $field = (string)$saved[$key];
-            if (array_key_exists($field, $cols) && $field !== 'header_row' && $cols[$field] === null) $cols[$field] = (int)$ci;
+            if (in_array($field, ['email', 'name', 'company', 'segment'], true) && $cols[$field] === null) $cols[$field] = (int)$ci;
         }
         foreach ($keys as $ci => $key) {
-            if ($key === '' || isset($seen[$ci])) continue;
-            $field = $reverse[$key] ?? null;
-            if ($field !== null && $cols[$field] === null) $cols[$field] = (int)$ci;
+            $field = $key !== '' ? ($reverse[$key] ?? null) : null;
+            if ($field === null || $cols[$field] !== null) continue;
+            if (isset($seen[$ci]) && $field !== 'email') continue;
+            if (in_array((int)$ci, array_filter([$cols['email'], $cols['name'], $cols['company'], $cols['segment']], 'is_int'), true)) continue;
+            $cols[$field] = (int)$ci;
         }
     }
     if ($cols['email'] === null) $cols['email'] = 3; // Kolonne D
@@ -252,12 +257,13 @@ function hsg_newsletter_columns_to_saved(array $headers, array $cols): array {
 /**
  * Analyserer importrækker mod de eksisterende modtagere.
  *
- * @param array  $rows     arkets rækker (0-baseret; række 1 i filen er indeks 0)
- * @param array  $cols     fra hsg_newsletter_detect_columns()
- * @param string $mode     customer | dealer | column
- * @param array  $existing email_hash => ['id','status','segment','name','company']
+ * @param array  $rows       arkets rækker (0-baseret)
+ * @param array  $cols       fra hsg_newsletter_detect_columns()
+ * @param string $mode       customer | dealer | column
+ * @param array  $existing   email_hash => ['id','status','segment','name','company']
+ * @param array  $rowNumbers rækkenummer i filen pr. indeks (mangler det, er indeks 0 række 1)
  */
-function hsg_newsletter_analyse(array $rows, array $cols, string $mode, array $existing): array {
+function hsg_newsletter_analyse(array $rows, array $cols, string $mode, array $existing, array $rowNumbers = []): array {
     $mode = hsg_newsletter_mode($mode);
     $emailCol = (int)($cols['email'] ?? 3);
     $nameCol = isset($cols['name']) && $cols['name'] !== null ? (int)$cols['name'] : null;
@@ -277,7 +283,7 @@ function hsg_newsletter_analyse(array $rows, array $cols, string $mode, array $e
         $row = (array)$row;
         $parts = hsg_newsletter_split_emails((string)($row[$emailCol] ?? ''));
         if (!$parts) continue;
-        $rowNo = $ri + 1;
+        $rowNo = isset($rowNumbers[$ri]) ? (int)$rowNumbers[$ri] : $ri + 1;
         $name = $nameCol !== null ? hsg_newsletter_clean_text($row[$nameCol] ?? '') : '';
         $company = $companyCol !== null ? hsg_newsletter_clean_text($row[$companyCol] ?? '') : '';
         $segment = match ($mode) {
@@ -356,14 +362,26 @@ function hsg_newsletter_analysis_counts(array $a): array {
     ];
 }
 
-/** Rensning af indlæste ark: cellerne renses, og tomme rækker i slutningen af arket fjernes. */
-function hsg_newsletter_clean_sheets(array $sheets): array {
-    $out = [];
+/**
+ * Rensning af indlæste ark: cellerne renses, og tomme rækker i slutningen af arket fjernes.
+ * Rækkenumrene følger med (fra hsg_newsletter_xlsx_row_numbers(), ellers 1, 2, 3 …).
+ *
+ * @return array{sheets:array<string,array>,rownums:array<string,list<int>>}
+ */
+function hsg_newsletter_clean_sheets(array $sheets, array $rowNumbers = []): array {
+    $out = ['sheets' => [], 'rownums' => []];
     foreach ($sheets as $name => $rows) {
+        $name = (string)$name;
+        $rows = array_values((array)$rows);
+        $nums = isset($rowNumbers[$name]) && is_array($rowNumbers[$name]) && count($rowNumbers[$name]) === count($rows)
+            ? array_values(array_map('intval', $rowNumbers[$name]))
+            : ($rows ? range(1, count($rows)) : []);
         $clean = [];
-        foreach ((array)$rows as $row) $clean[] = array_map('hsg_newsletter_clean_cell', array_values((array)$row));
+        foreach ($rows as $row) $clean[] = array_map('hsg_newsletter_clean_cell', array_values((array)$row));
         while ($clean && implode('', end($clean)) === '') array_pop($clean);
-        if ($clean) $out[(string)$name] = $clean;
+        if (!$clean) continue;
+        $out['sheets'][$name] = $clean;
+        $out['rownums'][$name] = array_slice($nums, 0, count($clean));
     }
     return $out;
 }
@@ -633,7 +651,39 @@ function hsg_newsletter_delete(PDO $pdo, int $id): bool {
  * Import
  * ------------------------------------------------------------------------- */
 
-/** Læser en uploadet .xlsx/.csv med de eksisterende læsere i core/supplier_import.php. */
+/**
+ * De rigtige rækkenumre i et xlsx-ark. hsg_supplier_read_xlsx() springer rækker uden celler over,
+ * så uden denne liste ville rækkenumrene i forhåndsvisningen forskydes i forhold til Excel.
+ * Listen har samme rækkefølge og samme ark ("Ark N") som læseren. Kun rækkenumre læses her.
+ */
+function hsg_newsletter_xlsx_row_numbers(string $path): array {
+    if (!class_exists('ZipArchive') || !function_exists('simplexml_load_string')) return [];
+    $z = new ZipArchive();
+    if ($z->open($path) !== true) return [];
+    $out = [];
+    for ($i = 1; $i <= 50; $i++) {
+        $xml = $z->getFromName('xl/worksheets/sheet'.$i.'.xml');
+        if ($xml === false) { if ($i > 10) break; continue; }
+        $x = @simplexml_load_string($xml);
+        if (!$x) continue;
+        $nums = []; $prev = 0;
+        foreach ($x->xpath('//*[local-name()="sheetData"]/*[local-name()="row"]') ?: [] as $row) {
+            $r = (int)(string)($row->attributes()['r'] ?? '');
+            $r = $r > 0 ? $r : $prev + 1;
+            $prev = $r;
+            if ($row->xpath('./*[local-name()="c"]')) $nums[] = $r;
+        }
+        if ($nums) $out['Ark '.$i] = $nums;
+    }
+    $z->close();
+    return $out;
+}
+
+/**
+ * Læser en uploadet .xlsx/.csv med de eksisterende læsere i core/supplier_import.php.
+ *
+ * @return array{sheets:array<string,array>,rownums:array<string,list<int>>}
+ */
 function hsg_newsletter_read_upload(array $file): array {
     $error = (int)($file['error'] ?? UPLOAD_ERR_NO_FILE);
     if (in_array($error, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) throw new RuntimeException('Filen er for stor til at blive uploadet.');
@@ -642,12 +692,14 @@ function hsg_newsletter_read_upload(array $file): array {
     if ($error !== UPLOAD_ERR_OK || $tmp === '' || !is_uploaded_file($tmp) || !in_array($ext, ['xlsx', 'csv'], true)) {
         throw new RuntimeException('Vælg en Excel-fil (.xlsx) eller CSV-fil.');
     }
-    $sheets = hsg_newsletter_clean_sheets($ext === 'xlsx' ? hsg_supplier_read_xlsx($tmp) : hsg_supplier_read_csv($tmp));
-    if (!$sheets) throw new RuntimeException('Filen indeholder ingen gyldige mailadresser.');
+    $data = $ext === 'xlsx'
+        ? hsg_newsletter_clean_sheets(hsg_supplier_read_xlsx($tmp), hsg_newsletter_xlsx_row_numbers($tmp))
+        : hsg_newsletter_clean_sheets(hsg_supplier_read_csv($tmp));
+    if (!$data['sheets']) throw new RuntimeException('Filen indeholder ingen gyldige mailadresser.');
     $total = 0;
-    foreach ($sheets as $rows) $total += count($rows);
+    foreach ($data['sheets'] as $rows) $total += count($rows);
     if ($total > HSG_NEWSLETTER_MAX_ROWS) throw new RuntimeException('Filen har mere end 5.000 rækker.');
-    return $sheets;
+    return $data;
 }
 
 function hsg_newsletter_saved_columns(PDO $pdo): array {
