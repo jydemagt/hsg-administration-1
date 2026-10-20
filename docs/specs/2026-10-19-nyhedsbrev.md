@@ -1,7 +1,7 @@
 # Spec: Nyhedsbrev fra HSG Administration
 
 - **Dato:** 2026-10-19
-- **Status:** Udkast 4 – Michaels ønske om teksteditor (formatering uden HTML) og gemt seneste nyhedsbrev er indarbejdet. Afventer svar på spørgsmål 2, 6, 11 og 12.
+- **Status:** Godkendt af Michael 20-10-2026 (udkast 4). Trin 1 bygges nu. Kims spørgsmål 2, 6, 11 og 12 er ikke besvaret, og der bygges på antagelserne.
 - **Ønske fra:** Kim, HSG Whisky ApS (mail "VS: brochure", 21-09-2026)
 - **Nyt modul:** `newsletter` (version 1.0.0 → 1.1.0 → 1.2.0, ét versionsløft pr. trin)
 - **Prioritet:** Fremtidsønske, ikke hastende. Bygges i tre trin, og hvert trin kan frigives for sig.
