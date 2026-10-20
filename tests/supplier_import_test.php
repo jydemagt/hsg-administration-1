@@ -324,6 +324,15 @@ t_case('23 Kun 12-1123a i filen, 12-1123 findes i HSG', function () {
     t_true(!$items[0]['selected'], 'ikke forvalgt');
 });
 
+t_case('23b Kun 12-1123a i filen, og 12-1123 i HSG er forurenet med fadnummer og årgang', function () {
+    $product = hsg_product(['id' => 21, 'sku' => '12-1123', 'name' => 'St. Bridget Kirk, John Barleycorn Edition', 'distillery' => 'N/A', 'cask_number' => '231584', 'vintage_year' => 2013, 'stock_loc_1' => 24]);
+    $items = hsg_supplier_merge_raw_items([clynelish_rows()[1]], kim_map(false), [$product], null, 1, null, merge_opts());
+    t_eq(1, count($items), 'én vare');
+    t_true((int)$items[0]['match']['id'] !== 21, 'matcher ikke 12-1123, selvom fadnummeret er identisk');
+    t_true(in_array('variant_split', $items[0]['flags'], true), 'flag variant_split');
+    t_true(!$items[0]['selected'], 'ikke forvalgt');
+});
+
 t_case('25 17-1028 og 17-1028a med samme navn flettes', function () {
     $rows = [
         kim_row(['sku' => '17-1028', 'name' => 'Jane Street 2014', 'dist' => 'Jane', 'R' => 3, 'Q' => 3]),

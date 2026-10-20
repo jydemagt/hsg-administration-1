@@ -87,6 +87,20 @@ else
     code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' -d 'x=1' "$BASE/locations.php")
     [ "$code" = "419" ] || [ "$code" = "403" ] && ok "POST uden CSRF afvist (HTTP $code)" || bad "POST uden CSRF gav HTTP $code"
 
+    # Kims uploadfil: de nye POST-handlinger skal afvises uden CSRF (419) og uden login (401)
+    for act in reservation_mode reguess; do
+      code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' -d "action=$act&preview_token=x" "$BASE/supplier_upload.php")
+      [ "$code" = "419" ] && ok "supplier_upload.php $act uden CSRF afvist (HTTP 419)" || bad "supplier_upload.php $act uden CSRF gav HTTP $code"
+      code=$(curl -s -o /dev/null -w '%{http_code}' -d "action=$act&preview_token=x" "$BASE/supplier_upload.php")
+      [ "$code" = "401" ] && ok "supplier_upload.php $act uden login afvist (HTTP 401)" || bad "supplier_upload.php $act uden login gav HTTP $code"
+    done
+
+    # Kims uploadfil: preview, apply og create mod den installerede testdatabase (rydder selv op)
+    if php tests/supplier_import_db_test.php; then ok "Databasetest: Kims uploadfil bestået"; else bad "Databasetest: Kims uploadfil fejlede"; fi
+
+    # Kims uploadfil: hele flowet via HTTP (upload, kolonnegæt, reservationsvalg, anvend, audit-log). Rydder selv op.
+    if php tests/supplier_upload_flow_test.php "$BASE" testadmin 'Test-Pass-12345!'; then ok "Flowtest: Kims uploadfil bestået"; else bad "Flowtest: Kims uploadfil fejlede"; fi
+
     grep -iE 'Fatal|Uncaught' /tmp/hsg-php-server.log && bad "PHP-fejl i serverlog"
   fi
 fi
