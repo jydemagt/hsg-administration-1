@@ -48,7 +48,7 @@ function hsg_supplier_read_xlsx(string $path): array {
 function hsg_supplier_read_csv(string $path): array {
     $fh=fopen($path,'rb');if(!$fh)throw new RuntimeException('Kunne ikke åbne CSV-filen.');
     $first=fgets($fh);rewind($fh);$d=substr_count((string)$first,';')>substr_count((string)$first,',')?';':',';$rows=[];
-    while(($r=fgetcsv($fh,0,$d))!==false)$rows[]=array_map(static fn($v)=>trim((string)$v),$r);fclose($fh);return ['CSV'=>$rows];
+    while(($r=fgetcsv($fh,0,$d,'"','\\'))!==false)$rows[]=array_map(static fn($v)=>trim((string)$v),$r);fclose($fh);return ['CSV'=>$rows];
 }
 
 function hsg_supplier_aliases(): array {
@@ -112,7 +112,10 @@ function hsg_supplier_map_has_locations(array $map): bool {
 /**
  * Kims lokationstal for én række (tilstand L). Tal (også 0) bruges, decimaler afrundes og negative tal bliver 0.
  * Tomme celler tæller som 0, hvis mindst én anden valgt lokationscelle i rækken har et tal – ellers bidrager rækken
- * ikke med lager. Tekst, der ikke er et tal, er ukendt og ændrer ikke lokationen.
+ * ikke med lager. Tekst, der ikke er ét tal, er ukendt og ændrer ikke lokationen.
+ * Et tal er (efter mellemrum/NBSP i begyndelsen og slutningen): valgfrit minus, cifre og højst én decimal-separator
+ * (. eller ,) med cifre efter – men ikke præcis tre cifre efter separatoren. "3 + 2", "3 2", "ca. 5", "1/2" og
+ * tusindtalsformater som "1.234", "1,234" og "1 234" er derfor ugyldige.
  * Returnerer ['values'=>[stock_loc_x=>int], 'blank'=>[stock_loc_x, …], 'invalid'=>[stock_loc_x=>rå tekst]].
  */
 function hsg_supplier_location_cells(array $row, array $map): array {
@@ -122,7 +125,12 @@ function hsg_supplier_location_cells(array $row, array $map): array {
         if(!str_starts_with($fieldKey,'stock_loc_'))continue;
         $raw=trim((string)($row[$colIdx]??''));
         if($raw===''){$blank[]=$fieldKey;continue;}
-        $num=hsg_supplier_parse_decimal($raw);
+        $s=preg_replace('/^[\s\x{00A0}\x{202F}]+|[\s\x{00A0}\x{202F}]+$/u','',$raw)??'';
+        $num=null;
+        if(preg_match('/^-?\d+(?:[.,](\d+))?$/',$s,$m)===1&&strlen($m[1]??'')!==3){
+            // Højst én separator, så den er altid decimaltegnet (også "40,999999999999993").
+            $num=hsg_supplier_parse_decimal(str_replace(',','.',$s));
+        }
         if($num===null){$invalid[$fieldKey]=$raw;continue;}
         $numbers[$fieldKey]=(int)max(0,round($num));
     }
@@ -178,7 +186,8 @@ function hsg_supplier_match_score(array $src,array $p): array {
     $reasons=[];$score=0;
     $sku=trim((string)($src['sku']??''));if($sku!==''&&strcasecmp($sku,(string)$p['sku'])===0)return ['score'=>100,'reason'=>'SKU er identisk'];
     $cask=strtoupper(trim((string)($src['cask_number']??'')));$pcask=strtoupper(trim((string)($p['cask_number']??'')));
-    if($cask!==''&&$pcask!==''&&$cask===$pcask){$score=98;$reasons[]='fadnummer er identisk';}
+    // Et fadnummer uden ciffer (fx STRENGTH fra "Cask Strength") er ikke et fadnummer og giver ikke et match.
+    if($cask!==''&&$pcask!==''&&$cask===$pcask&&preg_match('/\d/',$cask)===1){$score=98;$reasons[]='fadnummer er identisk';}
     $name=trim((string)($src['name']??''));if($name!==''){
         $a=hsg_supplier_name_key($name);$b=hsg_supplier_name_key((string)$p['name']);
         if($a!==''&&$a===$b){$score=max($score,96);$reasons[]='produktnavn er identisk';}
@@ -282,7 +291,8 @@ function hsg_supplier_rejected_saved_columns(array $headers, array $savedHeaderM
  * 1. Husket valg fra seneste upload bruges først – også "Ignorer kolonne". En beløbskolonne, der var husket som lager, afvises.
  *    Felter, der bevidst stod uden kolonne sidst, gættes ikke igen.
  * 2. Præcise alias-match for de øvrige kolonner fra venstre mod højre (første kolonne pr. felt vinder).
- * 3. Delvise match for de kolonner, der stadig er tomme – kun til felter, der ikke er brugt.
+ * 3. Delvise match for de kolonner, der stadig er tomme – kun til felter, der ikke er brugt. To trin: først hvor
+ *    overskriften indeholder et alias, derefter hvor aliaset indeholder overskriften.
  * Lokationskolonner gættes aldrig automatisk.
  */
 function hsg_supplier_suggest_columns(array $headers, array $savedHeaderMap = [], ?array $allowedFields = null): array {
@@ -312,22 +322,24 @@ function hsg_supplier_suggest_columns(array $headers, array $savedHeaderMap = []
         if($exact!==null&&$available($exact)&&hsg_supplier_guess_allowed($exact,$cell)){$colMap[$ci]=$exact;$usedFields[]=$exact;continue;}
         $pending[$ci]=[$cell,$n];
     }
-    // Gennemløb 2: delvise match. Produktnavn kræver et alias på mindst 8 tegn (whisky, navn, item … kun præcist).
-    foreach($pending as $ci=>[$cell,$n]){
-        $matched='';
-        if($n!==''){
+    // Gennemløb 2: delvise match i to trin, begge fra venstre mod højre.
+    //   2a: overskriften indeholder et alias ("Retail Price (inc VAT)" → udsalgspris).
+    //   2b: aliaset indeholder overskriften ("Price" → første ledige prisfelt) – først når 2a har taget sine felter.
+    // Produktnavn kræver et alias på mindst 8 tegn (whisky, navn, item … kun præcist).
+    foreach([true,false] as $headerContainsAlias){
+        foreach($pending as $ci=>[$cell,$n]){
+            if(isset($colMap[$ci])||$n==='')continue;
             foreach($aliases as $field=>$names){
                 if(!$available($field)||!hsg_supplier_guess_allowed($field,$cell))continue;
                 $minLength=$field==='name'?8:4;
                 foreach($names as $alias){
                     $an=hsg_supplier_norm($alias);
-                    if(strlen($an)>=$minLength && (str_contains($n,$an)||str_contains($an,$n))){$matched=$field;break 2;}
+                    if(strlen($an)>=$minLength && ($headerContainsAlias?str_contains($n,$an):str_contains($an,$n))){$colMap[$ci]=$field;$usedFields[]=$field;break 2;}
                 }
             }
         }
-        if($matched!=='')$usedFields[]=$matched;
-        $colMap[$ci]=$matched;
     }
+    foreach(array_keys($pending) as $ci)if(!isset($colMap[$ci]))$colMap[$ci]='';
     ksort($colMap);
     return $colMap;
 }
@@ -374,13 +386,18 @@ function hsg_supplier_merge_source(array $primary, array $extra): array {
 /**
  * Er to rækker (eller en række og et HSG-produkt) den samme vare? Bruges før bogstav-varenumre og enheder,
  * der matcher samme HSG-produkt, flettes. Nøgler: name, distillery, cask_number, vintage_year, age_text.
- * Stopregler: forskelligt fadnummer, kendt destilleri, årgang eller alder afviser altid.
+ * Stopregler: forskelligt fadnummer, kendt destilleri, årgang eller alder afviser altid. Et fadnummer uden ciffer
+ * tæller som tomt.
  * Navneregler: samme navn, næsten samme navn (≥ 90 %), lignende navn (≥ 75 %) og samme kendte destilleri,
  * eller navn mangler på den ene side og samme kendte destilleri. Ellers afvist.
  * Returnerer ['ok'=>bool, 'reason'=>string].
  */
 function hsg_supplier_variant_compatible(array $a, array $b): array {
-    $caskOf=static fn(array $x): string => strtoupper(preg_replace('/[#\s]+/u','',trim((string)($x['cask_number']??'')))??'');
+    // Et fadnummer uden ciffer (fx FINISH fra "Cask Finish", STRENGTH fra "Cask Strength") tæller som tomt.
+    $caskOf=static function(array $x): string {
+        $c=strtoupper(preg_replace('/[#\s]+/u','',trim((string)($x['cask_number']??'')))??'');
+        return preg_match('/\d/',$c)===1?$c:'';
+    };
     $caskA=$caskOf($a);$caskB=$caskOf($b);
     if($caskA!==''&&$caskB!==''&&$caskA!==$caskB)return ['ok'=>false,'reason'=>'forskelligt fadnummer (#'.$caskA.' / #'.$caskB.')'];
 
@@ -458,22 +475,39 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
     // 1) Rækker med samme varenummer samles. En bogstav-variant (17-1028a) samles under varenummeret uden bogstav
     //    (17-1028), hvis det findes i filen eller i HSG – men kun hvis det er samme vare (navn, fad, destilleri, årgang, alder).
     //    Ellers står varianten alene, og dens match må aldrig pege på HSG-produktet med basens varenummer.
-    $baseMatches = [];$units = [];
+    //    Basens ejer (gemt alias for basen, ellers produktet med basens SKU) findes uden brand-filter og bruges kun til at
+    //    udelukke og til kompatibilitetstjekket. Fletning ind i basen kræver stadig et match med brand-filteret.
+    $baseMatches = [];$baseOwners = [];$units = [];
+    $ownerOf = static function(string $base) use (&$baseOwners, &$baseMatches, $products, $brandId, $pdo): int {
+        if(!array_key_exists($base, $baseOwners)) {
+            // Uden brand-filter er ejeren det samme som matchet, så et allerede beregnet match genbruges.
+            $baseOwners[$base] = (!$brandId && array_key_exists($base, $baseMatches)) ? $baseMatches[$base] : hsg_supplier_find_match(['sku' => $base], $products, null, $pdo);
+        }
+        return (int)($baseOwners[$base]['id'] ?? 0);
+    };
     foreach($parsedRows as $pRow) {
         $key = $pRow['sku_key'];$split = null;$mergeReason = null;
         if($key !== '' && $pRow['base_sku'] !== $key) {
             $base = $pRow['base_sku'];
             if(isset($fileSkus[$base])) {
+                // F1: basen står i filen.
                 $cmp = hsg_supplier_variant_compatible($pRow['src'], $fileSkus[$base]['src']);
                 if($cmp['ok']) { $key = $base; $mergeReason = $cmp['reason']; }
-                else $split = ['base' => $fileSkus[$base]['sku'], 'reason' => $cmp['reason'], 'exclude' => $bySku[$base] ?? []];
+                else {
+                    $ownerPid = $ownerOf($base);
+                    $split = ['base' => $fileSkus[$base]['sku'], 'reason' => $cmp['reason'], 'exclude' => array_values(array_unique(array_merge($bySku[$base] ?? [], $ownerPid > 0 ? [$ownerPid] : [])))];
+                }
             } else {
+                // F2: basen findes kun i HSG.
                 if(!array_key_exists($base, $baseMatches)) $baseMatches[$base] = hsg_supplier_find_match(['sku' => $base], $products, $brandId, $pdo);
-                $basePid = (int)($baseMatches[$base]['id'] ?? 0);
-                if($basePid > 0) {
-                    $cmp = hsg_supplier_variant_compatible($pRow['src'], $byId[$basePid] ?? []);
-                    if($cmp['ok']) { $key = $base; $mergeReason = $cmp['reason']; }
-                    else $split = ['base' => (string)($byId[$basePid]['sku'] ?? $base), 'reason' => $cmp['reason'], 'exclude' => array_values(array_unique(array_merge($bySku[$base] ?? [], [$basePid])))];
+                $matchPid = (int)($baseMatches[$base]['id'] ?? 0);
+                $ownerPid = $ownerOf($base);
+                $targetPid = $matchPid > 0 ? $matchPid : $ownerPid;
+                if($targetPid > 0) {
+                    $cmp = hsg_supplier_variant_compatible($pRow['src'], $byId[$targetPid] ?? []);
+                    if(!$cmp['ok']) $split = ['base' => (string)($byId[$targetPid]['sku'] ?? $base), 'reason' => $cmp['reason'], 'exclude' => array_values(array_unique(array_merge($bySku[$base] ?? [], array_values(array_filter([$matchPid, $ownerPid], static fn(int $id): bool => $id > 0)))))];
+                    elseif($matchPid > 0) { $key = $base; $mergeReason = $cmp['reason']; }
+                    // Kompatibel, men kun ejeren fandtes (uden for brand-filteret): ingen fletning og intet split.
                 }
             }
         }
@@ -606,7 +640,7 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
         }
 
         if($stockMode === 'locations') {
-            if(!$stockFile['locations']) $notes[] = 'Ingen tal i lokationskolonnerne – lageret ændres ikke.';
+            if(!$stockFile['locations']) $notes[] = 'Bemærk: Ingen tal i lokationskolonnerne – lageret ændres ikke.';
             foreach($invalid as $k => $raw) $notes[] = 'Bemærk: Ugyldig værdi „'.$raw.'“ for '.$locLabel($k).' – lokationen ændres ikke.';
             if($stockFile['total'] !== null && $stockFile['locations'] && $stockFile['sum'] !== $stockFile['total']) {
                 $notes[] = 'Bemærk: Summen af lokationskolonnerne ('.$stockFile['sum'].') passer ikke med lagerantal i alt ('.$stockFile['total'].'). Tjek kolonnevalget og rækken i Kims fil. Rækken er ikke valgt på forhånd.';
@@ -796,14 +830,16 @@ function hsg_supplier_recalculate_preview(PDO $pdo, array $preview, array $custo
 }
 
 function hsg_supplier_preview_dir(): string {$d=__DIR__.'/../storage/import-previews';if(!is_dir($d)&&!@mkdir($d,0770,true)&&!is_dir($d))throw new RuntimeException('Kunne ikke oprette preview-mappe.');return $d;}
+/** Et preview-token er 40 små hex-tegn (bin2hex(random_bytes(20))). Alt andet afvises, før der bygges en filsti. */
+function hsg_supplier_preview_token_valid(string $token): bool {return preg_match('/^[a-f0-9]{40}$/',$token)===1;}
 function hsg_supplier_preview_save(array $preview, ?string $existingToken = null): string {
-    $token = ($existingToken !== null && preg_match('/^[a-f0-9]{40}$/', $existingToken)) ? $existingToken : bin2hex(random_bytes(20));
+    $token = ($existingToken !== null && hsg_supplier_preview_token_valid($existingToken)) ? $existingToken : bin2hex(random_bytes(20));
     $path = hsg_supplier_preview_dir().'/'.$token.'.json';
     file_put_contents($path, json_encode($preview, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT|JSON_THROW_ON_ERROR), LOCK_EX);
     return $token;
 }
-function hsg_supplier_preview_load(string $token): array {if(!preg_match('/^[a-f0-9]{40}$/',$token))throw new RuntimeException('Ugyldigt preview-token.');$path=hsg_supplier_preview_dir().'/'.$token.'.json';if(!is_file($path))throw new RuntimeException('Previewet er udløbet eller findes ikke.');$data=json_decode((string)file_get_contents($path),true,512,JSON_THROW_ON_ERROR);return is_array($data)?$data:[];}
-function hsg_supplier_preview_delete(string $token): void {if(preg_match('/^[a-f0-9]{40}$/',$token))@unlink(hsg_supplier_preview_dir().'/'.$token.'.json');}
+function hsg_supplier_preview_load(string $token): array {if(!hsg_supplier_preview_token_valid($token))throw new RuntimeException('Ugyldigt preview-token.');$path=hsg_supplier_preview_dir().'/'.$token.'.json';if(!is_file($path))throw new RuntimeException('Previewet er udløbet eller findes ikke.');$data=json_decode((string)file_get_contents($path),true,512,JSON_THROW_ON_ERROR);return is_array($data)?$data:[];}
+function hsg_supplier_preview_delete(string $token): void {if(hsg_supplier_preview_token_valid($token))@unlink(hsg_supplier_preview_dir().'/'.$token.'.json');}
 
 function hsg_supplier_update_fields(): array {
     $fields = ['cask_number','cask_type','wholesale_price','retail_price','abv','distillery','age_text','vintage_year','category','country','bottle_size_cl','bottle_count','stock_quantity'];
