@@ -43,6 +43,7 @@ $reservationModes=[
 ];
 $oldPreviewMessage='Previewet er lavet med en ældre version af systemet. Upload filen igen.';
 $token=trim((string)($_GET['preview']??$_POST['preview_token']??''));
+if(!hsg_supplier_preview_token_valid($token))$token=''; // Ugyldigt token: ingen preview og intet token i redirects.
 $postAction=$_SERVER['REQUEST_METHOD']==='POST'?(string)($_POST['action']??''):'';
 
 /** Henter previewet til en handling. Et preview fra en ældre version (uden format 2) afvises, og intet ændres. */
@@ -264,7 +265,7 @@ $firstLocationName=(string)($activeLocations[0]['name']??'første lokation');
     <label>Reservationer<select name="reservation_mode"><?php foreach($reservationModes as $modeKey=>$modeLabel):?><option value="<?=h($modeKey)?>" <?=$reservationMode===$modeKey?'selected':''?>><?=h($modeLabel)?></option><?php endforeach;?></select></label>
     <button class="button secondary">Genberegn preview</button>
   </form>
-  <p class="muted" style="margin-top:6px">Hvis Kim tæller reserverede flasker som solgt, skal reservationerne lægges oven i. Ellers trækkes de fra to gange, og varen kan forsvinde fra Lagerstatus. Valget huskes til næste upload.<br><small>Tallene beregnes igen med de aktuelle reservationer, når du trykker 'Anvend'.</small></p>
+  <p class="muted" style="margin-top:6px">Hvis Kim tæller reserverede flasker som solgt, skal reservationerne lægges oven i. Ellers trækkes de fra to gange, og varen kan forsvinde fra Lagerstatus. Valget huskes til næste upload.<br><small>Et nyt valg bruges først, når du har trykket 'Genberegn preview'. Tallene beregnes igen med de aktuelle reservationer, når du trykker 'Anvend'.</small></p>
   <p><span class="badge green">90–100 %</span> vælges som udgangspunkt automatisk. <span class="badge">70–89 %</span> kræver din vurdering. Usikre/umatchede rækker ændrer intet.</p>
 </div>
 
