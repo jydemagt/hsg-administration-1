@@ -179,14 +179,28 @@ t('eksport: navn som formel neutraliseres', str_contains(hsg_newsletter_csv($row
 function nl_throws(callable $fn): string {
     try { $fn(); return ''; } catch (Throwable $e) { return $e->getMessage(); }
 }
-eq('celle afkortes til 320 tegn', 320, strlen(hsg_newsletter_cap_cell(str_repeat('x', 400))));
+eq('celle afkortes til 320 tegn og slutter med " …"', str_repeat('x', 318).' …', hsg_newsletter_cap_cell(str_repeat('x', 400)));
+eq('celle på præcis 320 tegn afkortes ikke', str_repeat('x', 320), hsg_newsletter_cap_cell(str_repeat('x', 320)));
 $long = hsg_newsletter_cap_cell(str_repeat('æ', 5000));
 t('lang celle med æ: 320 tegn og gyldig UTF-8', preg_match_all('/./su', $long) === 320 && preg_match('//u', $long) === 1);
-eq('lang Windows-1252-celle omsættes og afkortes', str_repeat('ø', 320), hsg_newsletter_cap_cell(str_repeat("\xF8", 5000)));
+eq('lang Windows-1252-celle omsættes og afkortes', str_repeat('ø', 318).' …', hsg_newsletter_cap_cell(str_repeat("\xF8", 5000)));
 eq('kort celle renses som før', 'Søren', hsg_newsletter_cap_cell(" S\xF8ren "));
+// Testerens fund: afkortningen må aldrig gøre en adresse til en anden, gyldig adresse (kim@firma.com → kim@firma.co)
+$many = '';
+for ($i = 1; strlen($many) < 290; $i++) $many .= 'a'.str_pad((string)$i, 6, '0', STR_PAD_LEFT).'@x.dk; '; // 14 tegn pr. adresse
+$cell = $many.str_repeat('b', 306 - strlen($many)).'; kim@firma.com';
+eq('testcellen: 321 tegn, kim@firma.com starter på tegn 309', [321, 309], [strlen($cell), strpos($cell, 'kim@firma.com') + 1]);
+$a = hsg_newsletter_analyse([hsg_newsletter_cap_row([$cell])], ['header_row' => null, 'email' => 0, 'name' => null, 'company' => null, 'segment' => null], 'customer', []);
+$emails = array_column($a['entries'], 'email');
+t('afkortet celle: kim@firma.co bliver ikke en ny modtager', !in_array('kim@firma.co', $emails, true) && !in_array('kim@firma.c', $emails, true));
+t('afkortet celle: de hele adresser før klippet bevares', in_array('a000001@x.dk', $emails, true) && in_array('a000021@x.dk', $emails, true));
+t('afkortet celle: "…" står som ugyldig, så afkortningen ses i forhåndsvisningen', in_array('…', array_column($a['invalid'], 'value'), true));
+$exact = str_repeat('c', 318 - strlen('ok@firma.dk')).'ok@firma.dk; næste@x.dk';
+eq('klippes der lige efter en hel adresse, bevares den', str_repeat('c', 307).'ok@firma.dk …', hsg_newsletter_cap_cell($exact));
 eq('række afkortes til 30 kolonner', 30, count(hsg_newsletter_cap_row(range(1, 40))));
 $cs = hsg_newsletter_clean_sheets(['Ark 1' => [array_merge([str_repeat('y', 400)], array_fill(0, 39, 'z'))]]);
-t('clean_sheets: 30 kolonner og 320 tegn pr. celle', count($cs['sheets']['Ark 1'][0]) === 30 && strlen($cs['sheets']['Ark 1'][0][0]) === 320);
+t('clean_sheets: 30 kolonner og 320 tegn pr. celle', count($cs['sheets']['Ark 1'][0]) === 30 && preg_match_all('/./su', $cs['sheets']['Ark 1'][0][0]) === 320);
+eq('upload med file[] (flere filer) giver "Vælg en fil", ikke "for stor"', 'Vælg en Excel-fil (.xlsx) eller CSV-fil.', nl_throws(static fn() => hsg_newsletter_read_upload(['error' => [0, 0], 'size' => [1, 1], 'tmp_name' => ['a', 'b'], 'name' => ['a.csv', 'b.csv']])));
 eq('fil over 5 MB afvises før læsning', 'Filen er for stor (højst 5 MB).', nl_throws(static fn() => hsg_newsletter_read_upload(['error' => UPLOAD_ERR_OK, 'size' => 5 * 1024 * 1024 + 1, 'tmp_name' => __FILE__, 'name' => 'liste.csv'])));
 t('fil på præcis 5 MB afvises ikke på størrelsen', nl_throws(static fn() => hsg_newsletter_read_upload(['error' => UPLOAD_ERR_OK, 'size' => 5 * 1024 * 1024, 'tmp_name' => __FILE__, 'name' => 'liste.csv'])) === 'Vælg en Excel-fil (.xlsx) eller CSV-fil.');
 
@@ -207,6 +221,8 @@ for ($i = 1; $i <= 5000; $i++) $rows5000 .= "a$i@x.dk\n";
 eq('CSV: 5.000 rækker og tomme rækker til sidst godtages', 5000, count(hsg_newsletter_read_file($tmp($rows5000.str_repeat(",,,\n", 3000), 'csv'), 'csv')['sheets']['CSV']));
 eq('CSV: række 5.001 afvises', 'Filen har mere end 5.000 rækker.', nl_throws(static fn() => hsg_newsletter_read_file($tmp("E-mail\n".$rows5000, 'csv'), 'csv')));
 eq('CSV: tom fil', 'Filen indeholder ingen gyldige mailadresser.', nl_throws(static fn() => hsg_newsletter_read_file($tmp('', 'csv'), 'csv')));
+eq('CSV: omvendt skråstreg er ikke et escape-tegn (RFC 4180)', [['Navn', 'E-mail'], ['Pia \\', 'pia@x.dk']], hsg_newsletter_read_file($tmp("Navn,E-mail\n\"Pia \\\",pia@x.dk\n", 'csv'), 'csv')['sheets']['CSV']);
+eq('CSV: dobbelt anførselstegn i et felt', [['Skål "A"', 'a@x.dk']], hsg_newsletter_read_file($tmp("\"Skål \"\"A\"\"\",a@x.dk\n", 'csv'), 'csv')['sheets']['CSV']);
 
 // xlsx (kræver zip og xmlreader, som på webhotellet)
 if (class_exists('ZipArchive') && class_exists('XMLReader')) {
@@ -234,6 +250,8 @@ if (class_exists('ZipArchive') && class_exists('XMLReader')) {
 
     $f = $xlsx('<?xml version="1.0"?><x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData><x:row r="2"><x:c r="D2" t="inlineStr"><x:is><x:t>a@x.dk</x:t></x:is></x:c></x:row></x:sheetData></x:worksheet>');
     eq('xlsx: navnerum med præfiks', ['Ark 1' => [['', '', '', 'a@x.dk']]], hsg_newsletter_read_file($f, 'xlsx')['sheets']);
+    $f = $xlsx($ws('<row r="1"><c r="A1"><v>x</v></c><c r="'.str_repeat('A', 30).'1" t="inlineStr"><is><t>b@x.dk</t></is></c></row>', $ns));
+    eq('xlsx: ugyldig kolonnereference (30 bogstaver) bliver kolonnen efter den forrige', ['Ark 1' => [['x', 'b@x.dk']]], hsg_newsletter_read_file($f, 'xlsx')['sheets']);
 
     $cells = '';
     for ($i = 0; $i < 40; $i++) $cells .= '<c r="'.hsg_newsletter_col_letter($i).'1" t="inlineStr"><is><t>K'.$i.'</t></is></c>';

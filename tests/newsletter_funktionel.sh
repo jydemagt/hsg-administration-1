@@ -114,13 +114,62 @@ c=$(nfupload 5001.csv)
 nfchk "BØR1 CSV med 5.001 rækker afvises" '[ "$c" = "200" ] && nfflash | grep -q "Filen har mere end 5.000 rækker."'
 nfxlsx bred.xlsx "$(php -r '$h = ["E-mail"]; for ($i = 1; $i < 40; $i++) $h[] = "H$i"; echo json_encode([$h, array_merge(["bred1@x.dk"], array_fill(0, 39, "v")), [str_repeat("q", 400)]]);')"
 P=$(nfanalyse bred.xlsx customer); nfpreview "$P"
-Q320=$(printf 'q%.0s' $(seq 1 320))
-nfchk "BØR2 bred fil: kun kolonne A–AD kan vælges, og en lang celle står med 320 tegn" 'grep -q "<option value=\"29\"[^>]*>Kolonne AD" "$NF/page.html" && ! grep -q "<option value=\"30\"" "$NF/page.html" && grep -q "række 3: \"$Q320\"" "$NF/page.html" && ! grep -q "${Q320}q" "$NF/page.html"'
+Q318=$(printf 'q%.0s' $(seq 1 318))
+nfchk "BØR2 bred fil: kun kolonne A–AD kan vælges, og en lang celle afkortes til 320 tegn med \" …\"" 'grep -q "<option value=\"29\"[^>]*>Kolonne AD" "$NF/page.html" && ! grep -q "<option value=\"30\"" "$NF/page.html" && grep -q "række 3: \"$Q318\"" "$NF/page.html" && grep -q "række 3: \"…\"" "$NF/page.html" && ! grep -q "${Q318}q" "$NF/page.html"'
 T=$(token "$BASE/newsletter_import.php"); curl -s -b "$JAR" -c "$JAR" -o /dev/null "$BASE/newsletter_import.php" -d "csrf=$T" -d action=cancel -d "preview_token=$P"
+# Testerens fund: en celle på 321 tegn, hvor kim@firma.com starter på tegn 309, må ikke give modtageren kim@firma.co
+php -r '$m = ""; for ($i = 1; strlen($m) < 290; $i++) $m .= "a".str_pad((string)$i, 6, "0", STR_PAD_LEFT)."@lang.dk; "; $m = substr($m, 0, 306); echo "E-mail\n\"", $m, "; kim@firma.com\"\n";' > "$NF/lang-celle.csv"
+P=$(nfanalyse lang-celle.csv customer); nfpreview "$P"
+nfchk "BØR2 afkortet celle: kim@firma.co vises ikke som ny, og afkortningen står som ugyldig" '! grep -q "kim@firma.co" "$NF/page.html" && grep -q "række 2: \"…\"" "$NF/page.html"'
+nfapply "$P"
+nfchk "BØR2 afkortet celle: kim@firma.co er ikke importeret" '[ "$(nfsql "SELECT COUNT(*) FROM hsg_newsletter_recipients WHERE email LIKE '"'"'kim@firma.c%'"'"'")" = "0" ]'
 
 # ---------- KAN: mailadressen i listen er et link til redigering (mobil) ----------
 nfpage "$BASE/newsletter_recipients.php" >/dev/null; KID=$(nfid kim@firma.dk)
 nfchk "KAN mailadressen i listen er et link til ?id= (uden mailadresse i URL'en)" 'grep -q "<td><a href=\"newsletter_recipients.php?id=$KID\">kim@firma.dk</a></td>" "$NF/page.html"'
+
+# ---------- Testerens tilføjelser (review-rettelser): skæve filer, 5.000 rækker, Windows-1252 og forhåndsvisningens levetid ----------
+nfpreviewtoken() { grep -o 'name="preview_token" value="[^"]*"' "$NF/page.html" | head -1 | sed 's/.*value="//;s/"$//'; }
+nfcancel() { local T; T=$(token "$BASE/newsletter_import.php"); curl -s -b "$JAR" -c "$JAR" -o /dev/null "$BASE/newsletter_import.php" -d "csrf=$T" -d action=cancel -d "preview_token=$1"; }
+nfsess() { php "$ROOT/tests/newsletter_session.php" "$@"; }
+
+: > "$NF/tom.xlsx"
+c=$(nfupload tom.xlsx)
+nfchk "TEST tom .xlsx: dansk fejltekst, ikke HTTP 500" '[ "$c" = "200" ] && nfflash | grep -q "Kunne ikke åbne Excel-filen."'
+printf 'E-mail\nx@y.dk\n' > "$NF/csv-som.xlsx"
+c=$(nfupload csv-som.xlsx)
+nfchk "TEST CSV omdøbt til .xlsx: dansk fejltekst, ikke HTTP 500" '[ "$c" = "200" ] && nfflash | grep -q "Kunne ikke åbne Excel-filen."'
+php -d memory_limit=256M -r '$z = new ZipArchive(); $z->open($argv[1], ZipArchive::CREATE);
+  $z->addFromString("xl/worksheets/sheet1.xml", "<?xml version=\"1.0\"?><worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData><row r=\"1\"><c r=\"A1\" t=\"inlineStr\"><is><t>".str_repeat("A", 8 * 1024 * 1024)."</t></is></c></row></sheetData></worksheet>");
+  $z->close();
+  $b = file_get_contents($argv[1]); $p = strrpos($b, "PK\x01\x02"); file_put_contents($argv[1], substr_replace($b, pack("V", 2000), $p + 24, 4));' "$NF/forfalsket.xlsx"
+c=$(nfupload forfalsket.xlsx)
+nfchk "TEST xlsx hvor zip-kataloget påstår 2.000 byte, men arket er 8 MB: dansk fejltekst, ikke HTTP 500" '[ "$c" = "200" ] && nfflash | grep -q "Excel-filen kunne ikke læses."'
+{ echo "E-mail"; for i in $(seq 1 4999); do echo "t$i@x.dk"; done; for i in $(seq 1 300); do echo ",,,"; echo; done; } > "$NF/5000.csv"
+c=$(nfupload 5000.csv); PT=$(nfpreviewtoken)
+nfchk "TEST CSV med præcis 5.000 rækker og tomme rækker til sidst godtages (forhåndsvisning vises)" '[ "$c" = "200" ] && [ -n "$PT" ] && ! nfflash | grep -q "mere end 5.000"'
+nfcancel "$PT"
+printf 'Navn;Firma;E-mail\r\nS\xf8ren \xc5se;K\xf8benhavn \xc6ble A/S;winsoeren@x.dk\r\n' > "$NF/w1252.csv"
+P=$(nfanalyse w1252.csv customer); nfpreview "$P"
+nfchk "TEST CSV i Windows-1252 med semikolon: æøå vises korrekt i forhåndsvisningen" 'grep -q "winsoeren@x.dk – Søren Åse, København Æble A/S" "$NF/page.html"'
+nfcancel "$P"
+
+# Kriterie 6: en udløbet forhåndsvisning slettes øverst på siden, uanset token (sessionsfilen aflæses med tests/newsletter_session.php)
+printf 'E-mail\nudloeb1@x.dk\n' > "$NF/udloeb.csv"
+P=$(nfanalyse udloeb.csv customer)
+nfchk "TEST en ny forhåndsvisning ligger i sessionen" '[ "$(nfsess show "$JAR" | cut -d" " -f1)" = "ja" ]'
+nfsess age "$JAR" 7300 >/dev/null; nfpage "$BASE/newsletter_import.php" >/dev/null
+nfchk "TEST en udløbet forhåndsvisning slettes øverst i newsletter_import.php uden token" '[ "$(nfsess show "$JAR")" = "nej" ]'
+P=$(nfanalyse udloeb.csv customer); nfsess age "$JAR" 7300 >/dev/null; nfpage "$BASE/newsletter_recipients.php" >/dev/null
+nfchk "TEST en udløbet forhåndsvisning slettes også i newsletter_recipients.php" '[ "$(nfsess show "$JAR")" = "nej" ]'
+P=$(nfanalyse udloeb.csv customer); nfsess age "$JAR" 7100 >/dev/null; nfpage "$BASE/newsletter_import.php" >/dev/null
+nfchk "TEST en forhåndsvisning på 7.100 sekunder er ikke udløbet" '[ "$(nfsess show "$JAR" | cut -d" " -f1)" = "ja" ]'
+nfpage "$BASE/newsletter_import.php?preview=forkert" >/dev/null
+T=$(token "$BASE/newsletter_import.php"); curl -s -b "$JAR" -c "$JAR" -o /dev/null "$BASE/newsletter_import.php" -d "csrf=$T" -d action=cancel -d preview_token=forkert
+nfchk "TEST en gyldig forhåndsvisning slettes ikke af et andet token (GET og POST)" '[ "$(nfsess show "$JAR" | cut -d" " -f1)" = "ja" ]'
+n0=$(nfsql "SELECT COUNT(*) FROM hsg_newsletter_recipients"); nfsess age "$JAR" 7300 >/dev/null
+T=$(token "$BASE/newsletter_import.php"); curl -s -b "$JAR" -c "$JAR" -L -o "$NF/page.html" "$BASE/newsletter_import.php" -d "csrf=$T" -d action=apply -d "preview_token=$P"
+nfchk "TEST en udløbet forhåndsvisning kan ikke gennemføres (intet importeres, og siden siger udløbet)" '[ "$(nfsql "SELECT COUNT(*) FROM hsg_newsletter_recipients")" = "$n0" ] && nfflash | grep -q "Forhåndsvisningen er udløbet" && [ "$(nfsess show "$JAR")" = "nej" ]'
 
 # ---------- Kriterie 17: manuel tilføjelse ----------
 nfpost "$BASE/newsletter_recipients.php" -d action=create -d email=ikke-en-mail -d segment=customer >/dev/null
@@ -170,7 +219,7 @@ nfchk "K24 headerne sendes også på 419-svar" 'echo "$hdr" | grep -qi "^Referre
 nfsql "ALTER TABLE hsg_newsletter_recipients RENAME COLUMN token_hash TO token_hash_test" >/dev/null
 c=$(nfcode "$URL3"); cp "$NF/pub.html" "$NF/pub500.html"; c2=$(nfcode -d 'List-Unsubscribe=One-Click' "$URL3")
 nfsql "ALTER TABLE hsg_newsletter_recipients RENAME COLUMN token_hash_test TO token_hash" >/dev/null
-nfchk "KAN afmeldingssiden ved databasefejl: HTTP 500 med neutral dansk tekst uden SQL og PHP-fejl (GET og ét klik)" '[ "$c" = "500" ] && [ "$c2" = "500" ] && grep -q "Afmeldingen kunne ikke gennemføres lige nu" "$NF/pub500.html" && ! grep -qiE "SQLSTATE|PDO|Fatal|Uncaught|Warning:|token_hash|@" "$NF/pub500.html" "$NF/pub.html" && [ "$(nfcode "$URL3")" = "200" ] && [ "$(nfstatus c1@z.dk)" = "active" ]'
+nfchk "KAN afmeldingssiden ved databasefejl: HTTP 500 med neutral dansk tekst uden SQL og PHP-fejl (GET og ét klik)" '[ "$c" = "500" ] && [ "$c2" = "500" ] && grep -q "Der opstod en teknisk fejl. Prøv linket igen om lidt." "$NF/pub500.html" && ! grep -qiE "SQLSTATE|PDO|Fatal|Uncaught|Warning:|token_hash|@" "$NF/pub500.html" "$NF/pub.html" && [ "$(nfcode "$URL3")" = "200" ] && [ "$(nfstatus c1@z.dk)" = "active" ]'
 
 # ---------- Afvigelse 2: en stoppet modtager kan afmelde sig ----------
 nfpost "$BASE/newsletter_recipients.php" -d action=create -d email=stop3@x.dk -d segment=customer >/dev/null; SID3=$(nfid stop3@x.dk)

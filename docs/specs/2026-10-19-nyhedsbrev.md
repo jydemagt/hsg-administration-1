@@ -86,7 +86,7 @@ Udvikleren bygger og frigiver ét trin ad gangen. Hvert trin har sine egne accep
 **Begrundelse:**
 - Afmeldinger, personlige tokens og udsendelseslog kræver en varig tilstand pr. modtager.
 - Ved import hver måned skal en afmeldt modtager genkendes og *aldrig* genaktiveres. Det kan kun lade sig gøre, hvis systemet husker modtageren.
-- Kims Excel-fil forbliver hans masterliste til andre formål. Systemet gemmer kun mail, navn, firma og type. Andre kolonner (telefon, adresse osv.) læses aldrig ind i databasen.
+- Kims Excel-fil forbliver hans masterliste til andre formål. Systemet gemmer kun mail, navn, firma og type. Andre kolonner (telefon, adresse osv.) gemmes aldrig i databasen.
 
 **Regler for importen:**
 - **Normalisering:** Mellemrum, `mailto:` og `<>` fjernes, og hele adressen skrives med små bogstaver. En celle med flere adresser adskilt af `;`, `,` eller mellemrum giver flere modtagere.
@@ -584,7 +584,7 @@ Søg i listen [______________]  (filtrerer i browseren)  [+ Tilføj modtager]
   - Felter: Mail*, Navn, Firma, Type (Kunde/Forhandler).
   - Knappen hedder **Tilføj**.
   - Var adressen tidligere afmeldt eller slettet, vises fejlen "Adressen er tidligere afmeldt/slettet. Sæt flueben, hvis modtageren selv har bedt om at blive tilmeldt igen." sammen med fluebenet.
-- **Rediger** (`?id=N`):
+- **Rediger** (`?id=N`): åbnes med knappen **Rediger** eller ved at trykke på mailadressen, som er et link til `?id=N`, så redigering også kan nås på mobil, når tabellen er bredere end skærmen.
   - Felter: Mail, Navn, Firma og Type, plus (kun læsning) Kilde, Oprettet, Sidst set i import, Afmeldt (tidspunkt og hvordan).
   - Feltet "Personligt afmeldingslink" er kun til læsning med `onclick="this.select()"`. Det er beregnet til manuel hjælp og test. I trin 1 bygges linket med `base_url()` (den aktuelle browserforespørgsel), fra trin 2 med `newsletter_public_base_url`, når den er udfyldt.
   - Knapper: **Gem** · **Afmeld** (hvis aktiv) · **Stop** (fx afviste mails) / **Genaktivér** (genaktivering fra Afmeldt kræver fluebenet "selv bedt om") · **Eksportér data (CSV)** · **Slet modtager** (`button.danger` + `confirm('Slet modtageren permanent? Mailadressen gemmes kun som en hash (SHA-256), så den ikke importeres igen.')`).
@@ -622,7 +622,7 @@ Skifter type: 2 · Aktive modtagere, der ikke står i filen: 5
 ```
 
 - Forhåndsvisningen gemmes i `$_SESSION` under et tilfældigt nøgle-token, der sendes som skjult felt. Den gemmes ikke i `storage/` og aldrig i databasen, fordi Kims fil kan indeholde andre persondata. Når importen er gennemført eller annulleret, slettes den. En forhåndsvisning, der er ældre end 2 timer, slettes, når *Import* eller *Modtagere* åbnes, uanset token.
-- **Grænser (tilføjet efter reviewet af trin 1):** Filen må højst fylde 5 MB. En xlsx-fil må højst fylde ca. 30 MB udpakket (arkene og de delte strenge lægges sammen før udpakning, som i `core/updater.php`). Kun kolonne A–AD (30 kolonner) læses, og hver celle afkortes til 320 tegn i forhåndsvisningen. Teksten må højst fylde 10 MB i alt, fordi én delt streng i en xlsx kan genbruges i mange celler. Læsningen stopper ved række 5.001 med indhold. xlsx læses med XMLReader (ét element ad gangen), og CSV med en egen `fgetcsv`-løkke i `core/newsletter.php`. `core/supplier_import.php` er uændret.
+- **Grænser (tilføjet efter reviewet af trin 1):** Filen må højst fylde 5 MB. En xlsx-fil må højst fylde ca. 30 MB udpakket (arkene og de delte strenge lægges sammen før udpakning, som i `core/updater.php`). Kun kolonne A–AD (30 kolonner) læses, og hver celle afkortes til 320 tegn i forhåndsvisningen. En afkortet celle slutter med " …", og klippes der midt i et ord, fjernes det afklippede stykke, så en adresse aldrig bliver til en anden, gyldig adresse (fund fra testen). Teksten må højst fylde 10 MB i alt, fordi én delt streng i en xlsx kan genbruges i mange celler. Læsningen stopper ved række 5.001 med indhold. xlsx læses med XMLReader (ét element ad gangen), og CSV med en egen `fgetcsv`-løkke i `core/newsletter.php`. `core/supplier_import.php` er uændret.
 - Hvis xlsx-filen har mere end ét ark, vises valget "Ark [v]".
 - Listerne vises i `<details>` med højst 200 linjer og teksten "… og N flere".
 - Afmeldte adresser vises maskeret (`a***@x.dk`).

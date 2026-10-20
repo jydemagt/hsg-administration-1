@@ -99,5 +99,5 @@ try {
     hsg_newsletter_public_page(200, 'Afmeld nyhedsbrevet', $body);
 } catch (Throwable $e) {
     error_log('nyhedsbrev-afmeld.php: '.get_class($e).': '.$e->getMessage());
-    hsg_newsletter_public_page(500, 'Afmeld nyhedsbrevet', '<p>Afmeldingen kunne ikke gennemføres lige nu på grund af en teknisk fejl. Prøv linket igen om lidt.</p>');
+    hsg_newsletter_public_page(500, 'Afmeld nyhedsbrevet', '<p>Der opstod en teknisk fejl. Prøv linket igen om lidt.</p>');
 }

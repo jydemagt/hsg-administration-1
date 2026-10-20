@@ -64,9 +64,22 @@ function hsg_newsletter_clip(string $s): string {
     return substr($s, 0, $max);
 }
 
-/** En celle i forhåndsvisningen: renset og højst HSG_NEWSLETTER_MAX_CELL tegn. */
+/**
+ * En celle i forhåndsvisningen: renset og højst HSG_NEWSLETTER_MAX_CELL tegn. En længere celle afkortes og
+ * slutter med " …". Klippes der midt i et ord, fjernes det afklippede stykke, så en adresse aldrig kan blive
+ * til en anden, gyldig adresse (kim@firma.com → kim@firma.co). "…" står som ugyldig i forhåndsvisningen.
+ */
 function hsg_newsletter_cap_cell(mixed $value): string {
-    return hsg_newsletter_truncate(hsg_newsletter_clean_cell(hsg_newsletter_clip((string)$value)), HSG_NEWSLETTER_MAX_CELL);
+    $s = hsg_newsletter_clean_cell(hsg_newsletter_clip((string)$value));
+    $keep = HSG_NEWSLETTER_MAX_CELL - 2;
+    if (!preg_match('/^(.{'.$keep.'})(..)./su', $s, $m)) return $s; // højst HSG_NEWSLETTER_MAX_CELL tegn
+    $sep = ';,\s\x{00A0}\x{200B}\x{FEFF}'; // som i hsg_newsletter_split_emails()
+    $t = $m[1];
+    if (!preg_match('/^['.$sep.']/u', $m[2])) {
+        $cut = preg_replace('/[^'.$sep.']+$/u', '', $t) ?? '';
+        if (preg_match('/[^'.$sep.']/u', $cut)) $t = $cut; // ét langt ord uden skilletegn beholdes
+    }
+    return rtrim($t).' …';
 }
 
 /** En række i forhåndsvisningen: højst HSG_NEWSLETTER_MAX_COLS kolonner, og hver celle renset og afkortet. */
@@ -805,7 +818,8 @@ function hsg_newsletter_xlsx_sheet(string $xml, array $shared, int &$total, int 
                 $cells = []; $next = 0;
             } elseif ($name === 'c' && $cells !== null) {
                 $ref = (string)$r->getAttribute('r');
-                $ci = $ref !== '' ? hsg_supplier_col_index($ref) : $next;
+                // Excel går til kolonne XFD (tre bogstaver). Mangler r, eller er den ugyldig, er det kolonnen efter den forrige.
+                $ci = preg_match('/^[A-Za-z]{1,3}[0-9]*$/', $ref) ? hsg_supplier_col_index($ref) : $next;
                 $next = $ci + 1;
                 $ctype = (string)$r->getAttribute('t');
                 $val = '';
@@ -909,12 +923,14 @@ function hsg_newsletter_read_file(string $path, string $ext): array {
  * @return array{sheets:array<string,array>,rownums:array<string,list<int>>}
  */
 function hsg_newsletter_read_upload(array $file): array {
-    $error = (int)($file['error'] ?? UPLOAD_ERR_NO_FILE);
+    $error = $file['error'] ?? UPLOAD_ERR_NO_FILE;
+    if (!is_int($error)) $error = UPLOAD_ERR_NO_FILE; // fx file[] med flere filer
     if (in_array($error, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) throw new RuntimeException('Filen er for stor til at blive uploadet.');
-    if ($error === UPLOAD_ERR_OK && (int)($file['size'] ?? 0) > HSG_NEWSLETTER_MAX_UPLOAD) throw new RuntimeException('Filen er for stor (højst 5 MB).');
+    if ($error !== UPLOAD_ERR_OK) throw new RuntimeException('Vælg en Excel-fil (.xlsx) eller CSV-fil.');
+    if ((int)($file['size'] ?? 0) > HSG_NEWSLETTER_MAX_UPLOAD) throw new RuntimeException('Filen er for stor (højst 5 MB).');
     $tmp = (string)($file['tmp_name'] ?? '');
     $ext = strtolower(pathinfo((string)($file['name'] ?? ''), PATHINFO_EXTENSION));
-    if ($error !== UPLOAD_ERR_OK || $tmp === '' || !is_uploaded_file($tmp) || !in_array($ext, ['xlsx', 'csv'], true)) {
+    if ($tmp === '' || !is_uploaded_file($tmp) || !in_array($ext, ['xlsx', 'csv'], true)) {
         throw new RuntimeException('Vælg en Excel-fil (.xlsx) eller CSV-fil.');
     }
     return hsg_newsletter_read_file($tmp, $ext);
