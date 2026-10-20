@@ -68,6 +68,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         exit;
     }
 
+    // verify_csrf() godtager en tom formular, hvis sessionen heller ikke har et token (fx en POST
+    // uden cookies). Her kræves derfor også, at både formular og session har et token.
+    $postedCsrf = $_POST['csrf'] ?? '';
+    if (!is_string($postedCsrf) || $postedCsrf === '' || (string)($_SESSION['csrf'] ?? '') === '' || !hash_equals((string)$_SESSION['csrf'], $postedCsrf)) {
+        hsg_newsletter_public_page(419, 'Afmeld nyhedsbrevet', '<p>Formularen er udløbet. <a href="nyhedsbrev-afmeld.php?t='.h($token).'">Åbn siden igen</a>, og tryk på knappen.</p>');
+    }
     verify_csrf();
     $changed = hsg_newsletter_unsubscribe($pdo, $id, 'link');
     if (!$changed) {
