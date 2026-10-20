@@ -15,26 +15,34 @@ bad()  { echo -e "\033[31m[FEJL]\033[0m $*"; FAIL=1; }
 info() { echo -e "\033[34m[INFO]\033[0m $*"; }
 
 # 1. PHP-syntaks
-info "1/3 PHP-syntakstjek"
+info "1/4 PHP-syntakstjek"
 LINT_ERR=0
 while IFS= read -r -d '' f; do
   out=$(php -l "$f" 2>&1) || { echo "$out"; LINT_ERR=1; }
 done < <(find . -name '*.php' -not -path './storage/*' -not -path './vendor/*' -not -path './.git/*' -print0)
 [ $LINT_ERR -eq 0 ] && ok "Alle PHP-filer er syntaktisk korrekte" || bad "Syntaksfejl fundet"
 
-# 2. Release-bygger: negativtest (forbudte filer må aldrig komme med)
-info "2/3 Release-bygger negativtest"
+# 2. Enhedstest af rene funktioner (ingen database)
+info "2/4 Enhedstest af nyhedsbrevets rene funktioner"
+if out=$(php tests/newsletter_test.php 2>&1); then
+  ok "$out"
+else
+  echo "$out"; bad "Enhedstest af nyhedsbrevet fejlede"
+fi
+
+# 3. Release-bygger: negativtest (forbudte filer må aldrig komme med)
+info "3/4 Release-bygger negativtest"
 if php tools/build-release.php --test-negative >/tmp/hsg-build-neg.log 2>&1; then
   ok "Release-negativtest bestået"
 else
   cat /tmp/hsg-build-neg.log; bad "Release-negativtest fejlede"
 fi
 
-# 3. Installation + røgtest af sider (kræver testdatabase)
+# 4. Installation + røgtest af sider (kræver testdatabase)
 if [ -z "${HSG_TEST_DB_NAME:-}" ]; then
-  info "3/3 Røgtest sprunget over (HSG_TEST_DB_* ikke sat)"
+  info "4/4 Røgtest sprunget over (HSG_TEST_DB_* ikke sat)"
 else
-  info "3/3 Installation og røgtest mod ${HSG_TEST_DB_NAME}"
+  info "4/4 Installation og røgtest mod ${HSG_TEST_DB_NAME}"
   if [ -f config.php ]; then
     bad "config.php findes allerede – kør røgtest i en ren kopi (fx git worktree), ikke i en installation"
   else
@@ -63,7 +71,8 @@ else
     # Hver side skal svare uden 500 og uden PHP-fejl i output
     PAGES="admin.php status.php products.php brands.php stock.php reservations.php locations.php
            catalog.php reports.php quality.php users.php system.php backup.php import_center.php
-           supplier_upload.php image_check.php update.php admin-account.php"
+           supplier_upload.php image_check.php update.php admin-account.php
+           newsletter.php newsletter_recipients.php newsletter_import.php"
     for p in $PAGES; do
       [ -f "$p" ] || continue
       code=$(curl -s -b "$JAR" -o /tmp/hsg-page.html -w '%{http_code}' "$BASE/$p")
@@ -78,6 +87,38 @@ else
     # Sikkerhed: POST uden CSRF skal afvises
     code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' -d 'x=1' "$BASE/locations.php")
     [ "$code" = "419" ] || [ "$code" = "403" ] && ok "POST uden CSRF afvist (HTTP $code)" || bad "POST uden CSRF gav HTTP $code"
+
+    # Nyhedsbrev: administrationssider kræver login og CSRF
+    for p in newsletter.php newsletter_recipients.php newsletter_import.php; do
+      code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/$p")
+      [ "$code" = "401" ] && ok "$p uden login afvist (HTTP 401)" || bad "$p uden login gav HTTP $code"
+    done
+    for p in newsletter_recipients.php newsletter_import.php; do
+      code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' -d 'action=create&email=x%40example.dk' "$BASE/$p")
+      [ "$code" = "419" ] && ok "$p: POST uden CSRF afvist (HTTP 419)" || bad "$p: POST uden CSRF gav HTTP $code"
+    done
+
+    # Nyhedsbrev: offentlig afmeldingsside med ugyldigt token giver 404 uden PHP-fejl
+    ZERO=$(printf '0%.0s' $(seq 1 64))
+    for q in "t=" "t=abc" "t=$ZERO" "t=${ZERO}0" "t=$(printf 'g%.0s' $(seq 1 64))"; do
+      for m in GET POST; do
+        if [ "$m" = "POST" ]; then
+          code=$(curl -s -o /tmp/hsg-page.html -w '%{http_code}' -d 'List-Unsubscribe=One-Click' "$BASE/nyhedsbrev-afmeld.php?$q")
+        else
+          code=$(curl -s -o /tmp/hsg-page.html -w '%{http_code}' "$BASE/nyhedsbrev-afmeld.php?$q")
+        fi
+        if [ "$code" = "404" ] && ! grep -qiE 'Fatal error|Parse error|Uncaught|Warning:|Notice:|Deprecated:' /tmp/hsg-page.html; then
+          ok "nyhedsbrev-afmeld.php $m ?${q:0:12}… → HTTP 404"
+        else bad "nyhedsbrev-afmeld.php $m ?${q:0:12}… → HTTP $code / PHP-fejl i output"; fi
+      done
+    done
+    hdr=$(curl -s -D - -o /dev/null "$BASE/nyhedsbrev-afmeld.php?t=$ZERO")
+    if echo "$hdr" | grep -qi '^Referrer-Policy: no-referrer' && echo "$hdr" | grep -qi '^X-Robots-Tag: noindex' && echo "$hdr" | grep -qi '^Cache-Control: no-store'; then
+      ok "nyhedsbrev-afmeld.php sender Referrer-Policy, X-Robots-Tag og Cache-Control"
+    else bad "nyhedsbrev-afmeld.php mangler sikkerhedsheadere"; fi
+
+    # Nyhedsbrev trin 1: funktionel test af acceptkriterierne (import, afmelding, GDPR, adgang)
+    source "$ROOT/tests/newsletter_funktionel.sh"
 
     grep -iE 'Fatal|Uncaught' /tmp/hsg-php-server.log && bad "PHP-fejl i serverlog"
   fi

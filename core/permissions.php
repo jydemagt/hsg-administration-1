@@ -21,15 +21,26 @@ function hsg_link_module_access(string $moduleId): array {
 function hsg_link_can_view_module(string $moduleId): bool { return hsg_link_module_access($moduleId)['view']; }
 function hsg_link_can_operate_module(string $moduleId): bool { return hsg_link_module_access($moduleId)['operate']; }
 
+/**
+ * Adgang for login-brugere uden en række i hsg_admin_module_access (eller uden tabellen).
+ * Manifestets 'admin_default_access' bestemmer; moduler uden nøglen giver adgang som hidtil.
+ */
+function hsg_admin_module_default_access(string $moduleId): bool {
+    if(!function_exists('hsg_module_manifests')) return true;
+    $manifest=hsg_module_manifests()[$moduleId] ?? null;
+    if(!is_array($manifest) || !array_key_exists('admin_default_access',$manifest)) return true;
+    return (bool)$manifest['admin_default_access'];
+}
+
 function hsg_admin_can_view_module(string $moduleId): bool {
     if(!is_admin()) return false;
     if(is_superadmin()) return true;
     if(!isset($GLOBALS['pdo']) || !($GLOBALS['pdo'] instanceof PDO)) return true;
     $pdo=$GLOBALS['pdo']; $aid=current_admin_id(); if(!$aid) return false;
-    if(!function_exists('db_table_exists') || !db_table_exists($pdo,'hsg_admin_module_access')) return true;
+    if(!function_exists('db_table_exists') || !db_table_exists($pdo,'hsg_admin_module_access')) return hsg_admin_module_default_access($moduleId);
     $st=$pdo->prepare('SELECT can_view FROM hsg_admin_module_access WHERE admin_id=? AND module_id=?');
     $st->execute([$aid,$moduleId]); $r=$st->fetch();
-    return $r ? (bool)$r['can_view'] : true;
+    return $r ? (bool)$r['can_view'] : hsg_admin_module_default_access($moduleId);
 }
 
 function hsg_capabilities(): array {
