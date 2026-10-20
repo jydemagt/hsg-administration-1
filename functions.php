@@ -75,7 +75,8 @@ function page_header(string $title): void {
       ],
       'SALG' => [
         'reservations'=>['reservations.php','▣','Reservationer'],
-        'orders'=>['reports.php?tab=builder','🛒','Ordrer & Salg']
+        'orders'=>['reports.php?tab=builder','🛒','Ordrer & Salg'],
+        'newsletter'=>['newsletter.php','✉','Nyhedsbrev']
       ],
       'PRODUKTER' => [
         'stock'=>['status.php','▦','Lager'],
@@ -99,7 +100,9 @@ function page_header(string $title): void {
       echo '<div class="nav-section-label">'.h($secName).'</div>';
       foreach($navItems as $mId => [$href,$icon,$name]){
         if(!is_superadmin() && function_exists('hsg_admin_can_view_module') && !hsg_admin_can_view_module($mId) && !in_array($mId, ['dashboard','activity','orders'], true)) continue;
-        $active=($current===basename($href)) || ($href==='status.php' && $current==='reservations.php') || ($href==='admin.php' && in_array($current,$adminFiles,true)) || ($href==='import_center.php' && in_array($current,$importFiles,true));
+        // Nyhedsbrev vises kun, når modulet er aktivt, og brugeren har rettigheden.
+        if($mId==='newsletter' && !(function_exists('hsg_module_is_enabled') && hsg_module_is_enabled('newsletter') && can('newsletter.send'))) continue;
+        $active=($current===basename($href)) || ($href==='status.php' && $current==='reservations.php') || ($href==='admin.php' && in_array($current,$adminFiles,true)) || ($href==='import_center.php' && in_array($current,$importFiles,true)) || ($href==='newsletter.php' && in_array($current,['newsletter_recipients.php','newsletter_import.php'],true));
         echo '<a class="'.($active?'active':'').'" '.($active?'aria-current="page"':'').' href="'.h($href).'">'.h($icon).' <span>'.h($name).'</span></a>';
       }
     }
