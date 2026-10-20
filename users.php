@@ -150,7 +150,7 @@ page_header('Brugere & adgang');
         </div>
         <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top: 0.5rem;">
           <?php foreach($assignableModules as $mId=>$m): ?>
-            <label class="check"><input type="checkbox" name="modules[]" value="<?=h($mId)?>" checked> <?=h($m['name'])?></label>
+            <label class="check"><input type="checkbox" name="modules[]" value="<?=h($mId)?>" <?=hsg_admin_module_default_access((string)$mId)?'checked':''?>> <?=h($m['name'])?></label>
           <?php endforeach; ?>
         </div>
       </div>
@@ -163,7 +163,8 @@ page_header('Brugere & adgang');
     <div class="table-wrap"><table><thead><tr><th>Brugernavn</th><th>Navn</th><th>Rolle</th><th>Sidst logget ind</th><th>Moduladgang</th><th>Status & Handlinger</th></tr></thead><tbody>
     <?php foreach($admins as $a):
       $isSuper=!empty($a['is_superadmin']);
-      $userMods=$isSuper ? array_keys($assignableModules) : ($adminAccess[(int)$a['id']] ?? array_keys($assignableModules));
+      // Uden rækker med adgang vises standardadgangen; moduler med admin_default_access=false (Nyhedsbrev) er ikke valgt.
+      $userMods=$isSuper ? array_keys($assignableModules) : ($adminAccess[(int)$a['id']] ?? array_keys(array_filter($assignableModules, static fn(array $m): bool => hsg_admin_module_default_access((string)$m['id']))));
     ?>
       <tr>
         <td><strong><?=h($a['username'])?></strong></td>
