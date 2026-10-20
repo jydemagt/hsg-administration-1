@@ -1,7 +1,7 @@
 # Spec: Nyhedsbrev fra HSG Administration
 
 - **Dato:** 2026-10-19
-- **Status:** Udkast 3 – Michaels svar indarbejdet (også om afsender og kataloglink), afventer svar på spørgsmål 2, 6, 11 og 12
+- **Status:** Udkast 4 – Michaels ønske om teksteditor (formatering uden HTML) og gemt seneste nyhedsbrev er indarbejdet. Afventer svar på spørgsmål 2, 6, 11 og 12.
 - **Ønske fra:** Kim, HSG Whisky ApS (mail "VS: brochure", 21-09-2026)
 - **Nyt modul:** `newsletter` (version 1.0.0 → 1.1.0 → 1.2.0, ét versionsløft pr. trin)
 - **Prioritet:** Fremtidsønske, ikke hastende. Bygges i tre trin, og hvert trin kan frigives for sig.
@@ -38,6 +38,7 @@ Michael besvarede spørgsmålene den 19-10-2026. For hvert svar står konsekvens
 | 9 | Bunden af mailen | Samme adresse, CVR og privatlivspolitik som på hsg-whisky.dk. | Felterne "Bund i mailen" og "Privatlivspolitik" i indstillingerne bevares, og Michael udfylder dem ved opsætningen med oplysningerne fra hsg-whisky.dk. Der hardkodes intet. |
 | 10 | Hvem må sende | De, der har adgang til modulet. | Som designet: `newsletter.send` følger moduladgangen, og superadministratorer har altid adgang. Andre login-brugere har ingen adgang, før en superadministrator giver den i `users.php`. Det sikres med `admin_default_access => false` (beslutning 6). |
 | 13 | Afsenderpostkasse | Fra info@. | Som antaget: `newsletter_from_email` er `info@hsg-whisky.dk`, og Exchange-rettigheden gives til info@ (Brugerflow A). Der oprettes ingen ekstra postkasse. Risikoen for, at Microsoft begrænser info@, hvis mange markerer mailen som spam, står under beslutning 2, Risici. |
+| 14 | Teksteditor og gemt seneste nyhedsbrev (Michaels ønske) | "der skal være en tekst udarbejdning hvor den gemme seneste nyhedsbrev og man skal kunne formatere uden at skulle bruge html" | Ny beslutning 8: tekstfelt med værktøjslinje (Fed, Kursiv, Overskrift, Lille overskrift, Punktliste, Nummereret liste, Link, Skillelinje) og live forhåndsvisning. Teksten gemmes i et lille, fast markup-sprog ("HSG-markup"), aldrig som HTML, og serveren laver HTML og tekstversion. Ny beslutning 9: "Ny udsendelse" starter fra det seneste nyhedsbrev, kladden gemmes automatisk, og konflikter mellem to vinduer opdages. I migration 1.1.0 er `body_text` blevet til `body_markup`, og der er kommet nye kolonner (`markup_version`, `revision`, `source_campaign_id`, `updated_by_admin`) og indstillingen `newsletter_accent_color`. Linjen "WYSIWYG-editor …" under "Uden for scope" er erstattet: formatering er nu med, og kun en `contenteditable`-editor og HTML-indtastning er fortsat fravalgt (beslutning 8). |
 
 ---
 
@@ -52,6 +53,7 @@ Michael besvarede spørgsmålene den 19-10-2026. For hvert svar står konsekvens
 **Løsning:** Et nyt modul *Nyhedsbrev* i HSG Administration:
 - en modtagerliste, der indlæses fra Kims Excel-fil og husker afmeldinger
 - personlige afmeldingslinks
+- en teksteditor med knapper til fed, kursiv, overskrifter, lister, links og skillelinjer, så Kim aldrig ser eller skriver HTML. Hver ny udsendelse starter fra det seneste nyhedsbrev, og kladden gemmes automatisk.
 - én mail pr. modtager fra info@ via Microsoft 365 (SMTP med OAuth2), sendt fra en kø, der kan genoptages efter en afbrydelse
 - forhåndsvisning og obligatorisk testudsendelse
 - et personligt link til et fastfrosset katalog med den rigtige pris for modtagerens gruppe
@@ -68,7 +70,7 @@ Michael besvarede spørgsmålene den 19-10-2026. For hvert svar står konsekvens
 | Trin | Modulversion | Indhold | Værdi alene |
 |---|---|---|---|
 | **1** | `newsletter` 1.0.0 | Modul og menupunkt, modtagertabel, Excel/CSV-import med forhåndsvisning, manuel tilføj/ret/afmeld/stop/slet/eksport, offentlig afmeldingsside med ét-klik-afmelding. **Der sendes ingen mails.** | Kims liste bliver renset (dubletter, ugyldige adresser), opdelt i forhandlere og kunder og klar med afmeldingstokens. |
-| **2** | `newsletter` 1.1.0 | Indstillinger (afsender, Microsoft 365, hastighed, opbevaring, cron), egen SMTP-klient med OAuth2 (XOAUTH2) til Microsoft 365 og en lokal test-SMTP, udsendelser (kladde, forhåndsvisning, test, start), kø med batches via browser og cron, pause/genoptag/annullér, udsendelseslog og automatisk oprydning. Endnu uden katalog. | Nyhedsbrevet kan sendes sikkert fra info@ via systemet. Kim kan midlertidigt skrive et link i teksten. |
+| **2** | `newsletter` 1.1.0 | Indstillinger (afsender, Microsoft 365, udseende, hastighed, opbevaring, cron), egen SMTP-klient med OAuth2 (XOAUTH2) til Microsoft 365 og en lokal test-SMTP, teksteditor med formatering uden HTML (HSG-markup, værktøjslinje, live forhåndsvisning, automatisk gem), ny udsendelse ud fra seneste nyhedsbrev, udsendelser (kladde, forhåndsvisning, test, start), kø med batches via browser og cron, pause/genoptag/annullér, udsendelseslog og automatisk oprydning. Endnu uden katalog. | Nyhedsbrevet kan skrives med formatering og sendes sikkert fra info@ via systemet. Kim kan midlertidigt indsætte et link til kataloget med Link-knappen. |
 | **3** | `newsletter` 1.2.0 | Katalog: kataloggenereringen flyttes ud i en funktion, kataloget fryses pr. udsendelse, og der kommer en offentlig download pr. modtager med pris efter gruppe og udløbsdato. | Kataloget følger med, uden vedhæftning og uden at engrospriser bliver offentlige. |
 
 Udvikleren bygger og frigiver ét trin ad gangen. Hvert trin har sine egne acceptkriterier (se nedenfor).
@@ -210,7 +212,7 @@ Udvikleren bygger og frigiver ét trin ad gangen. Hvert trin har sine egne accep
 - **Sletning (ret til sletning):** Rækken anonymiseres. `email`, `name`, `company`, `token_hash` og `token_cipher` sættes til NULL, og status sættes til `deleted`. Kun `email_hash` bevares, så personen ikke kommer med igen ved næste import. Rækker i køen og loggen peger kun på modtager-id og indeholder ingen mailadresse.
 - **Eksport (ret til indsigt):** CSV med UTF-8 BOM og semikolon. Den indeholder modtagerens felter (mail, navn, firma, type, status, kilde, oprettet, afmeldt) og (fra trin 2) udsendelseshistorikken. Celler, der starter med `=`, `+`, `-` eller `@`, får et foranstillet `'`, så de ikke kan køre som formler i Excel.
 - **Opbevaring (afklaret spørgsmål 7):**
-  - Udsendelsesrækker slettes, når udsendelsen blev afsluttet for mere end `newsletter_log_retention_months` (standard 24) måneder siden. Selve udsendelsen (emne og tekst) bevares, da den ikke indeholder personoplysninger.
+  - Udsendelsesrækker slettes, når udsendelsen blev afsluttet for mere end `newsletter_log_retention_months` (standard 24) måneder siden. Selve udsendelsen (emne og tekst) bevares, da den ikke indeholder personoplysninger. Det er også det, der gør "seneste nyhedsbrev" tilgængeligt (beslutning 9).
   - Katalogfiler slettes efter udløb (trin 3).
   - Oprydningen kører i cron og, når en administrator åbner Nyhedsbrev.
 - **Grundlag for udsendelsen:** Grundlaget for at sende nyhedsbrevet til modtagerne er HSG's ansvar uden for systemet. Systemet spørger ikke om det og registrerer det ikke.
@@ -223,9 +225,12 @@ Udvikleren bygger og frigiver ét trin ad gangen. Hvert trin har sine egne accep
 ### 4. Forhåndsvisning og testudsendelse
 
 **Anbefaling:**
-- **Forhåndsvisning:** Mailens HTML-version vises i browseren i en sandboxet iframe (`newsletter_preview.php`, kun GET, kun læsning, CSP `default-src 'none'; style-src 'unsafe-inline'`). Man kan skifte mellem varianterne *Forhandler* og *Kunde*. Tekstversionen vises i en `<details>`.
-- **"Send test":** Testen sendes til 1–5 testadresser. Feltet er udfyldt med `newsletter_test_email`, og den senest brugte adresse gemmes. Der sendes én mail pr. variant, som udsendelsen rammer. Emnet får præfikset `[TEST] `, og øverst i mailen står "TESTUDSENDELSE – variant: Forhandler (engrospriser)". Links i testmails bruger et test-token for udsendelsen: afmeldingssiden svarer "Dette er et testlink – ingen er afmeldt", og kataloglinket virker for begge varianter (trin 3).
-- **Indholdshash:** Systemet beregner en SHA-256 over alt, der påvirker mailen: emne, tekst, målgruppe, katalogtype, katalogfilernes SHA-256, afsendernavn, afsenderadresse, svar-til, footer, link til privatlivspolitik og offentlig adresse. Hashen gemmes som `tested_hash`, når en test er sendt.
+- **Forhåndsvisning:** Mailens HTML-version vises i en sandboxet iframe, og man kan skifte mellem varianterne *Forhandler* og *Kunde*. Tekstversionen vises i en `<details>`. Der er to måder at se den på:
+  - **Live, mens der skrives** (beslutning 8): JavaScript sender den aktuelle tekst til `newsletter_preview.php` (POST med `csrf`, JSON-svar), og HTML'en sættes ind via `iframe.srcdoc` i en iframe med `sandbox=""`. Intet gemmes.
+  - **Gemt version** (GET `newsletter_preview.php?id=N&v=dealer|customer`, kun læsning, CSP `default-src 'none'; style-src 'unsafe-inline'`). Den virker også uden JavaScript og for udsendelser, der allerede er sendt.
+  - Begge bruger samme PHP-funktioner som den rigtige mail, så forhåndsvisningen er præcis det, modtageren får.
+- **"Send test":** Testen sendes til 1–5 testadresser. Feltet er udfyldt med `newsletter_test_email`, og den senest brugte adresse gemmes. Der sendes én mail pr. variant, som udsendelsen rammer. Emnet får præfikset `[TEST] `, og øverst i mailen står "TESTUDSENDELSE – variant: Forhandler (engrospriser)". Links i testmails bruger et test-token for udsendelsen: afmeldingssiden svarer "Dette er et testlink – ingen er afmeldt", og kataloglinket virker for begge varianter (trin 3). Ugemte ændringer i editoren gemmes, før testen sendes.
+- **Indholdshash:** Systemet beregner en SHA-256 over alt, der påvirker mailen: emne, `body_markup`, `markup_version`, målgruppe, katalogtype, katalogfilernes SHA-256, afsendernavn, afsenderadresse, svar-til, footer, link til privatlivspolitik, accentfarve og offentlig adresse. Hashen gemmes som `tested_hash`, når en test er sendt. Hashen beregnes altid ud fra de gemte værdier, så også et automatisk gem gør testen ugyldig, hvis indholdet er ændret.
 - **"Start udsendelse"** er kun mulig, når *den aktuelle* hash er lig `tested_hash`. Ændres noget efter testen, vises "Ændret siden testen – send en ny test", og start afvises på serveren.
 - **Bekræftelse:** Panelet viser "312 modtagere (48 forhandlere, 264 kunder)". Brugeren skal sætte flueben ved "Jeg har modtaget og kontrolleret testmailen". Knappen hedder "Start udsendelse til 312 modtagere" og viser en JavaScript-bekræftelse. Serveren kontrollerer, at det indsendte `expected_count` stadig passer. Er modtagerlisten ændret, vises "Modtagerlisten er ændret – kontroller antallet igen."
 
@@ -276,7 +281,7 @@ Udvikleren bygger og frigiver ét trin ad gangen. Hvert trin har sine egne accep
 - **Sidebeskyttelse:** Alle administrationssider bruger `require __DIR__.'/auth.php'`, `require_module_enabled('newsletter')` og `require_capability('newsletter.send')`.
 - **CSRF:**
   - Alle POST-formularer har `csrf_field()`. `auth.php` kalder `verify_csrf()` globalt.
-  - AJAX-endpointet sender `csrf` i FormData.
+  - AJAX-endpointene (afsendelse, live forhåndsvisning og automatisk gem, også via `navigator.sendBeacon`) sender `csrf` i FormData.
   - Den eneste undtagelse er ét-klik-POST på `nyhedsbrev-afmeld.php` (godkendt af Michael 19-10-2026, se punkt 3).
 - **Audit:** `audit_log($pdo, $action, $entityType, $entityId, $details)`. `details` må aldrig indeholde mailadresser, client secrets eller tokens.
 
@@ -292,17 +297,18 @@ Udvikleren bygger og frigiver ét trin ad gangen. Hvert trin har sine egne accep
 | Indstillinger gemt | `newsletter.settings` | `system` / – | nøglerne der er ændret; `m365_secret_changed: true` |
 | Forbindelsestest | `newsletter.smtp_test` | `system` / – | forsendelsesmetode, ok/fejl, SMTP-kode eller Microsoft-fejlkode (`AADSTS…`) |
 | Ny cron-nøgle | `newsletter.cron_key.rotate` | `system` / – | – |
-| Udsendelse oprettet / rettet / kopieret / slettet | `newsletter.campaign.create` / `.update` / `.copy` / `.delete` | `newsletter_campaign` / id | – |
+| Udsendelse oprettet / kopieret / slettet | `newsletter.campaign.create` / `.copy` / `.delete` | `newsletter_campaign` / id | `source_campaign_id` |
+| Kladde gemt med knappen "Gem kladde" (eller Ctrl+S) | `newsletter.campaign.update` | `newsletter_campaign` / id | `revision`. Automatisk gem logges **ikke**, men `updated_by_admin` og `updated_at` opdateres. |
 | Katalog fastfrosset | `newsletter.campaign.catalog_snapshot` | `newsletter_campaign` / id | varianter, størrelser, de første 12 tegn af SHA-256 |
-| Test sendt | `newsletter.campaign.test` | `newsletter_campaign` / id | antal testadresser, varianter, de første 12 tegn af hashen |
-| Udsendelse startet | `newsletter.campaign.start` | `newsletter_campaign` / id | antal pr. segment, de første 12 tegn af hashen |
+| Test sendt | `newsletter.campaign.test` | `newsletter_campaign` / id | antal testadresser, varianter, `revision`, de første 12 tegn af hashen |
+| Udsendelse startet | `newsletter.campaign.start` | `newsletter_campaign` / id | antal pr. segment, `revision`, de første 12 tegn af hashen |
 | Pause / genoptag / annullér resten | `newsletter.campaign.pause` / `.resume` / `.cancel` | `newsletter_campaign` / id | antal i kø |
 | Automatisk pause (afsenderfejl) | `newsletter.campaign.auto_pause` | `newsletter_campaign` / id | årsag og kode (uden secret og token) |
 | Gensend ukendte | `newsletter.campaign.retry_unknown` | `newsletter_campaign` / id | antal |
 | Udsendelse færdig | `newsletter.campaign.complete` | `newsletter_campaign` / id | sendt/fejlet/ukendt/sprunget over |
 | Oprydning | `newsletter.cleanup` | `system` / – | antal slettede logrækker og katalogfiler (logges kun, hvis antallet er større end 0) |
 
-Der logges **ikke** pr. afsendt mail (loggen findes i `hsg_newsletter_deliveries`) og ikke pr. katalogdownload.
+Der logges **ikke** pr. afsendt mail (loggen findes i `hsg_newsletter_deliveries`), pr. katalogdownload eller pr. automatisk gem.
 
 ### 7. Indstillinger
 
@@ -322,6 +328,10 @@ Der logges **ikke** pr. afsendt mail (loggen findes i `hsg_newsletter_deliveries
 - **Client secret-feltet** kan kun skrives i: `type="password"` med tom værdi og teksten "Lad feltet være tomt for at beholde den eksisterende client secret". Det er samme mønster som client secret i `backup.php`. Secret og tokens vises, logges og returneres aldrig, heller ikke i fejltekster fra Microsoft.
 - **Offentlig adresse (`newsletter_public_base_url`) er obligatorisk.** `base_url()` giver `http://localhost` i CLI-cron og `…/cron` ved kald af cron via URL. Links i mails skal derfor bygges ud fra en fast adresse. Feltet foreslår `base_url()`, når det vises første gang. Det skal starte med `https://`, eller `http://localhost` / `http://127.0.0.1` til test, og må ikke have en afsluttende `/`.
 - **Afsenderoplysninger:** Michael udfylder felterne "Bund i mailen" (adresse og CVR) og "Privatlivspolitik" ved opsætningen med de samme oplysninger som på hsg-whisky.dk (afklaret spørgsmål 9). Der hardkodes intet.
+- **Accentfarve (`newsletter_accent_color`):** bruges i mailens toplinje, overskrifter, links og katalogknap (beslutning 8, Typografi).
+  - Standard er `#b54708`, systemets eksisterende `--amber` med god kontrast på hvid. Systemet har ingen defineret HSG-farve.
+  - Michael kan indsætte HSG's farve fra hsg-whisky.dk uden kodeændring.
+  - Kun `#RRGGBB` accepteres.
 - **cURL:** Mangler PHP cURL, viser siden "PHP cURL mangler – Microsoft 365 kan ikke bruges", og Test og Start er deaktiveret for `m365`.
 
 **Fravalgt:**
@@ -332,6 +342,127 @@ Der logges **ikke** pr. afsendt mail (loggen findes i `hsg_newsletter_deliveries
 - *`config.php`:* må ikke røres, og administratoren kan ikke redigere den.
 - *Kryptering af client secret med nøglen til adgangslinks:* nøglen ligger i samme backup som databasen og giver derfor ingen reel beskyttelse. Det ville afvige fra det eksisterende mønster.
 - *Fri SMTP-vært med adgangskode:* uden for scope (se beslutning 2, Fravalgt).
+
+### 8. Teksteditor: formatering uden HTML
+
+**Anbefaling (a): et almindeligt tekstfelt (`textarea`) med værktøjslinje, et lille fast markup-sprog ("HSG-markup", se afsnittet *HSG-markup, version 1*) og live forhåndsvisning af den rigtige mail ved siden af (desktop) eller under (mobil).**
+
+- **Værktøjslinje** (`role="toolbar"`, knapper med `type="button"`, `aria-label` og `title` med genvejen, mindst 44 × 44 px):
+
+  | Knap | Genvej | Virkning i tekstfeltet |
+  |---|---|---|
+  | **F** – Fed | Ctrl+B / Cmd+B | Omkranser markeringen med `**`. Uden markering indsættes `**fed tekst**` med "fed tekst" markeret. Er markeringen allerede omkranset, fjernes tegnene. |
+  | *K* – Kursiv | Ctrl+I / Cmd+I | Som Fed, med `*`. |
+  | Overskrift | – | Sætter `## ` foran de markerede linjer. Erstatter `### `. Fjernes igen ved nyt tryk. |
+  | Lille overskrift | – | Som Overskrift, med `### `. |
+  | • Punktliste | – | Sætter `- ` foran hver markeret linje. Fjernes igen ved nyt tryk. |
+  | 1. Nummereret liste | – | Sætter `1) `, `2) `, `3) ` … foran hver markeret linje. Fjernes igen ved nyt tryk. |
+  | Link | Ctrl+K / Cmd+K | Åbner et lille linkpanel (se S5). Indsætter `[tekst](adresse)`. |
+  | — Skillelinje | – | Indsætter `---` på en linje for sig. |
+
+- **Lister fortsætter ved Enter:** Enter på en listelinje begynder en ny linje med `- ` (eller næste nummer). Enter på et tomt listepunkt afslutter listen.
+- **Gem nu:** Ctrl+S / Cmd+S gemmer straks og blokerer browserens "Gem side".
+- **Linkpanel:**
+  - Felterne er "Tekst" (udfyldt med markeringen) og "Adresse".
+  - En mailadresse uden `mailto:` får `mailto:` sat foran.
+  - Andre adresser end `https://…` og `mailto:…` afvises i panelet med "Brug en adresse, der starter med https:// eller mailto:".
+  - Det er kun en hjælp til Kim. Serveren kontrollerer altid selv adressen.
+- **"Sådan formaterer du":** En `<details>` under feltet viser oversigten over tegnene (se afsnittet *HSG-markup, version 1*).
+- **Advarsler:** Advarsler fra serveren (fx et ugyldigt link) vises under feltet med linjenummer. De blokerer ikke gem.
+- **Kopi og indsæt:** Indsat tekst fra Word, Outlook eller en hjemmeside bliver altid ren tekst, fordi et `textarea` ikke kan indeholde andet. Formatering fra kilden følger ikke med.
+- **Indsætning af tegn:** Knapperne bevarer browserens egen fortryd (Ctrl+Z), hvor det er muligt, fx via `document.execCommand('insertText')` med `setRangeText()` som reserve. Fortryd er ikke et acceptkriterie.
+- **Uden JavaScript:** Kim kan stadig skrive tegnene selv, gemme med "Gem kladde" og se den gemte forhåndsvisning.
+- **Kode:** Al JavaScript ligger i `assets/newsletter-editor.js` (egen kode, ingen biblioteker eller CDN). Filen indlæses kun på `newsletter_campaign.php` med `?v=<app_version>`.
+- **Gemmes og sikkerhed:**
+  - Databasen gemmer kun teksten som skrevet (`body_markup`). Der findes ingen HTML-kolonne, og serveren modtager aldrig HTML fra editoren.
+  - HTML og tekstversion laves på serveren af de rene funktioner `hsg_newsletter_markup_to_html()` og `hsg_newsletter_markup_to_text()` i `core/newsletter_markup.php`.
+  - Teksten escapes med `h()` først, og derefter kan kun en fast liste af elementer opstå.
+  - Links er kun tilladt med `https://` og `mailto:`.
+- **Live forhåndsvisning:**
+  - 600 ms efter sidste tastetryk, efter et tryk på en knap og ved skift af variant sender JavaScript emne og tekst til `newsletter_preview.php` (POST, `csrf`).
+  - Svaret er JSON `{ok, html, text, warnings}`.
+  - `html` sættes **kun** i `iframe.srcdoc` på en iframe med `sandbox=""`. `text` og `warnings` sættes med `textContent`. Den genererede HTML indsættes aldrig i selve sidens DOM.
+- **Typografi i mailen:** Mailen får lidt fast typografi, så den ser professionel ud, uden at Kim skal tage stilling til design. Se tabellen *Typografi* under "Mailens indhold og format".
+  - Indholdet er højst 600 px bredt i et tabel-layout, så også Outlook til Windows respekterer bredden.
+  - Skriften er Arial 16 px.
+  - Overskrifter, links og katalogknap får accentfarven (`newsletter_accent_color`).
+  - Kim kan ikke vælge farver eller skriftstørrelser. Det holder mailene ens fra måned til måned.
+- **Billeder er stadig uden for scope.** Begrundelse:
+  - Billeder kræver enten offentlig hosting (fjernbilleder blokeres som standard i Outlook og kan bruges til sporing) eller indlejrede vedhæftninger (større mails, mere kompleks MIME).
+  - Begge dele kræver upload og lagring.
+  - Kataloglinket viser allerede flaskerne.
+  - Logoet kan komme senere sammen med billeder.
+
+**Begrundelse for (a):**
+- Det er robust i alle browsere, også på iPhone og Android, og virker uden JavaScript.
+- Kopi fra Word og Outlook bliver ren tekst, så der kommer aldrig skjult HTML eller skjulte stilarter med.
+- Det, der gemmes, er præcis det, Kim ser i feltet. Der er ingen konvertering, der kan gå galt mellem to redigeringer.
+- Forhåndsvisningen er lavet af den samme PHP-funktion som mailen, så den er præcis det, modtageren får.
+- Der skal kun skrives et lille stykke JavaScript og én PHP-funktion, og begge kan testes uden browser.
+- Ulempen er, at Kim ser tegn som `**` i skrivefeltet. Det afbødes af knapperne, af den live forhåndsvisning lige ved siden af, af oversigten over tegnene og af, at sproget kun har ni regler.
+
+**Fravalgt:**
+- *(b) `contenteditable`-editor, der omsættes til HSG-markup i JavaScript før gem:*
+  - Den ser pænere ud, mens man skriver, men `contenteditable` opfører sig forskelligt i hver browser (især på mobil).
+  - `document.execCommand` er officielt forældet.
+  - Indsat indhold fra Word og Outlook giver vilkårlig HTML med stilarter, som en egen konverter i JavaScript skal kunne rense og omsætte (div/p/br, b/strong, indlejrede span'er). Det bliver en "renderer nummer to", der kan afvige fra PHP-funktionen og ændre teksten mellem to redigeringer.
+  - Indsat HTML lever i sidens DOM, før den renses, hvilket er en ekstra XSS-flade.
+  - Editoren virker ikke uden JavaScript.
+  - Det er markant mere kode og test.
+- *Færdig editor (TinyMCE, Quill, EasyMDE osv.):* Biblioteker, CDN, Composer og Node er ikke tilladt.
+- *HTML-indtastning eller HTML gemt i databasen:* Michael har bedt om, at Kim ikke skal bruge HTML, og det ville kræve en fuld HTML-renser.
+- *Markdown fuldt ud:* For mange regler giver uventede resultater i almindelig dansk tekst (fx "1. november" i starten af en linje bliver en nummereret liste). HSG-markup er bevidst en lille delmængde, der er tilpasset dansk tekst.
+
+### 9. Gem seneste nyhedsbrev og automatisk gem af kladden
+
+**Anbefaling:**
+- **Ny udsendelse starter fra det seneste nyhedsbrev.** "Ny udsendelse" er en POST-knap med `csrf` på `newsletter.php`.
+  - **Er der ingen kladde**, oprettes en ny kladde, og følgende kopieres fra det **seneste nyhedsbrev**: `body_markup`, `markup_version`, målgruppe og (fra trin 3) katalogtype.
+    - Det seneste nyhedsbrev er den udsendelse med den nyeste `started_at` (status *Sender*, *På pause*, *Færdig* eller *Annulleret*).
+    - Er intet sendt endnu, bruges den udsendelse med den nyeste `updated_at`.
+    - Findes der slet ingen udsendelser, er teksten tom (pladsholdertekst i feltet: "Skriv nyhedsbrevet her. Brug knapperne ovenfor til fed, overskrifter, lister og links.").
+  - **Emnet** sættes til standardemnet for den aktuelle måned, fx "Nyhedsbrev fra HSG Whisky ApS (November 2026)".
+  - Kladden får `source_campaign_id` sat, og siden viser "Baseret på #11 – Nyhedsbrev fra HSG Whisky ApS (Oktober 2026). Ret det, der er nyt."
+  - `tested_hash` er tom, så der skal altid sendes en ny test.
+  - **Findes der allerede en eller flere kladder**, vises et valg (S4): **Fortsæt kladden** (den senest gemte) eller **Start ny ud fra seneste nyhedsbrev**. Det forhindrer, at Kim ved et uheld får to kladder for samme måned.
+  - **"Kopiér til ny kladde"** bevares på alle udsendelser til særlige tilfælde. Den kopierer emne, tekst, målgruppe og katalogtype præcis, og `tested_hash` er tom.
+- **Sendte nyhedsbreve er låst:** Når en udsendelse er startet, kan emne, tekst, målgruppe og katalog ikke ændres. Serveren afviser det. Det seneste nyhedsbrev er derfor altid præcis det, der blev sendt, og det gemmes uden personoplysninger, så længe systemet bruges.
+- **Automatisk gem (anbefalet frem for kun en "Gem kladde"-knap):**
+  - **Hvornår:**
+    - Hvert 30. sekund, når der er ugemte ændringer, sender JavaScript emne, tekst, målgruppe og katalogtype til `newsletter_campaign.php` (POST, `action=autosave`, `csrf`, `revision`). Svaret er JSON.
+    - Når siden forlades eller skjules (`pagehide` / `visibilitychange`), sendes det samme med `navigator.sendBeacon`.
+  - **Statuslinje over editoren:**
+    - "Ikke gemt endnu"
+    - "Gemmer …"
+    - "Gemt kl. 10.42"
+    - "Kunne ikke gemme – teksten er ikke gemt. Prøv 'Gem kladde', eller kopiér teksten." (amber)
+  - **Advarsel ved lukning:** Er der ugemte ændringer, eller fejlede seneste gem, viser browseren sin standardadvarsel, når siden lukkes (`beforeunload`).
+  - **"Gem kladde" og Ctrl+S** gemmer straks og audit-logges. Automatisk gem audit-logges ikke.
+  - **Ingen ændringer:** Er indholdet uændret i forhold til det gemte, sendes der ingen forespørgsel, og `revision` øges ikke.
+  - **Svar ved succes:** `{ok:true, revision, saved_at, tested_ok, warnings}`.
+  - **Svar ved fejl:**
+    - 409 `conflict`: kladden er gemt fra et andet vindue siden.
+    - 409 `locked`: udsendelsen er startet.
+    - 422 `too_long`: teksten er over 20.000 tegn.
+    - Forkert `csrf` giver 419.
+    - Er svaret ikke JSON (fx fordi sessionen er udløbet), vises "Kunne ikke gemme".
+- **Konflikter mellem to vinduer:**
+  - Kladden har en `revision`, der øges ved hver gemning, der ændrer indholdet.
+  - Et gem med en ældre `revision` afvises med 409, og vinduet viser: "Kladden er ændret i et andet vindue (kl. 10.40 af Michael). Genindlæs siden for at se den nyeste version. Din tekst er ikke gemt." Teksten bliver stående, så Kim kan kopiere den.
+- **Samspil med testen:**
+  - Indholdshashen beregnes ud fra de gemte værdier. Et automatisk gem, der ændrer indholdet, gør derfor testen ugyldig.
+  - Svaret har `tested_ok:false`, og test-badget skifter til "Ændret siden testen – send en ny test" uden genindlæsning.
+  - "Send test" og "Start udsendelse" gemmer først eventuelle ugemte ændringer.
+- **Versionshistorik er uden for scope.** Begrundelse:
+  - Browserens fortryd (Ctrl+Z) virker i feltet under redigeringen.
+  - Alle sendte nyhedsbreve er låste og kan kopieres.
+  - Automatisk gem og konfliktkontrol forhindrer, at teksten går tabt.
+  - En historik kræver en ekstra tabel, en gendan-skærm og flere acceptkriterier. Den kan tilføjes senere som `hsg_newsletter_campaign_revisions` uden at ændre `revision`-feltet.
+
+**Fravalgt:**
+- *Kun en "Gem kladde"-knap med advarsel ved ugemte ændringer:* Kim kan miste en halv times arbejde, hvis browseren lukker, mobilen går i dvale, eller sessionen udløber, før han gemmer.
+- *Kladde gemt i browserens `localStorage`:* Den findes kun på én enhed, og den kan blive ældre end serverens version og skabe forvirring. Serveren er det eneste sted, kladden gemmes.
+- *Automatisk oprettelse af næste måneds kladde (fx via cron):* Det giver kladder, ingen har bedt om. Kim starter selv med "Ny udsendelse".
 
 ---
 
@@ -352,7 +483,7 @@ Der logges **ikke** pr. afsendt mail (loggen findes i `hsg_newsletter_deliveries
       - **SPF** (TXT på `hsg-whisky.dk`): `v=spf1 include:spf.protection.outlook.com -all`. Sender andre tjenester (fx webshop eller webhotel) også som @hsg-whisky.dk, skal deres `include:` med i *samme* post. Der må kun være én SPF-post.
       - **DKIM**: Gå til *Microsoft Defender → E-mail og samarbejde → Politikker og regler → Trusselspolitikker → Indstillinger for mailgodkendelse → DKIM → hsg-whisky.dk*. Opret de to CNAME-poster `selector1._domainkey` og `selector2._domainkey` med præcis de mål, portalen viser (fx `selector1-hsg-whisky-dk._domainkey.<tenant>.onmicrosoft.com`; nyere domæner kan få et mål under `…dkim.mail.microsoft`). Slå signering til, når posterne er slået igennem.
       - **DMARC** (TXT på `_dmarc.hsg-whisky.dk`): start med `v=DMARC1; p=none; rua=mailto:<adresse til rapporter>`. Efter 2–4 uger uden fejl i rapporterne skiftes til `p=quarantine`.
-3. *Nyhedsbrev → Indstillinger:* udfyld afsendernavn (forudfyldt "HSG Whisky ApS"), afsenderadresse (`info@hsg-whisky.dk`), svar-til, offentlig adresse, "Bund i mailen" og "Privatlivspolitik" med oplysningerne fra hsg-whisky.dk samt testadresse.
+3. *Nyhedsbrev → Indstillinger:* udfyld afsendernavn (forudfyldt "HSG Whisky ApS"), afsenderadresse (`info@hsg-whisky.dk`), svar-til, offentlig adresse, "Bund i mailen" og "Privatlivspolitik" med oplysningerne fra hsg-whisky.dk, testadresse og evt. HSG's accentfarve.
 4. Forsendelse: vælg **Microsoft 365 (OAuth2)**, og udfyld tenant ID, client ID, client secret og udløbsdato → **Test forbindelse** → "Forbindelsen virker (smtp.office365.com:587, STARTTLS, OAuth2 som info@hsg-whisky.dk)".
 5. **Tjek afsenderdomæne** → SPF, DKIM og DMARC skal stå som "OK".
 6. Opret en cron på webhotellet hvert 5. minut (eller hvert minut, hvis webhotellet tillader det) med kommandoen eller URL'en, der vises på siden.
@@ -361,6 +492,7 @@ Der logges **ikke** pr. afsendt mail (loggen findes i `hsg_newsletter_deliveries
    - Send en test til en Gmail- og en Outlook.com-adresse.
    - Under "Vis original" skal der stå SPF = PASS, DKIM = PASS med `d=hsg-whisky.dk` og DMARC = PASS.
    - Headerne `List-Unsubscribe` og `List-Unsubscribe-Post` skal være med, og Gmail skal vise "Afmeld".
+   - Kontrollér, at formateringen (overskrifter, lister, links, fed og kursiv) ser rigtig ud i både Outlook og Gmail.
    - Se efter, om der ligger kopier i info@'s Sendt post.
    - Mangler `List-Unsubscribe-Post`, eller lægger Exchange kopier i Sendt post, meldes det til udvikleren, før systemet tages i brug.
 
@@ -371,14 +503,17 @@ Der logges **ikke** pr. afsendt mail (loggen findes i `hsg_newsletter_deliveries
 4. **Importér 25 nye og opdatér 3** → besked om resultatet, og importen audit-logges.
 
 ### C. Månedlig udsendelse (Kim, trin 2 og 3)
-1. *Nyhedsbrev → Udsendelser* → **Ny udsendelse**, eller **Kopiér til ny kladde** på sidste måneds udsendelse.
-2. Emnet er forudfyldt med "Nyhedsbrev fra HSG Whisky ApS (Oktober 2026)" (aktuel måned på dansk). Skriv teksten, vælg målgruppe (Alle / Forhandlere / Kunder) og katalog (Hele kataloget / Kun nyheder / Intet) → **Gem kladde**.
-3. (Trin 3) **Frys katalog nu** → "Frosset 19.10.2026 kl. 10.42 · Engros 8,4 MB · Vejl. 8,3 MB".
-4. Se forhåndsvisningen for *Forhandler* og *Kunde*.
-5. **Send test** → åbn testmailen i Outlook eller på mobilen, og klik på katalog- og afmeldingslinket.
-6. Sæt flueben ved "Jeg har modtaget og kontrolleret testmailen" → **Start udsendelse til 312 modtagere** → bekræft.
-7. Siden viser fremdriften (ca. 16 minutter for 312 modtagere ved 20 pr. minut). Kim kan lade siden stå åben eller lukke den, hvis cron er sat op ("Sidste cron-kørsel kl. 10.55").
-8. Når udsendelsen er færdig, vises en opsummering med en liste over fejlede og ukendte modtagere.
+1. *Nyhedsbrev → Udsendelser* → **Ny udsendelse**.
+   - Er der en kladde i forvejen, vælger Kim **Fortsæt kladden** eller **Start ny ud fra seneste nyhedsbrev**.
+   - Ellers åbnes en ny kladde med teksten og formateringen fra sidste måneds nyhedsbrev. Emnet er "Nyhedsbrev fra HSG Whisky ApS (November 2026)", og siden viser "Baseret på #11 … Ret det, der er nyt."
+2. Kim retter teksten. Knapperne giver fed, kursiv, overskrifter, lister, links og skillelinjer, og forhåndsvisningen ved siden af (eller under, på mobil) viser mailen præcis, som modtageren får den. Statuslinjen viser "Gemt kl. 10.42", efterhånden som kladden gemmes automatisk.
+3. Kim kontrollerer målgruppe (Alle / Forhandlere / Kunder) og, fra trin 3, katalog (Hele kataloget / Kun nyheder / Intet).
+4. (Trin 3) **Frys katalog nu** → "Frosset 19.10.2026 kl. 10.42 · Engros 8,4 MB · Vejl. 8,3 MB".
+5. Se forhåndsvisningen for både *Forhandler* og *Kunde*.
+6. **Send test** → åbn testmailen i Outlook eller på mobilen, og klik på katalog- og afmeldingslinket.
+7. Sæt flueben ved "Jeg har modtaget og kontrolleret testmailen" → **Start udsendelse til 312 modtagere** → bekræft. Fra nu af er nyhedsbrevet låst, og det bliver det "seneste nyhedsbrev", som næste måned starter fra.
+8. Siden viser fremdriften (ca. 16 minutter for 312 modtagere ved 20 pr. minut). Kim kan lade siden stå åben eller lukke den, hvis cron er sat op ("Sidste cron-kørsel kl. 10.55").
+9. Når udsendelsen er færdig, vises en opsummering med en liste over fejlede og ukendte modtagere.
 
 ### D. Modtager afmelder sig
 1. Modtageren klikker på "Afmeld nyhedsbrevet" i mailen eller på mailprogrammets "Afmeld"-knap (ét klik).
@@ -397,11 +532,23 @@ Der logges **ikke** pr. afsendt mail (loggen findes i `hsg_newsletter_deliveries
 1. 30 dage før `newsletter_m365_secret_expires` viser alle Nyhedsbrev-sider en advarsel: "Client secret til Microsoft 365 udløber 19.10.2028 – opret en ny i Entra, og indsæt den under Indstillinger."
 2. Michael opretter en ny secret på appen, indsætter den og den nye udløbsdato → **Test forbindelse**.
 
+### H. Kladden er åben i to vinduer, eller Kim er logget ud
+1. Kim har kladden åben på både pc og mobil. Han gemmer på mobilen. Pc'en forsøger senere at gemme automatisk og viser: "Kladden er ændret i et andet vindue (kl. 10.40 af Kim). Genindlæs siden …". Teksten på pc'en bliver stående, så den kan kopieres.
+2. Er sessionen udløbet (8 timers inaktivitet), viser statuslinjen "Kunne ikke gemme". Browseren advarer, hvis siden lukkes. Kim kopierer teksten, logger ind igen og indsætter den.
+
 ---
 
 ## Skærme
 
-Alle sider bruger `page_header()` og `page_footer()` og de eksisterende komponenter: `.card`, `.grid` med `.card.metric`, `.split`, `.three`, `.simple-tabs`, `.table-wrap`, `.badge` (`green` / `amber` / `red` / `blue`), `.actions`, `.check`, `.muted`, `.flash` (inkl. `.flash.warning` til advarslen om secret-udløb), og til forhåndsvisningen `.catalog-pdf-wrapper` og `.catalog-pdf-iframe`. De offentlige sider bruger samme opbygning som skærmen for manglende login i `auth.php` (`<main class="public"><div class="card narrow">`). Den eneste nye CSS er `.newsletter-progress{width:100%;height:14px}` til det indbyggede `<progress>`-element. På skærme under 900 px falder `.split` og `.three` automatisk sammen til én kolonne, og tabeller scroller vandret inde i `.table-wrap`.
+Alle sider bruger `page_header()` og `page_footer()` og de eksisterende komponenter: `.card`, `.grid` med `.card.metric`, `.split`, `.three`, `.simple-tabs`, `.table-wrap`, `.badge` (`green` / `amber` / `red` / `blue`), `.actions`, `.check`, `.muted`, `.flash` (inkl. `.flash.warning` til advarslen om secret-udløb), og til forhåndsvisningen `.catalog-pdf-wrapper` og `.catalog-pdf-iframe`. De offentlige sider bruger samme opbygning som skærmen for manglende login i `auth.php` (`<main class="public"><div class="card narrow">`).
+
+Ny CSS i `assets/style.css`:
+- `.newsletter-progress{width:100%;height:14px}` til det indbyggede `<progress>`-element
+- `.newsletter-editor` (tekstfelt i 16 px, så iOS ikke zoomer; linjehøjde 1,5; mindst 360 px højt på desktop og 50vh på mobil)
+- `.newsletter-toolbar` (`display:flex; flex-wrap:wrap; gap`; `position:sticky; top:0` inde i editoren, så knapperne kan nås, mens man scroller i en lang tekst; knapper mindst `var(--touch-min)` × `var(--touch-min)`)
+- `.newsletter-save-status` og `.newsletter-warnings`
+
+På skærme under 900 px falder `.split` og `.three` automatisk sammen til én kolonne, og tabeller scroller vandret inde i `.table-wrap`.
 
 **Menu:**
 - I `page_header()` (`functions.php`) tilføjes under sektionen **SALG**: `'newsletter' => ['newsletter.php','✉','Nyhedsbrev']`. Menupunktet vises kun, når modulet er aktivt og brugeren har modulet (den eksisterende kontrol `hsg_admin_can_view_module`).
@@ -495,6 +642,8 @@ Afsender
   Bund i mailen     [adresse og CVR som på hsg-whisky.dk]  (textarea)
   Privatlivspolitik [https://hsg-whisky.dk/...]
   Testadresse       [michael@...           ]
+Udseende
+  Accentfarve       [#b54708] [■]  (overskrifter, links og katalogknap)
 Forsendelse
   Metode  (o) Microsoft 365 (OAuth2) – smtp.office365.com:587, STARTTLS
           ( ) Lokal test-SMTP uden login (kun 127.0.0.1 / localhost)
@@ -525,6 +674,7 @@ Webhotel-cron
   - log 6–60 måneder; kataloglink 7–365 dage
   - port for lokal test-SMTP 1–65535; udløbsdato tom eller en gyldig dato
   - værten for lokal test-SMTP skal være `127.0.0.1`, `localhost` eller `::1`
+  - accentfarve `#RRGGBB`. Feltet er et tekstfelt; den lille farveprøve ved siden af er kun visning.
 
   Ugyldige værdier afvises med en dansk fejltekst, og intet gemmes.
 - **"Test forbindelse" med Microsoft 365** henter et token, forbinder, starter TLS, logger ind med XOAUTH2 og afslutter med QUIT, uden at sende en mail. Resultatet vises som flash:
@@ -546,53 +696,111 @@ Webhotel-cron
 ### S4. Udsendelser – `newsletter.php` (trin 2)
 
 ```
-[+ Ny udsendelse]
+[+ Ny udsendelse]                                  (POST-knap med csrf)
 +--------------------------------------------------------------------------+
 | Oprettet   | Emne                                   | Status   | Sendt   |
-| 19.10.2026 | Nyhedsbrev fra HSG Whisky ApS (Okt...) | Sender   | 140/312 |
+| 12.11.2026 | Nyhedsbrev fra HSG Whisky ApS (Nov...) | Kladde   | –       |
+| 19.10.2026 | Nyhedsbrev fra HSG Whisky ApS (Okt...) | Færdig   | 310/312 |
 | 18.09.2026 | Nyhedsbrev fra HSG Whisky ApS (Sep...) | Færdig   | 305/307 |
 +--------------------------------------------------------------------------+
 ```
 
+Findes der en kladde, når der trykkes **Ny udsendelse**, vises dette valg i stedet for en ny kladde:
+```
++-- Der findes allerede en kladde --------------------------------------+
+| #13 · Nyhedsbrev fra HSG Whisky ApS (November 2026)                   |
+| Sidst gemt 12.11.2026 kl. 10.42 af Kim                                |
+| [Fortsæt kladden]   [Start ny ud fra seneste nyhedsbrev]  [Annullér]  |
++-----------------------------------------------------------------------+
+```
+
 - Kolonner: Oprettet, Emne, Status (badge), Modtagere, Sendt, Fejlet/Ukendt, Startet af, link **Åbn**.
 - Statusbadges: Kladde, Sender (`blue`), På pause (`amber`), Færdig (`green`), Annulleret.
+- "Fortsæt kladden" er et almindeligt link (GET) til den senest gemte kladde. "Start ny ud fra seneste nyhedsbrev" er en POST-knap.
 
 ### S5. Udsendelse – `newsletter_campaign.php?id=N` (trin 2, katalogdelen i trin 3)
 
-Desktop, mens udsendelsen er kladde:
+Desktop, mens udsendelsen er kladde (Tekst og Forhåndsvisning står ved siden af hinanden i `.split`):
 ```
-Udsendelse #12                                              [Kladde]
-+-- 1. Indhold ---------------------------------------------------+
-| Emne*  [Nyhedsbrev fra HSG Whisky ApS (Oktober 2026)        ]   |
-| Tekst* [textarea, ca. 12 linjer                              ]  |
-| Modtagere (o) Alle (312)  ( ) Forhandlere (48)  ( ) Kunder (264)|
-| Katalog   (o) Hele kataloget ( ) Kun nyheder ( ) Intet katalog  |  trin 3
-|   Frosset 19.10.2026 kl. 10.42 · Engros 8,4 MB · Vejl. 8,3 MB    |
-|   [Frys katalog nu] / [Frys igen]                                |
-| [Gem kladde]  [Slet kladde]                                      |
-+-----------------------------------------------------------------+
-+-- 2. Forhåndsvisning -------------------------------------------+
-| [Forhandler] [Kunde]                                             |
-| +-------------------------------------------------------------+ |
-| | <iframe sandbox src="newsletter_preview.php?id=12&v=dealer"> | |
-| +-------------------------------------------------------------+ |
-| > Tekstversion                                                  |
-+-----------------------------------------------------------------+
-+-- 3. Test ------------------------------------------------------+
-| Testadresse(r) [michael@...                ]  [Send test]       |
-| Testet 19.10.2026 kl. 10.50 – denne version  (badge green)      |
-|  ELLER: Ændret siden testen – send en ny test (badge amber)     |
-+-----------------------------------------------------------------+
-+-- 4. Send ------------------------------------------------------+
-| 312 modtagere (48 forhandlere, 264 kunder)                      |
-| [ ] Jeg har modtaget og kontrolleret testmailen                 |
-| [Start udsendelse til 312 modtagere]   (deaktiveret før test)   |
-| Mangler: Afsenderadresse, Microsoft 365-oplysninger             |
-|          (vises kun, hvis indstillinger mangler)                 |
-+-----------------------------------------------------------------+
+Udsendelse #12  [Kladde]   Baseret på #11 – Nyhedsbrev … (Oktober 2026)     Gemt kl. 10.42
++-- 1. Indhold ---------------------------------------------------------------------+
+| Emne*     [Nyhedsbrev fra HSG Whisky ApS (November 2026)                      ]   |
+| Modtagere (o) Alle (312)  ( ) Forhandlere (48)  ( ) Kunder (264)                  |
+| Katalog   (o) Hele kataloget ( ) Kun nyheder ( ) Intet katalog          (trin 3) |
+|   Frosset 19.10.2026 kl. 10.42 · Engros 8,4 MB · Vejl. 8,3 MB  [Frys katalog nu] |
++-----------------------------------------------------------------------------------+
++-- 2. Tekst ------------------------------------+-- Forhåndsvisning --------------+
+| [F] [K] [Overskrift] [Lille overskrift]        | [Forhandler] [Kunde]            |
+| [• Punktliste] [1. Nummereret] [Link] [—]      | +-----------------------------+ |
+| +--------------------------------------------+ | | HSG Whisky ApS              | |
+| | ## Nyheder i november                      | | | ___________________________ | |
+| |                                            | | | Nyheder i november  (stor)  | |
+| | Kære kunde,                                | | | Kære kunde,                 | |
+| | vi har fået **3 nye fade** fra             | | | vi har fået 3 nye fade (fed)| |
+| | *Lady of the Glen*.                        | | | fra Lady of the Glen (kursiv)| |
+| | - Glen Elgin 2011                          | | |  • Glen Elgin 2011          | |
+| +--------------------------------------------+ | +-----------------------------+ |
+| > Sådan formaterer du                          | > Tekstversion                  |
+| ! Linje 7: Linket er ikke en gyldig https://-  |                                 |
+|   eller mailto:-adresse og vises som tekst.    |                                 |
+| [Gem kladde]  [Slet kladde]      Gemt kl. 10.42|                                 |
++------------------------------------------------+---------------------------------+
++-- 3. Test ------------------------------------------------------------------------+
+| Testadresse(r) [michael@...                ]  [Send test]                         |
+| Testet 19.10.2026 kl. 10.50 – denne version  (badge green)                        |
+|  ELLER: Ændret siden testen – send en ny test (badge amber)                       |
++-----------------------------------------------------------------------------------+
++-- 4. Send ------------------------------------------------------------------------+
+| 312 modtagere (48 forhandlere, 264 kunder)                                        |
+| [ ] Jeg har modtaget og kontrolleret testmailen                                   |
+| [Start udsendelse til 312 modtagere]   (deaktiveret før test)                     |
+| Mangler: Afsenderadresse, Microsoft 365-oplysninger                               |
+|          (vises kun, hvis indstillinger mangler)                                   |
++-----------------------------------------------------------------------------------+
 ```
 
-Mobil, mens udsendelsen kører (sektionerne står under hinanden, og knapperne fylder hele bredden):
+Linkpanelet (åbnes under værktøjslinjen af Link eller Ctrl+K; ingen `prompt()`):
+```
++-- Link -------------------------------------------+
+| Tekst   [hsg-whisky.dk                          ] |
+| Adresse [https://                               ] |
+| Brug en adresse, der starter med https:// eller   |
+| mailto: (en mailadresse får mailto: automatisk).  |
+| [Indsæt link]  [Annullér]                         |
++---------------------------------------------------+
+```
+
+Mobil, mens udsendelsen er kladde (alt står under hinanden, og knapperne fylder hele bredden):
+```
+Udsendelse #12        [Kladde]
+Gemt kl. 10.42
+Baseret på #11 (Oktober 2026)
+Emne* [Nyhedsbrev fra HSG …   ]
+Modtagere
+ (o) Alle (312)
+ ( ) Forhandlere (48)
+ ( ) Kunder (264)
++------------------------------+  <- værktøjslinjen bliver
+| [F] [K] [Overskr.] [Lille]   |     stående øverst, mens
+| [•] [1.] [Link] [—]          |     man scroller i teksten
++------------------------------+
+| ## Nyheder i november        |
+| Kære kunde,                  |
+| vi har fået **3 nye fade** … |
++------------------------------+
+> Sådan formaterer du
+[ Gem kladde                 ]
+Forhåndsvisning
+[Forhandler] [Kunde]
++------------------------------+
+| (mailen som modtageren ser   |
+|  den, 100 % bred)            |
++------------------------------+
+> Tekstversion
+… 3. Test og 4. Send under hinanden …
+```
+
+Mobil, mens udsendelsen kører:
 ```
 Udsendelse #12          [Sender]
 <progress 140 / 312>
@@ -606,11 +814,12 @@ Afsendelsen kører. Hold siden åben
 ```
 
 - **Tilstande og knapper:**
-  - *Kladde:* som skitsen.
+  - *Kladde:* som skitserne.
   - *Sender:* **Pause**, **Annullér resten**.
   - *På pause:* **Genoptag**, **Annullér resten**, plus årsagen (fx "Automatisk pause: Exchange afviste login (535 5.7.3). Ret indstillingerne og tryk Genoptag." eller "Automatisk pause: Microsoft 365's sendegrænse er nået. Tryk Genoptag senere.").
   - *Færdig/Annulleret:* opsummering, tabellen *Fejlede* (Mail, Fejl), antal *Ukendte* med **Send igen til disse N** (`confirm` med advarsel om mulig dobbelt-mail), og **Kopiér til ny kladde** i alle tilstande.
-- Når udsendelsen er startet, er emne, tekst, målgruppe og katalog låst og vises kun til læsning.
+- **Låst efter start:** Når udsendelsen er startet, er emne, tekst, målgruppe og katalog låst. Værktøjslinjen skjules, tekstfeltet er `readonly`, og automatisk gem er slået fra. Forhåndsvisningen vises fortsat.
+- **Tekstfeltet** udfyldes med `h(body_markup)`, så tekst som `</textarea><script>` ikke kan bryde ud.
 - Kun én udsendelse kan være *Sender* eller *På pause* ad gangen. Start af en anden afvises med "En anden udsendelse er i gang (#11)."
 - **Fremdrift via JavaScript:**
   - Mens status er *Sender*, kaldes `newsletter_send.php` (POST med `csrf`, `campaign_id`).
@@ -620,9 +829,20 @@ Afsendelsen kører. Hold siden åben
   - Kaldene stopper ved `paused`, `done` eller `cancelled`, og siden genindlæses.
 - Uden JavaScript sker afsendelsen kun via cron. Siden viser tallene ved genindlæsning.
 
-### S6. Forhåndsvisning – `newsletter_preview.php?id=N&v=dealer|customer` (trin 2)
+### S6. Forhåndsvisning – `newsletter_preview.php` (trin 2)
 
-Siden returnerer kun mailens HTML (ingen `page_header`). Links til afmelding og katalog vises som `#` med `title="Indsættes ved afsendelse"`. Siden har headeren `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'`, og iframen har attributten `sandbox`.
+- **GET `?id=N&v=dealer|customer`:** den gemte version.
+  - Siden returnerer kun mailens HTML (ingen `page_header`).
+  - Headeren `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'` er sat.
+  - Bruges i iframen, når siden indlæses, uden JavaScript og for låste udsendelser.
+- **POST** (`csrf`, `id`, `variant`, `subject`, `body_markup`): live forhåndsvisning.
+  - Gemmer intet.
+  - Svaret er JSON `{ok, html, text, warnings}`. `html` er hele mailen, som `GET` ville vise den med de sendte værdier, og `text` er tekstversionen.
+  - JavaScript sætter `html` i `iframe.srcdoc`.
+- **Fælles:**
+  - Begge svarer kun til brugere med `newsletter.send`.
+  - Links til afmelding og katalog vises som `#` med `title="Indsættes ved afsendelse"`.
+  - Iframen har altid attributten `sandbox` (uden `allow-scripts` og uden `allow-same-origin`).
 
 ### S7. Offentlig afmeldingsside – `nyhedsbrev-afmeld.php?t=<token>` (trin 1)
 
@@ -662,14 +882,11 @@ Siden returnerer kun mailens HTML (ingen `page_header`). Links til afmelding og 
   - Linjeskift og CR i alle headerværdier fjernes.
   - Der bruges ingen `Cc` eller `Bcc` og ingen sporing.
 - **Krop:** `multipart/alternative` med en `text/plain`- og en `text/html`-del, begge UTF-8 og quoted-printable. Linjer i SMTP er højst 998 tegn, linjeskift er CRLF, og der bruges dot-stuffing.
-- **HTML:**
-  - Simpel, med inline-styles, maks. 600 px bred, Arial og ingen eksterne ressourcer eller billeder.
-  - Brødteksten er Kims ren-tekst. Den escapes med `h()`, deles i afsnit ved tomme linjer, linjeskift bliver til `<br>`, og `https://…` gøres til links.
-  - Der er ingen WYSIWYG-editor eller HTML-input.
-- **Tekstversion (HTML-versionen har samme indhold):**
+- **Brødtekst:** Kims tekst gemmes som HSG-markup (`body_markup`). HTML-delen bruger `hsg_newsletter_markup_to_html()` og tekstdelen `hsg_newsletter_markup_to_text()` (se *HSG-markup, version 1*). Mailen bygges af en fast skabelon rundt om brødteksten (se *Typografi*). Der er ingen HTML-indtastning.
+- **Tekstversion af hele mailen** (HTML-versionen har samme indhold):
 
 ```
-{brødtekst}
+{brødtekst som tekstversion}
 
 ------------------------------------------------------------
 MÅNEDENS KATALOG (PDF)                         (kun trin 3 og hvis valgt)
@@ -684,9 +901,194 @@ Du kan også svare på denne mail og skrive "afmeld".
 {Privatlivspolitik: url}   (kun hvis udfyldt)
 ```
 
-- **Begrænsninger:** Emnet er 1–200 tegn. Teksten er 1–20.000 tegn.
-- **Standardemne:** "Nyhedsbrev fra HSG Whisky ApS (<Måned> <år>)" med dansk månedsnavn med stort begyndelsesbogstav (Januar … December).
-- **Tidszone:** Tidspunkter vises i `setting_get($pdo,'timezone','Europe/Copenhagen')`, som `backup.php` gør. Sammenligninger af tid i køen sker med databasens `NOW()`.
+- **Begrænsninger:** Emnet er 1–200 tegn, og teksten (markup) er højst 20.000 tegn. En kladde må gemmes med tomt emne eller tom tekst, men "Send test" og "Start udsendelse" kræver begge dele.
+- **Standardemne:** "Nyhedsbrev fra HSG Whisky ApS (<Måned> <år>)" med dansk månedsnavn med stort begyndelsesbogstav (Januar … December), ud fra den aktuelle dato.
+- **Tidszone:** Tidspunkter vises i `setting_get($pdo,'timezone','Europe/Copenhagen')`, som `backup.php` gør, og med formatet "kl. 10.42". Sammenligninger af tid i køen sker med databasens `NOW()`.
+
+### Typografi (fast i skabelonen, gælder kun HTML-delen)
+
+Alle stilarter er inline (`style="…"`) og ligger fast i koden. Kim kan ikke ændre dem. `{accent}` er `newsletter_accent_color`.
+
+| Element | Fast typografi |
+|---|---|
+| Ydre baggrund | `#f7f8fa`, 24 px luft rundt om |
+| Indholdsboks | hvid, 1 px kant `#e5e7eb`, bredde 100 % og **højst 600 px**, centreret. Bygget som tabel (`role="presentation"`), så Outlook til Windows også respekterer bredden. |
+| Toplinje | afsendernavnet som tekst, fed 20 px, farve `{accent}`, 3 px streg i `{accent}` under. Intet logo. |
+| Testbanner (kun testmails) | "TESTUDSENDELSE – variant: …", 14 px fed, baggrund `#fffaeb`, tekst `#b54708` |
+| Brødtekst `p`, `li` | Arial, Helvetica, sans-serif 16 px, linjehøjde 1,5, farve `#182230`. Afsnit har 16 px afstand under. |
+| `h2` (Overskrift) | 22 px fed, farve `{accent}`, afstand 24 px over og 8 px under |
+| `h3` (Lille overskrift) | 18 px fed, farve `#101828`, afstand 20 px over og 6 px under |
+| `ul`, `ol` | 24 px indrykning, 16 px afstand under |
+| `a` | farve `{accent}`, understreget |
+| `hr` (Skillelinje) | 1 px `#e5e7eb`, 24 px afstand over og under |
+| Katalogknap (trin 3) | baggrund `{accent}`, hvid fed tekst 16 px, 12 × 20 px polstring, 6 px afrundede hjørner (bygget som tabelcelle, så Outlook viser den) |
+| Bund | 12 px, farve `#667085`, 1 px streg `#e5e7eb` over |
+
+Mørk tilstand (dark mode) i mailprogrammer håndteres ikke særskilt.
+
+### HSG-markup, version 1 (`markup_version = 1`)
+
+**Princip:** Kim skriver almindelig tekst. Nogle få tegn i starten af en linje eller omkring et ord giver formatering. Knapperne skriver tegnene for ham. Serveren gemmer kun teksten.
+
+**Funktioner** (i `core/newsletter_markup.php`, rene funktioner uden database og globale variabler):
+- `hsg_newsletter_markup_to_html(string $markup, string $accentColor): array` returnerer `['html' => string, 'warnings' => list<string>]`. `html` er kun brødteksten, uden skabelon.
+- `hsg_newsletter_markup_to_text(string $markup): string`.
+
+**Behandling på serveren, i denne rækkefølge:**
+1. **Normalisering:** Linjeskift (`\r\n`, `\r`) bliver til `\n`. Kontroltegn fjernes, undtagen `\n` og tabulator, og tabulator bliver til mellemrum.
+2. **Linjetyper:** Teksten deles i linjer, og hver linje får en type (tabellen nedenfor). Mellemrum i starten af linjen ses der bort fra, når typen bestemmes.
+3. **Blokke:**
+   - En overskrift og en skillelinje er altid hver sin blok, også uden tomme linjer omkring.
+   - Linjer i træk af typen *Punkt* bliver én `ul`, og linjer i træk af typen *Nummer* bliver én `ol`. Skift fra *Punkt* til *Nummer* starter en ny liste.
+   - Linjer i træk af typen *Tekst* bliver ét afsnit.
+   - En tom linje afslutter altid en blok.
+4. **Inline-regler:** For hver tekstdel køres først `h()` (`htmlspecialchars`, `ENT_QUOTES`, UTF-8). Derefter anvendes reglerne i fast rækkefølge: escape-tegn → links → bare https-adresser → fed → kursiv.
+   - Escape-tegn og færdige links beskyttes mod de efterfølgende regler (fx med pladsholdere), så `**` i en adresse ikke bliver fed.
+   - Adresser valideres i den form, Kim skrev dem (før escaping). I `href` står de HTML-escaped.
+5. **Tilladte elementer:** Kun disse kan opstå: `h2`, `h3`, `p`, `br`, `strong`, `em`, `ul`, `ol`, `li`, `a` og `hr`. De eneste attributter er `style` (faste værdier fra *Typografi*) og `href` på `a`.
+
+**Linjetyper:**
+
+| Type | Kim skriver | Regel | HTML | Tekstversion |
+|---|---|---|---|---|
+| Overskrift | `## Nyheder i november` | linjen starter med `## ` | `<h2>Nyheder i november</h2>` | teksten og derunder en linje med `=` i samme længde (antal tegn) |
+| Lille overskrift | `### Nye fade` | linjen starter med `### ` | `<h3>Nye fade</h3>` | teksten og derunder en linje med `-` i samme længde |
+| Skillelinje | `---` | linjen består kun af 3 eller flere `-` | `<hr>` | 40 × `-` |
+| Punkt | `- Glen Elgin 2011` | linjen starter med `- ` | `<li>` i `<ul>` | `- Glen Elgin 2011` |
+| Nummer | `1) Bestil inden 15. november` | linjen starter med et tal, `)` og et mellemrum | `<li>` i `<ol>`. Nummereres altid 1, 2, 3 … uanset de skrevne tal. | `1. Bestil inden 15. november`, `2. …` |
+| Tom | (tom linje) | kun mellemrum eller ingenting | afslutter blokken | – |
+| Tekst | alt andet | – | del af `<p>`. Linjeskift inde i afsnittet bliver til `<br>`. | uændret, med linjeskift |
+
+Bevidst *ikke* formatering:
+- `1. november …` i starten af en linje er almindelig tekst (danske datoer). Nummererede lister skrives med `1) `.
+- `#1 whisky` og `# Tekst` (én `#`) er almindelig tekst.
+
+**Inline-formatering:**
+
+| Formatering | Kim skriver | Regel | HTML | Tekstversion |
+|---|---|---|---|---|
+| Fed | `**3 nye fade**` | på samme linje. Teksten mellem tegnene må ikke være tom og må ikke starte eller slutte med mellemrum. | `<strong>3 nye fade</strong>` | `3 nye fade` |
+| Kursiv | `*Lady of the Glen*` | som Fed, med én `*`. Behandles efter Fed. | `<em>Lady of the Glen</em>` | `Lady of the Glen` |
+| Link | `[hsg-whisky.dk](https://hsg-whisky.dk)` | Adressen skal være `https://` og en gyldig URL (`FILTER_VALIDATE_URL`, højst 2.000 tegn) eller `mailto:` og en gyldig mailadresse (`FILTER_VALIDATE_EMAIL`). Adressen må kun indeholde tegnene `A–Z a–z 0–9 - . _ ~ : / ? # [ ] @ ! $ & ' ( * + , ; = %` (RFC 3986 uden `)`). Mellemrum, `"`, `<`, `>`, `` ` ``, `{`, `}`, `|`, `\` og `^` afviser derfor adressen. Tegnreglen kontrolleres ud over `FILTER_VALIDATE_URL`, fordi den ikke afviser alle disse tegn. Linkteksten er ren tekst uden formatering. | `<a href="https://hsg-whisky.dk">hsg-whisky.dk</a>` | `hsg-whisky.dk (https://hsg-whisky.dk)`. Ved `mailto:` står adressen uden `mailto:`. Er teksten lig adressen, står kun adressen. |
+| Ugyldigt link | `[klik](http://x.dk)` | alt, der ikke er gyldigt `https://` eller `mailto:` | vises præcis som skrevet (escaped), plus en advarsel. Hele `[…](…)` beskyttes mod reglen for bare adresser, så der heller ikke opstår et halvt link til fx `https://hsg-whisky.dk/` (jf. eksempel 2). | som skrevet |
+| Bar adresse | `https://hsg-whisky.dk/nyheder` | `https://` efterfulgt af tegn fra tegnreglen for Link. Adressen slutter ved første tegn uden for reglen (fx mellemrum, `"`, `<` eller `)`), og afsluttende `.`, `,`, `;`, `:`, `!` og `?` hører ikke med. Skal være en gyldig URL (`FILTER_VALIDATE_URL`), ellers er det almindelig tekst. | `<a href="https://hsg-whisky.dk/nyheder">https://hsg-whisky.dk/nyheder</a>` | uændret |
+| Escape | `\*ikke kursiv\*` | `\` foran et af tegnene `\ * [ ] ( ) # -` | tegnet vises, som det er | tegnet uden `\` |
+
+Understøttes *ikke* i version 1 (vises som skrevet):
+- indlejrede lister
+- fed og kursiv på samme tekst (`***…***`)
+- formatering inde i linktekst
+- billeder, tabeller, farver, skriftstørrelser og understregning
+- HTML. Skrevne tags som `<b>` vises som tekst.
+
+**Advarsler** (returneres sammen med HTML'en og vises i editoren; de blokerer ikke gem):
+- "Linje N: Linket er ikke en gyldig https://- eller mailto:-adresse og vises som almindelig tekst."
+- "Linje N: Der mangler et afsluttende ** – teksten vises med stjerner." (gives, når en linje stadig indeholder `**` efter behandlingen)
+
+**Oversigt i editoren ("Sådan formaterer du"):**
+
+| Du skriver | Det bliver til |
+|---|---|
+| `**fed**` | **fed** |
+| `*kursiv*` | *kursiv* |
+| `## Overskrift` | stor overskrift |
+| `### Lille overskrift` | lille overskrift |
+| `- punkt` | punktliste |
+| `1) punkt` | nummereret liste |
+| `[tekst](https://…)` | link |
+| `---` | skillelinje |
+| tom linje | nyt afsnit |
+
+**Eksempel 1 – alle formateringer.** Input:
+```
+## Nyheder i november
+
+Kære kunde,
+vi har fået **3 nye fade** fra *Lady of the Glen*.
+
+### Nye fade
+- Glen Elgin 2011
+- Ben Nevis 1996
+1) Bestil inden 15. november
+2) Hent i Nyborg
+
+Se mere på [hsg-whisky.dk](https://hsg-whisky.dk) eller skriv til [Kim](mailto:info@hsg-whisky.dk).
+---
+Venlig hilsen
+Kim
+```
+HTML (vist uden `style`-attributter og uden mellemrum mellem tags):
+```
+<h2>Nyheder i november</h2>
+<p>Kære kunde,<br>vi har fået <strong>3 nye fade</strong> fra <em>Lady of the Glen</em>.</p>
+<h3>Nye fade</h3>
+<ul><li>Glen Elgin 2011</li><li>Ben Nevis 1996</li></ul>
+<ol><li>Bestil inden 15. november</li><li>Hent i Nyborg</li></ol>
+<p>Se mere på <a href="https://hsg-whisky.dk">hsg-whisky.dk</a> eller skriv til <a href="mailto:info@hsg-whisky.dk">Kim</a>.</p>
+<hr>
+<p>Venlig hilsen<br>Kim</p>
+```
+Tekstversion (blokke adskilles af præcis én tom linje):
+```
+Nyheder i november
+==================
+
+Kære kunde,
+vi har fået 3 nye fade fra Lady of the Glen.
+
+Nye fade
+--------
+
+- Glen Elgin 2011
+- Ben Nevis 1996
+
+1. Bestil inden 15. november
+2. Hent i Nyborg
+
+Se mere på hsg-whisky.dk (https://hsg-whisky.dk) eller skriv til Kim (info@hsg-whisky.dk).
+
+----------------------------------------
+
+Venlig hilsen
+Kim
+```
+Advarsler: ingen.
+
+**Eksempel 2 – sikkerhed.** Input:
+```
+<script>alert(1)</script> [klik](javascript:alert(1)) **<b>x</b>**
+[a](https://hsg-whisky.dk/"onmouseover="alert(1))
+```
+HTML (uden `style`):
+```
+<p>&lt;script&gt;alert(1)&lt;/script&gt; [klik](javascript:alert(1)) <strong>&lt;b&gt;x&lt;/b&gt;</strong><br>[a](https://hsg-whisky.dk/&quot;onmouseover=&quot;alert(1))</p>
+```
+Tekstversion:
+```
+<script>alert(1)</script> [klik](javascript:alert(1)) <b>x</b>
+[a](https://hsg-whisky.dk/"onmouseover="alert(1))
+```
+Advarsler: "Linje 1: Linket er ikke en gyldig https://- eller mailto:-adresse …" og "Linje 2: Linket er ikke en gyldig https://- eller mailto:-adresse …".
+
+**Eksempel 3 – almindelig dansk tekst, der ikke må formateres.** Input:
+```
+1. november åbner vi butikken.
+5 * 3 * 2 = 30
+\*ikke kursiv\* og #1 whisky
+# ikke en overskrift
+```
+HTML (uden `style`):
+```
+<p>1. november åbner vi butikken.<br>5 * 3 * 2 = 30<br>*ikke kursiv* og #1 whisky<br># ikke en overskrift</p>
+```
+Tekstversion:
+```
+1. november åbner vi butikken.
+5 * 3 * 2 = 30
+*ikke kursiv* og #1 whisky
+# ikke en overskrift
+```
+Advarsler: ingen.
 
 ---
 
@@ -724,15 +1126,20 @@ Indeks: `idx_nl_rec_status_segment (status, segment)`.
 
 ### Migration `1.1.0` (trin 2)
 
+Trin 2 er ikke bygget endnu, så tabellerne oprettes direkte i den form, der står her. Der er ingen omdøbning af kolonner i databasen.
+
 **Ny tabel `hsg_newsletter_campaigns`**
 
 | Kolonne | Type | Bemærkning |
 |---|---|---|
 | `id` | INT UNSIGNED AUTO_INCREMENT PK | |
-| `subject` | VARCHAR(200) NOT NULL | |
-| `body_text` | MEDIUMTEXT NOT NULL | Ren tekst |
+| `subject` | VARCHAR(200) NOT NULL DEFAULT '' | Må være tom i en kladde |
+| `body_markup` | MEDIUMTEXT NOT NULL | Teksten i HSG-markup, præcis som Kim skrev den. **Aldrig HTML.** Må være tom i en kladde. Højst 20.000 tegn. |
+| `markup_version` | TINYINT UNSIGNED NOT NULL DEFAULT 1 | Versionen af markup-sproget. Indgår i indholdshashen. |
 | `audience` | ENUM('all','dealer','customer') NOT NULL DEFAULT 'all' | |
 | `status` | ENUM('draft','sending','paused','done','cancelled') NOT NULL DEFAULT 'draft' | Kladde / Sender / På pause / Færdig / Annulleret |
+| `revision` | INT UNSIGNED NOT NULL DEFAULT 1 | Øges ved hver gemning, der ændrer indholdet. Bruges til at opdage konflikter ved automatisk gem. |
+| `source_campaign_id` | INT UNSIGNED NULL | Den udsendelse, kladden blev oprettet ud fra ("Baseret på #11") |
 | `tested_hash` | CHAR(64) NULL | Indholdshashen ved den seneste test |
 | `tested_at` | DATETIME NULL | |
 | `tested_by_admin` | INT UNSIGNED NULL | |
@@ -740,12 +1147,13 @@ Indeks: `idx_nl_rec_status_segment (status, segment)`.
 | `pause_reason` | VARCHAR(255) NULL | |
 | `recipients_total` | INT UNSIGNED NOT NULL DEFAULT 0 | Sættes ved start |
 | `created_by_admin` | INT UNSIGNED NULL | |
+| `updated_by_admin` | INT UNSIGNED NULL | Sidst gemt af (også ved automatisk gem) |
 | `started_by_admin` | INT UNSIGNED NULL | |
-| `started_at` | DATETIME NULL | |
+| `started_at` | DATETIME NULL | Bruges til at finde "seneste nyhedsbrev" |
 | `completed_at` | DATETIME NULL | |
-| `created_at` / `updated_at` | DATETIME | Som ovenfor |
+| `created_at` / `updated_at` | DATETIME | Som ovenfor. `updated_at` ændres kun, når indholdet ændres. |
 
-Indeks: `idx_nl_camp_status (status)`.
+Indeks: `idx_nl_camp_status (status)`, `idx_nl_camp_started (started_at)`.
 
 **Ny tabel `hsg_newsletter_deliveries`** (kø og udsendelseslog)
 
@@ -770,12 +1178,13 @@ Indeks: **UNIQUE `uniq_nl_deliv (campaign_id, recipient_id)`**, `idx_nl_deliv_st
 | Nøgle | Standard | Bemærkning |
 |---|---|---|
 | `newsletter_from_name` | værdien af `company_name` eller "HSG Whisky ApS" | |
-| `newsletter_from_email` | '' | Obligatorisk før test/start. Postkassen i Microsoft 365, som appen har FullAccess til (antaget `info@hsg-whisky.dk`). |
+| `newsletter_from_email` | '' | Obligatorisk før test/start. Postkassen i Microsoft 365, som appen har FullAccess til (`info@hsg-whisky.dk`, afklaret spørgsmål 13). |
 | `newsletter_reply_to` | '' | Tom = afsenderadresse |
 | `newsletter_public_base_url` | '' | Obligatorisk; https |
 | `newsletter_footer_text` | '' | Udfyldes af Michael med adresse og CVR som på hsg-whisky.dk |
 | `newsletter_privacy_url` | '' | Udfyldes af Michael med privatlivspolitikken på hsg-whisky.dk |
 | `newsletter_test_email` | '' | Senest brugte testadresse(r) |
+| `newsletter_accent_color` | '#b54708' | `#RRGGBB`. Indgår i indholdshashen. |
 | `newsletter_transport` | 'm365' | 'm365' (Microsoft 365, OAuth2) / 'local' (lokal test-SMTP uden login) |
 | `newsletter_m365_tenant_id` | '' | Directory (tenant) ID |
 | `newsletter_m365_client_id` | '' | Application (client) ID for nyhedsbrevets egen Entra-app |
@@ -795,7 +1204,7 @@ Indeks: **UNIQUE `uniq_nl_deliv (campaign_id, recipient_id)`**, `idx_nl_deliv_st
 
 ### Migration `1.2.0` (trin 3)
 
-**Ændret tabel `hsg_newsletter_campaigns`:** ny kolonne `catalog_type ENUM('none','full','news') NOT NULL DEFAULT 'none'` (kun hvis kolonnen ikke findes).
+**Ændret tabel `hsg_newsletter_campaigns`:** ny kolonne `catalog_type ENUM('none','full','news') NOT NULL DEFAULT 'none'` (kun hvis kolonnen ikke findes). Fra dette trin kopieres `catalog_type` også ved "Ny udsendelse" og "Kopiér til ny kladde", og den sendes med ved automatisk gem.
 
 **Ny tabel `hsg_newsletter_catalogs`**
 
@@ -828,6 +1237,7 @@ Indeks: **UNIQUE `uniq_nl_cat (campaign_id, price)`**.
   - `draft` → `sending` (start) → `done`, når der ikke er flere `queued` eller `sending`.
   - `sending` ⇄ `paused` (manuelt eller automatisk ved afsenderfejl). `sending`/`paused` → `cancelled` (resten sættes til `skipped`).
   - `done` → `sending` igen kun via "Send igen til ukendte".
+  - Emne, `body_markup`, målgruppe og katalogtype kan kun ændres i `draft`. Ellers afviser serveren med 409 `locked`.
 - **Udsendelsesrække:**
   - `queued` → `sending` (reserveret) → `sent` | `failed` | `queued` (midlertidig fejl, `attempts`<3, eller afsenderfejl) | `unknown`.
   - `queued` → `skipped` (modtageren er ikke længere aktiv, eller resten er annulleret).
@@ -840,14 +1250,14 @@ Indeks: **UNIQUE `uniq_nl_cat (campaign_id, price)`**.
 | Hvem | Adgang |
 |---|---|
 | Superadministrator | Alt (`*`) |
-| Login-bruger (ikke superadmin) | Kun hvis modulet *Nyhedsbrev* er markeret i `users.php` (afklaret spørgsmål 10). Standard efter migrationen: **ingen adgang**. Med adgang gælder `newsletter.send` til alle sider og handlinger, inkl. indstillinger. |
+| Login-bruger (ikke superadmin) | Kun hvis modulet *Nyhedsbrev* er markeret i `users.php` (afklaret spørgsmål 10). Standard efter migrationen: **ingen adgang**. Med adgang gælder `newsletter.send` til alle sider og handlinger, inkl. indstillinger, editor, live forhåndsvisning og automatisk gem. |
 | Direkte link (linkbruger) | **Ingen adgang** (403). `link_access => false`, ingen menupunkter, og modulet vises ikke i `user_permissions.php`. |
 | Ikke logget ind | Administrationssider: 401 (som i dag via `auth.php`). Kun de offentlige sider med token: `nyhedsbrev-afmeld.php` (læs og afmeld) og `nyhedsbrev-katalog.php` (kun læsning af egen PDF). |
 | Cron | `cron/newsletter.php`: CLI uden nøgle eller URL med `?key=` (`hash_equals` mod `newsletter_cron_key`). Forkert eller manglende nøgle giver 403. Når modulet er deaktiveret, gør scriptet intet og svarer "Modulet er deaktiveret." |
 | Entra-appen | Kun `SMTP.SendAsApp` og kun til de postkasser, Michael har givet den FullAccess til i Exchange (info@). Ingen Graph-tilladelser. |
 
 - **Kapabilitet:** `newsletter.send` (manifestets `capability`).
-- **Moduldeaktivering** (System → Moduler) fungerer som nødstop. Administrationssider, AJAX-endpointet og kataloglinks svarer 404, og cron sender intet. **Afmeldingssiden virker fortsat.**
+- **Moduldeaktivering** (System → Moduler) fungerer som nødstop. Administrationssider, AJAX-endpointene og kataloglinks svarer 404, og cron sender intet. **Afmeldingssiden virker fortsat.**
 - **Offentlige sider:**
   - Accepterer kun `t` (64 hex-tegn, valideres med regex før databaseopslag) og `c` (heltal).
   - Bruger prepared statements og `h()` på al output, og viser aldrig fulde mailadresser (kun maskeret).
@@ -878,21 +1288,23 @@ Indeks: **UNIQUE `uniq_nl_cat (campaign_id, price)`**.
 | Fil | Ny/ændret | Indhold |
 |---|---|---|
 | `modules/newsletter/module.php`, `migrations.php` | Ændret | Version '1.1.0', migration '1.1.0' |
+| `core/newsletter_markup.php` | Ny | HSG-markup version 1: `hsg_newsletter_markup_to_html()` og `hsg_newsletter_markup_to_text()` med advarsler. Rene funktioner uden database, testbare med eksempel 1–3. |
 | `core/newsletter_mailer.php` | Ny | SMTP-klient (forbind, STARTTLS, `AUTH XOAUTH2`, send, RSET, QUIT; fejlens fase og om den gælder afsender eller modtager), token til Microsoft 365 via `hsg_http_request()`, og de rene funktioner `hsg_newsletter_xoauth2_string()` og MIME-byggeren (testbare uden netværk) |
 | `core/onedrive.php` | **Uændret** | `hsg_http_request()` genbruges via `require_once`. `hsg_onedrive_token()` og OneDrive-backuppen røres ikke. |
-| `core/newsletter.php` | Ændret | Udsendelser, indholdshash, start/kø, batch (GET_LOCK, reservering, grænser pr. minut/time/døgn, pause ved afsenderfejl), oprydning, skabeloner til tekst og HTML, advarsel om secret-udløb, DNS-tjek |
-| `newsletter.php` | Ændret | S4 |
-| `newsletter_campaign.php` | Ny | S5 |
+| `core/newsletter.php` | Ændret | Udsendelser, ny udsendelse ud fra seneste nyhedsbrev, gem og automatisk gem med `revision`-kontrol, indholdshash, mailskabelon med typografi, start/kø, batch (GET_LOCK, reservering, grænser pr. minut/time/døgn, pause ved afsenderfejl), oprydning, advarsel om secret-udløb, DNS-tjek |
+| `newsletter.php` | Ændret | S4 inkl. POST "Ny udsendelse" og valget ved eksisterende kladde |
+| `newsletter_campaign.php` | Ny | S5 inkl. editor, linkpanel, "Sådan formaterer du", statuslinje og `action=autosave` (JSON) |
 | `newsletter_send.php` | Ny | AJAX-batch (JSON) |
-| `newsletter_preview.php` | Ny | S6 |
-| `newsletter_settings.php` | Ny | S3 |
+| `newsletter_preview.php` | Ny | S6: GET (gemt version) og POST (live, JSON) |
+| `newsletter_settings.php` | Ny | S3 inkl. accentfarve |
+| `assets/newsletter-editor.js` | Ny | Værktøjslinje og genveje (Ctrl/Cmd+B, I, K, S), linkpanel, lister der fortsætter ved Enter, live forhåndsvisning (600 ms, `fetch` med `csrf`, `iframe.srcdoc` i sandbox, `textContent` til tekstversion og advarsler), automatisk gem (30 s, `sendBeacon` ved `pagehide`), statuslinje, `beforeunload`-advarsel, håndtering af konflikt og låst udsendelse. Ingen biblioteker. |
 | `cron/newsletter.php` | Ny | Som `cron/backup.php`: oprydning og batches i højst 240 s (CLI) / 25 s (URL), opdaterer `newsletter_cron_last_run` |
 | `newsletter_recipients.php` | Ændret | Udsendelseshistorik pr. modtager, historik i CSV-eksporten |
 | `nyhedsbrev-afmeld.php` | Ændret | Testtoken |
 | `core/backup.php` | Ændret | `newsletter_m365_client_secret` og `newsletter_cron_key` i `hsg_backup_sensitive_setting_keys()`, tekst i `hsg_restore_readme()` |
 | `backup.php` | Ændret | Teksten om hemmeligheder, der ikke kommer med i backup |
-| `assets/style.css` | Ændret | `.newsletter-progress` |
-| `docs/NEWSLETTER.md` | Ændret | Vejledning til Michael: Entra-app og Exchange PowerShell trin for trin, SPF-, DKIM- og DMARC-poster for Microsoft 365, cron, driftstjek og fornyelse af client secret (indhold som Brugerflow A og G) |
+| `assets/style.css` | Ændret | `.newsletter-progress`, `.newsletter-editor`, `.newsletter-toolbar`, `.newsletter-save-status`, `.newsletter-warnings` |
+| `docs/NEWSLETTER.md` | Ændret | Vejledning til Michael: Entra-app og Exchange PowerShell trin for trin, SPF-, DKIM- og DMARC-poster for Microsoft 365, cron, driftstjek og fornyelse af client secret (indhold som Brugerflow A og G). Vejledning til Kim: "Sådan formaterer du" og "Ny udsendelse starter fra seneste nyhedsbrev". |
 | `tests/run.sh` | Ændret | Nye sider i røgtesten |
 
 ### Trin 3 (modul 1.2.0)
@@ -902,9 +1314,10 @@ Indeks: **UNIQUE `uniq_nl_cat (campaign_id, price)`**.
 | `core/catalog_pdf_builder.php` | Ny | Logikken fra `catalog_pdf.php` flyttet til en funktion (pris, kun nyheder) → `SimplePdf`, inkl. de hjælpefunktioner der i dag ligger i `catalog_pdf.php` |
 | `catalog_pdf.php` | Ændret | Bruger den nye funktion. Samme adfærd, rettigheder, grænser og filnavne som før. |
 | `pdf_simple.php` | Ændret | Ny metode der skriver PDF'en til en fil (samme indhold som `output()`) uden at sende headere og uden `exit` |
-| `newsletter_campaign.php` | Ændret | Valg af katalog, Frys katalog / Frys igen |
+| `newsletter_campaign.php` | Ændret | Valg af katalog (også i automatisk gem), Frys katalog / Frys igen |
+| `assets/newsletter-editor.js` | Ændret | Sender `catalog_type` med ved automatisk gem |
 | `nyhedsbrev-katalog.php` | Ny | S8 (offentlig) |
-| `core/newsletter.php` | Ændret | Fastfrysning, udløb, kataloglink i skabeloner, oprydning af filer |
+| `core/newsletter.php` | Ændret | Fastfrysning, udløb, katalogblok og katalogknap i skabelonen, kopiering af `catalog_type`, oprydning af filer |
 | `cron/newsletter.php` | Ændret | Oprydning af udløbne katalogfiler |
 | `docs/NEWSLETTER.md` | Ændret | Katalogafsnit |
 
@@ -918,7 +1331,11 @@ Indeks: **UNIQUE `uniq_nl_cat (campaign_id, price)`**.
 
 Testeren bruger forsendelsesmetoden **Lokal test-SMTP** og en lokal SMTP-opsamler, fx et lille PHP-script i `tests/`, der lytter på `127.0.0.1:2525` med `stream_socket_server` og gemmer hver modtaget besked som en fil. Opsamleren skal kunne svare med en bestemt kode på et bestemt trin (fx `MAIL FROM`, `RCPT TO` eller efter DATA). Hvor der står "mail", menes en besked modtaget af opsamleren.
 
-Kriterier mærket **(M365)** kræver internetadgang. Kan testeren ikke nå Microsoft, dækkes de af Michaels driftstjek (Brugerflow A, trin 8).
+Mærkninger:
+- **(M365)** kræver internetadgang. Kan testeren ikke nå Microsoft, dækkes kriteriet af Michaels driftstjek (Brugerflow A, trin 8).
+- **(Browser)** kræver en rigtig browser (fx Chrome eller Edge, gerne med udviklerværktøjernes mobilvisning). Det kan ikke testes med curl alene.
+
+Funktionerne i HSG-markup testes direkte med et PHP-script i `tests/`. Når HTML sammenlignes med eksemplerne, fjernes `style`-attributter og mellemrum mellem tags først.
 
 ### Trin 1 – modtagere, import og afmelding
 
@@ -952,70 +1369,160 @@ Kriterier mærket **(M365)** kræver internetadgang. Kan testeren ikke nå Micro
 28. **Givet** et navn med `<script>alert(1)</script>` i Excel-filen, **når** forhåndsvisningen og listen vises, **så** står teksten escaped, og intet script kører.
 29. **Givet** en skærmbredde på 375 px, **når** S1, S2 og S7 vises, **så** er der ingen vandret scroll på selve siden (kun inde i `.table-wrap`), og knapper og felter kan bruges.
 
-### Trin 2 – indstillinger, Microsoft 365, test og udsendelse
+### Trin 2 – indstillinger og Microsoft 365
 
-30. **Givet** at migration 1.1.0 er kørt, **så** findes `hsg_newsletter_campaigns` og `hsg_newsletter_deliveries`, `newsletter_cron_key` er en tilfældig værdi, `newsletter_transport = m365`, standardværdierne for hastighed er 10 / 20 / 600 / 2000, og modulversionen er 1.1.0.
+30. **Givet** at migration 1.1.0 er kørt, **så** gælder:
+    - `hsg_newsletter_campaigns` findes med kolonnerne `body_markup`, `markup_version`, `revision`, `source_campaign_id` og `updated_by_admin`, og uden `body_text` og uden HTML-kolonne.
+    - `hsg_newsletter_deliveries` findes.
+    - `newsletter_cron_key` er en tilfældig værdi, `newsletter_transport = m365` og `newsletter_accent_color = #b54708`.
+    - Standardværdierne for hastighed er 10 / 20 / 600 / 2000.
+    - Modulversionen er 1.1.0.
 31. **Givet** en gemt client secret, **når** indstillingerne gemmes med et tomt secret-felt, **så** bevares den. Siden indeholder aldrig secret i HTML, og `newsletter.settings` logger kun `m365_secret_changed`.
 32. **Givet** en ny DATA-backup, **når** `database.sql` gennemsøges, **så** findes hverken `newsletter_m365_client_secret` eller `newsletter_cron_key`.
-33. **Givet** den offentlige adresse `http://lager.example.dk`, forsendelsesmetoden *Lokal test-SMTP* med værten `smtp.example.dk`, eller *Maks. pr. minut* = 31, **når** der gemmes, **så** afvises det med en dansk fejltekst, og intet gemmes.
+33. **Givet** en af følgende værdier, **når** der gemmes, **så** afvises den med en dansk fejltekst, og intet gemmes:
+    - den offentlige adresse `http://lager.example.dk`
+    - forsendelsesmetoden *Lokal test-SMTP* med værten `smtp.example.dk`
+    - *Maks. pr. minut* = 31
+    - accentfarven `red` eller `#12345`
 34. **Givet** forsendelsesmetoden *Lokal test-SMTP* og en kørende SMTP-opsamler, **når** der trykkes "Test forbindelse", **så** vises "Forbindelsen virker", og der modtages ingen mail. Mod en lukket port vises en dansk fejltekst uden PHP-advarsler.
 35. **Givet** funktionen `hsg_newsletter_xoauth2_string()`, **når** den kaldes med `info@hsg-whisky.dk` og `abc`, **så** returnerer den base64 af `user=info@hsg-whisky.dk`, tegnet 0x01, `auth=Bearer abc` og to gange tegnet 0x01.
 36. **(M365)** **Givet** forsendelsesmetoden *Microsoft 365* med et ugyldigt client secret, **når** der trykkes "Test forbindelse", **så** vises "Microsoft-login fejlede:" efterfulgt af Microsofts fejlkode (`AADSTS…`), uden PHP-advarsler, og hverken secret eller token står på siden eller i audit-loggen. Bagefter er alle `onedrive_*`-indstillinger uændrede, og "Test OneDrive" på `backup.php` opfører sig som før.
 37. **Givet** `newsletter_m365_secret_expires` sat til i dag + 20 dage, **når** en Nyhedsbrev-side åbnes, **så** vises advarslen "Client secret til Microsoft 365 udløber …". Ved i dag + 40 dage vises den ikke.
-38. **Givet** "Ny udsendelse" i oktober 2026, **så** er emnet forudfyldt med "Nyhedsbrev fra HSG Whisky ApS (Oktober 2026)".
-39. **Givet** en tekst med `<b>fed</b>` og `https://hsg-whisky.dk`, **når** forhåndsvisningen vises for begge varianter, **så** står `<b>` som tekst, URL'en er et link, og afmeldingslinket er `#`. Svaret har CSP-headeren, og iframen har `sandbox`.
-40. **Givet** en kladde uden test, **når** der sendes POST med "start" (også selv om knappen er deaktiveret), **så** afvises det, der oprettes ingen udsendelsesrækker, og status er fortsat `draft`.
-41. **Givet** en kladde, **når** "Send test" sendes til én testadresse med målgruppen *Alle*, **så** modtager opsamleren 2 mails med emnet `[TEST] …` (én pr. variant), `tested_hash` gemmes, og `newsletter.campaign.test` logges.
-42. **Givet** en testet kladde, **når** emnet eller afsendernavnet ændres, **så** viser siden "Ændret siden testen – send en ny test", og start afvises, indtil der er sendt en ny test.
-43. **Givet** en testet kladde med 10 aktive modtagere, **når** der startes med `expected_count = 9`, **så** vises "Modtagerlisten er ændret – kontroller antallet igen.", og intet startes. Med `expected_count = 10` og flueben oprettes 10 udsendelsesrækker, status bliver `sending`, og `newsletter.campaign.start` logges.
-44. **Givet** en igangværende udsendelse, **når** batch-endpointet kaldes, indtil det svarer `done`, **så** har opsamleren præcis én mail pr. modtager. Hver mail har:
+
+### Trin 2 – teksteditor og HSG-markup
+
+38. **Givet** eksempel 1 i afsnittet *HSG-markup, version 1*, **når** `hsg_newsletter_markup_to_html()` og `hsg_newsletter_markup_to_text()` kaldes, **så** er HTML'en lig eksemplets HTML, tekstversionen er tegn for tegn lig eksemplets tekstversion, og der er ingen advarsler.
+39. **Givet** eksempel 2 (sikkerhed), **når** funktionerne kaldes, **så** er HTML og tekstversion lig eksemplet, og der er præcis to advarsler med "Linje 1" og "Linje 2".
+40. **Givet** eksempel 3 (almindelig dansk tekst), **når** funktionerne kaldes, **så** er HTML og tekstversion lig eksemplet. Specielt bliver `1. november …` ikke til en liste, `5 * 3 * 2` bliver ikke kursiv, og `\*` vises som `*`.
+41. **Givet** 1.000 tilfældige tekster på op til 300 tegn, sammensat af bogstaver, æøå, mellemrum, linjeskift, tegnene `< > " ' & * [ ] ( ) # - \ : / =` og ordene `https://`, `mailto:` og `javascript:`, **når** `hsg_newsletter_markup_to_html()` kaldes, **så** gælder for hver tekst:
+    - Resultatet kan indlæses med `DOMDocument` uden fejl.
+    - Det indeholder kun elementerne `h2 h3 p br strong em ul ol li a hr`.
+    - Det har ingen attributter ud over `style` og `href`.
+    - Hver `href` starter med `https://` eller `mailto:`.
+42. **(Browser)** **Givet** editoren med teksten "vi har nye fade", **når** "nye" markeres og der trykkes **F** (eller Ctrl/Cmd+B), **så** gælder:
+    - Feltet indeholder `vi har **nye** fade`, og forhåndsvisningen viser "nye" med fed inden for 1,5 sekund uden genindlæsning.
+    - Et nyt tryk på F med samme markering fjerner `**` igen.
+    - Tilsvarende giver **K** (Ctrl/Cmd+I) `*nye*`.
+    - Uden markering indsætter F `**fed tekst**` med "fed tekst" markeret.
+43. **(Browser)** **Givet** tre markerede linjer "Glen Elgin", "Ben Nevis" og "Dalgety", **når** der trykkes **• Punktliste**, **så** starter hver linje med `- `, og forhåndsvisningen viser en punktliste. Desuden gælder:
+    - **1. Nummereret liste** giver `1) `, `2) ` og `3) `.
+    - **Overskrift** sætter `## ` foran den aktuelle linje, og **Lille overskrift** sætter `### `. Et nyt tryk fjerner formateringen igen.
+    - **Skillelinje** indsætter `---` på en linje for sig.
+    - Enter efter `- Dalgety` giver en ny linje med `- `, og Enter på et tomt punkt afslutter listen.
+44. **(Browser)** **Givet** markeringen "hjemmesiden", **når** der trykkes **Link** (eller Ctrl/Cmd+K), og adressen `https://hsg-whisky.dk` indtastes, **så** indsættes `[hjemmesiden](https://hsg-whisky.dk)`. Desuden gælder:
+    - Adressen `info@hsg-whisky.dk` bliver til `mailto:info@hsg-whisky.dk`.
+    - Adresserne `http://x.dk` og `javascript:alert(1)` afvises i panelet med "Brug en adresse, der starter med https:// eller mailto:", og intet indsættes.
+45. **Givet** en kladde, hvor `[klik](http://x.dk)` og `**ikke afsluttet` er skrevet manuelt på linje 7 og 8, **når** der gemmes, eller forhåndsvisningen hentes (POST), **så** gemmes teksten uændret, og svaret indeholder advarslerne "Linje 7: Linket er ikke en gyldig …" og "Linje 8: Der mangler et afsluttende ** …". Forhåndsvisningen viser teksten som almindelig tekst uden link.
+46. **Givet** POST til `newsletter_preview.php` med `body_markup` = eksempel 2, **så** gælder:
+    - Svaret er JSON med `html`, `text` og `warnings`, og brødteksten i `html` er lig eksempel 2.
+    - Siden `newsletter_campaign.php` viser iframen med attributten `sandbox` uden `allow-scripts`.
+    - **(Browser)** Der vises ingen alert, og den genererede HTML findes kun i iframens `srcdoc`, ikke i sidens egen DOM.
+    - POST uden `csrf` giver 419.
+47. **Givet** en gemt kladde med `<b>fed</b>` og `https://hsg-whisky.dk` i teksten, **når** GET `newsletter_preview.php?id=N&v=dealer` og `&v=customer` hentes, **så** står `<b>` som tekst, URL'en er et link, afmeldingslinket er `#`, og svaret har CSP-headeren `default-src 'none'; style-src 'unsafe-inline'`.
+48. **Givet** en kladde med teksten `</textarea><script>alert(1)</script>`, **når** `newsletter_campaign.php` genindlæses, **så** står teksten uændret i tekstfeltet, og intet script kører.
+49. **Givet** accentfarven `#123456` og en kladde med `## Overskrift` og et link, **når** forhåndsvisningen eller testmailen laves, **så** gælder:
+    - Indholdsboksen har `max-width:600px`.
+    - `h2`, `a` og toplinjen har farven `#123456`.
+    - Brødteksten har 16 px Arial.
+    - Mailen indeholder ingen `<img>` og ingen eksterne ressourcer.
+    - Ændres accentfarven efter en test, viser kladden "Ændret siden testen".
+50. **(Browser)** **Givet** skærmbredden 375 px og en kladde, **så** gælder:
+    - Siden har ingen vandret scroll.
+    - Alle knapper på værktøjslinjen er synlige (højst 3 rækker), og hver er mindst 44 × 44 px.
+    - Værktøjslinjen bliver stående øverst, når man scroller ned i en lang tekst.
+    - Tekstfeltet har mindst 16 px skrift.
+    - Forhåndsvisningen står under editoren.
+51. **Givet** en browser uden JavaScript (eller curl), **når** kladden gemmes med en almindelig POST (`csrf`, `body_markup`) via "Gem kladde", **så** gemmes teksten præcis som sendt (efter normalisering af linjeskift), `revision` øges med 1, og `newsletter.campaign.update` logges.
+
+### Trin 2 – ny udsendelse ud fra seneste nyhedsbrev og automatisk gem
+
+52. **Givet** udsendelserne #10 (Færdig, startet september 2026) og #11 (Færdig, startet oktober 2026, med formateret tekst og målgruppen *Forhandlere*) og ingen kladder, **når** der trykkes "Ny udsendelse" (POST) i november 2026, **så** gælder:
+    - Der oprettes én ny kladde med `body_markup` og `audience` identiske med #11 og `source_campaign_id = 11`.
+    - Emnet er "Nyhedsbrev fra HSG Whisky ApS (November 2026)", og `tested_hash` er tom.
+    - Siden viser "Baseret på #11".
+    - **Og givet** ingen udsendelser overhovedet, **så** er teksten tom, og emnet er standardemnet for den aktuelle måned.
+53. **Givet** en eksisterende kladde #13, **når** der trykkes "Ny udsendelse", **så** oprettes der ingen ny kladde. Valget "Fortsæt kladden" / "Start ny ud fra seneste nyhedsbrev" vises i stedet.
+    - "Fortsæt kladden" åbner #13.
+    - "Start ny ud fra seneste nyhedsbrev" opretter en ny kladde som i kriterie 52.
+    - "Ny udsendelse" sendt med GET opretter aldrig en kladde.
+54. **(Browser)** **Givet** en åben kladde, **når** teksten ændres, og der ventes 35 sekunder, **så** gælder:
+    - Der er sendt én POST `action=autosave` med `csrf`.
+    - Databasen har den nye tekst, `revision` er øget, og `updated_by_admin` er sat.
+    - Statuslinjen viser "Gemt kl. HH.MM".
+    - Der er ingen ny række i audit-loggen.
+    - Ændres intet, sendes der ingen flere forespørgsler, og `revision` er uændret.
+55. **(Browser)** **Givet** en testet kladde ("Testet … – denne version"), **når** teksten ændres og gemmes automatisk, **så** skifter badget til "Ændret siden testen – send en ny test" uden genindlæsning, og POST "start" afvises på serveren.
+56. **(Browser)** **Givet** ugemte ændringer, **når** fanen lukkes, **så** sendes ændringerne med `sendBeacon` og findes i databasen bagefter. Desuden gælder:
+    - Svarer serveren med noget andet end JSON (fx login-siden efter udløbet session), viser statuslinjen "Kunne ikke gemme – teksten er ikke gemt …".
+    - I det tilfælde viser browseren sin advarsel, når siden lukkes.
+57. **Givet** kladde #13 med `revision = 5`, **når** vindue A gemmer (revision bliver 6), og vindue B derefter sender autosave med `revision = 5`, **så** svarer serveren 409 med `error = conflict`. Databasen har stadig A's tekst. **(Browser)** Vindue B viser "Kladden er ændret i et andet vindue …", og B's tekst står stadig i feltet.
+58. **Givet** følgende autosave-forespørgsler, **så** gemmes intet:
+    - til en udsendelse med status `sending` eller `done`: 409 `locked`
+    - med `body_markup` på 20.001 tegn: 422 `too_long`
+    - uden `csrf`: 419
+    - fra en linkbruger: 403
+
+### Trin 2 – test og udsendelse
+
+59. **Givet** en kladde uden test, **når** der sendes POST med "start" (også selv om knappen er deaktiveret), **så** afvises det, der oprettes ingen udsendelsesrækker, og status er fortsat `draft`. Det samme gælder, hvis emnet eller teksten er tom.
+60. **Givet** en kladde, **når** "Send test" sendes til én testadresse med målgruppen *Alle*, **så** modtager opsamleren 2 mails med emnet `[TEST] …` (én pr. variant), `tested_hash` gemmes, og `newsletter.campaign.test` logges.
+61. **Givet** en testet kladde, **når** emnet eller afsendernavnet ændres, **så** viser siden "Ændret siden testen – send en ny test", og start afvises, indtil der er sendt en ny test.
+62. **Givet** en testet kladde med 10 aktive modtagere, **når** der startes med `expected_count = 9`, **så** vises "Modtagerlisten er ændret – kontroller antallet igen.", og intet startes. Med `expected_count = 10` og flueben oprettes 10 udsendelsesrækker, status bliver `sending`, og `newsletter.campaign.start` logges.
+63. **Givet** en igangværende udsendelse, hvis tekst er eksempel 1, **når** batch-endpointet kaldes, indtil det svarer `done`, **så** har opsamleren præcis én mail pr. modtager. Hver mail har:
     - kun modtageren i `To` og ingen `Cc`/`Bcc`
     - headerne `List-Unsubscribe` (https-URL med `t=` og `mailto:`), `List-Unsubscribe-Post: List-Unsubscribe=One-Click` og `Message-ID`
     - `From` og `MAIL FROM` lig afsenderadressen, og svar-til fra indstillingerne
-    - afmeldingslinket i teksten
+    - en HTML-del, hvis brødtekst er lig eksempel 1's HTML, og en tekstdel, der begynder med eksempel 1's tekstversion
+    - afmeldingslinket i begge dele
 
     Ingen URL i mailen indeholder en mailadresse.
-45. **Givet** `newsletter_batch_size = 3`, **når** batch-endpointet kaldes én gang, **så** sendes højst 3 mails, og JSON-svaret indeholder `counts` og `status`.
-46. **Givet** en igangværende udsendelse, **når** to batch-kald (og eventuelt cron) køres samtidig, **så** svarer det ene `busy: true`, og efter færdiggørelse har hver modtager præcis én mail.
-47. **Givet** en udsendelsesrække, der manuelt er sat til `sending`, **når** den næste batch kører, **så** sættes rækken til `unknown`, og der sendes ingen mail til den modtager. Siden viser "1 modtager har ukendt status". "Send igen til disse 1" sætter rækken i `queued` og logger `newsletter.campaign.retry_unknown`.
-48. **Givet** en modtager, der afmelder sig efter start, **når** hans række behandles, **så** bliver den `skipped`, og der sendes ingen mail.
-49. **Givet** `newsletter_max_per_minute = 2`, `newsletter_max_per_hour = 4` og 10 modtagere, **når** batch-endpointet kaldes gentagne gange, **så** gælder:
+64. **Givet** `newsletter_batch_size = 3`, **når** batch-endpointet kaldes én gang, **så** sendes højst 3 mails, og JSON-svaret indeholder `counts` og `status`.
+65. **Givet** en igangværende udsendelse, **når** to batch-kald (og eventuelt cron) køres samtidig, **så** svarer det ene `busy: true`, og efter færdiggørelse har hver modtager præcis én mail.
+66. **Givet** en udsendelsesrække, der manuelt er sat til `sending`, **når** den næste batch kører, **så** sættes rækken til `unknown`, og der sendes ingen mail til den modtager. Siden viser "1 modtager har ukendt status". "Send igen til disse 1" sætter rækken i `queued` og logger `newsletter.campaign.retry_unknown`.
+67. **Givet** en modtager, der afmelder sig efter start, **når** hans række behandles, **så** bliver den `skipped`, og der sendes ingen mail.
+68. **Givet** `newsletter_max_per_minute = 2`, `newsletter_max_per_hour = 4` og 10 modtagere, **når** batch-endpointet kaldes gentagne gange, **så** gælder:
     - Ingen periode på 60 sekunder har mere end 2 sendte mails.
     - Der sendes højst 4 i alt, og svaret indeholder `wait_until`.
     - Der sendes ikke flere, før de ældste `sent_at` er mere end en time gamle. Testeren kan flytte `sent_at` tilbage.
-50. **Givet** at opsamleren svarer `530 5.7.57` på `MAIL FROM`, **når** en batch kører, **så** bliver udsendelsen `paused` med `pause_reason`, den reserverede række står igen i `queued`, der er ingen `unknown`- eller `failed`-rækker, og `newsletter.campaign.auto_pause` logges. Det samme gælder, når opsamleren svarer `554 5.2.0 STOREDRV.Submission.Exception:SubmissionQuotaExceededException` efter DATA.
-51. **Givet** at opsamleren svarer 550 på `RCPT TO` for én adresse, **når** batchen kører, **så** bliver den række `failed` med fejlteksten, og de øvrige sendes.
-52. **Givet** en igangværende udsendelse, **når** der trykkes Pause, **så** sender batch-kald intet. Efter Genoptag fortsætter udsendelsen. Annullér resten sætter rækker i `queued` til `skipped` og status til `cancelled`. Alle tre handlinger logges.
-53. **Givet** en igangværende udsendelse, **når** der startes en anden, **så** afvises den med "En anden udsendelse er i gang".
-54. **Givet** `cron/newsletter.php` kaldt via URL uden nøgle eller med forkert nøgle, **så** svarer det 403. Med korrekt nøgle eller fra CLI behandles køen, og `newsletter_cron_last_run` opdateres. Links i mails sendt fra cron begynder med `newsletter_public_base_url`, ikke `localhost` eller `/cron`.
-55. **Givet** en udsendelse afsluttet for 25 måneder siden og `newsletter_log_retention_months = 24`, **når** cron eller `newsletter.php` kører oprydningen, **så** er dens udsendelsesrækker slettet, mens selve udsendelsen stadig findes.
-56. **Givet** en færdig udsendelse, **når** der trykkes "Kopiér til ny kladde", **så** findes en ny kladde med samme emne og tekst, og uden `tested_hash`.
-57. **Givet** en testmail, **når** dens afmeldingslink åbnes og bekræftes, **så** vises "Dette er et testlink …", og ingen modtager ændres.
-58. **Givet** en linkbruger eller en login-bruger uden moduladgang, **når** `newsletter.php`, `newsletter_campaign.php`, `newsletter_settings.php`, `newsletter_preview.php` eller `newsletter_send.php` kaldes, **så** svarer de 403. AJAX-endpointet uden `csrf` svarer 419.
+69. **Givet** at opsamleren svarer `530 5.7.57` på `MAIL FROM`, **når** en batch kører, **så** bliver udsendelsen `paused` med `pause_reason`, den reserverede række står igen i `queued`, der er ingen `unknown`- eller `failed`-rækker, og `newsletter.campaign.auto_pause` logges. Det samme gælder, når opsamleren svarer `554 5.2.0 STOREDRV.Submission.Exception:SubmissionQuotaExceededException` efter DATA.
+70. **Givet** at opsamleren svarer 550 på `RCPT TO` for én adresse, **når** batchen kører, **så** bliver den række `failed` med fejlteksten, og de øvrige sendes.
+71. **Givet** en igangværende udsendelse, **når** der trykkes Pause, **så** sender batch-kald intet. Efter Genoptag fortsætter udsendelsen. Annullér resten sætter rækker i `queued` til `skipped` og status til `cancelled`. Alle tre handlinger logges.
+72. **Givet** en igangværende udsendelse, **når** der startes en anden, **så** afvises den med "En anden udsendelse er i gang". Den igangværende udsendelses emne og tekst kan heller ikke ændres (POST "Gem kladde" giver en fejl, og databasen er uændret).
+73. **Givet** `cron/newsletter.php` kaldt via URL uden nøgle eller med forkert nøgle, **så** svarer det 403. Med korrekt nøgle eller fra CLI behandles køen, og `newsletter_cron_last_run` opdateres. Links i mails sendt fra cron begynder med `newsletter_public_base_url`, ikke `localhost` eller `/cron`.
+74. **Givet** en udsendelse afsluttet for 25 måneder siden og `newsletter_log_retention_months = 24`, **når** cron eller `newsletter.php` kører oprydningen, **så** er dens udsendelsesrækker slettet, mens selve udsendelsen (emne og `body_markup`) stadig findes og fortsat kan bruges som "seneste nyhedsbrev".
+75. **Givet** en færdig udsendelse, **når** der trykkes "Kopiér til ny kladde", **så** findes en ny kladde med samme emne, `body_markup`, målgruppe og (fra trin 3) katalogtype, med `source_campaign_id` sat og uden `tested_hash`.
+76. **Givet** en testmail, **når** dens afmeldingslink åbnes og bekræftes, **så** vises "Dette er et testlink …", og ingen modtager ændres.
+77. **Givet** en linkbruger eller en login-bruger uden moduladgang, **når** `newsletter.php`, `newsletter_campaign.php` (også `action=autosave`), `newsletter_settings.php`, `newsletter_preview.php` (GET og POST) eller `newsletter_send.php` kaldes, **så** svarer de 403. AJAX-endpointene uden `csrf` svarer 419.
 
 ### Trin 3 – katalog
 
-59. **Givet** `catalog_pdf.php` før og efter ændringen, **når** den kaldes med `price=retail` og `price=wholesale` samt `news=0` og `news=1`, **så** er filnavn, `Content-Type`, `Content-Disposition` og antal sider uændrede, og filen begynder med `%PDF-` og slutter med `%%EOF`. Linkbrugere med `catalog.view` har samme adgang som før.
-60. **Givet** en kladde med målgruppen *Alle* og "Hele kataloget", **når** der trykkes "Frys katalog nu", **så** oprettes 2 filer i `storage/tmp/newsletter/<id>/` med tilfældige navne og 2 rækker i `hsg_newsletter_catalogs` med korrekt `sha256` og `file_size`. En tidligere test bliver ugyldig ("Ændret siden testen"). Med målgruppen *Kunder* oprettes kun `retail`.
-61. **Givet** valget af et katalog, der ikke er frosset, **når** der trykkes "Send test", **så** afvises det med "Frys kataloget først".
-62. **Givet** en afsluttet udsendelse, **når** en forhandlers kataloglink åbnes, **så** returneres engros-PDF'en (samme SHA-256 som i tabellen), og en kundes link returnerer udsalgsprisvarianten. Det er ikke muligt at få den anden variant ved at ændre URL'en.
-63. **Givet** et gyldigt modtagertoken for en modtager uden udsendelsesrække i udsendelse `c`, **når** `nyhedsbrev-katalog.php?t=…&c=…` åbnes, **så** svarer siden 404.
-64. **Givet** at `expires_at` er passeret, **når** linket åbnes, **så** svarer siden 410. Efter oprydning er filen slettet, og `deleted_at` er sat.
-65. **Givet** en webserver, der respekterer `.htaccess`, **når** `storage/tmp/newsletter/<id>/<fil>.pdf` hentes direkte, **så** svarer den 403.
-66. **Givet** to downloads af samme fil, **så** er `download_count = 2`, og der findes ingen log over downloads pr. modtager.
-67. **Givet** et release-build (`php tools/build-release.php`), **så** indeholder ZIP-filen ingen filer fra `storage/tmp/`, og negativtesten er grøn.
+78. **Givet** `catalog_pdf.php` før og efter ændringen, **når** den kaldes med `price=retail` og `price=wholesale` samt `news=0` og `news=1`, **så** er filnavn, `Content-Type`, `Content-Disposition` og antal sider uændrede, og filen begynder med `%PDF-` og slutter med `%%EOF`. Linkbrugere med `catalog.view` har samme adgang som før.
+79. **Givet** en kladde med målgruppen *Alle* og "Hele kataloget", **når** der trykkes "Frys katalog nu", **så** oprettes 2 filer i `storage/tmp/newsletter/<id>/` med tilfældige navne og 2 rækker i `hsg_newsletter_catalogs` med korrekt `sha256` og `file_size`. En tidligere test bliver ugyldig ("Ændret siden testen"). Med målgruppen *Kunder* oprettes kun `retail`.
+80. **Givet** valget af et katalog, der ikke er frosset, **når** der trykkes "Send test", **så** afvises det med "Frys kataloget først".
+81. **Givet** en afsluttet udsendelse, **når** en forhandlers kataloglink åbnes, **så** returneres engros-PDF'en (samme SHA-256 som i tabellen), og en kundes link returnerer udsalgsprisvarianten. Det er ikke muligt at få den anden variant ved at ændre URL'en.
+82. **Givet** et gyldigt modtagertoken for en modtager uden udsendelsesrække i udsendelse `c`, **når** `nyhedsbrev-katalog.php?t=…&c=…` åbnes, **så** svarer siden 404.
+83. **Givet** at `expires_at` er passeret, **når** linket åbnes, **så** svarer siden 410. Efter oprydning er filen slettet, og `deleted_at` er sat.
+84. **Givet** en webserver, der respekterer `.htaccess`, **når** `storage/tmp/newsletter/<id>/<fil>.pdf` hentes direkte, **så** svarer den 403.
+85. **Givet** to downloads af samme fil, **så** er `download_count = 2`, og der findes ingen log over downloads pr. modtager.
+86. **Givet** et release-build (`php tools/build-release.php`), **så** indeholder ZIP-filen ingen filer fra `storage/tmp/`, og negativtesten er grøn.
+87. **Givet** seneste nyhedsbrev med `catalog_type = news`, **når** der trykkes "Ny udsendelse", **så** har den nye kladde `catalog_type = news`, men ingen frosne katalogfiler. Kataloget skal fryses på ny for den nye udsendelse.
 
 ### Fælles
 
-68. **Givet** hvert trin, **når** `bash tests/run.sh` køres, **så** er resultatet grønt. Røgtesten omfatter de nye administrationssider, og de offentlige sider med et ugyldigt token giver 404 uden PHP-fejl.
-69. **Givet** alle nye sider, mails og fejltekster, **så** er al tekst, brugeren ser, på dansk.
+88. **Givet** hvert trin, **når** `bash tests/run.sh` køres, **så** er resultatet grønt. Røgtesten omfatter de nye administrationssider, og de offentlige sider med et ugyldigt token giver 404 uden PHP-fejl.
+89. **Givet** alle nye sider, knapper, advarsler, mails og fejltekster, **så** er al tekst, brugeren ser, på dansk.
 
 ---
 
 ## Uden for scope
 
 - Vedhæftning af PDF i mailen (se beslutning 5).
-- WYSIWYG-editor, HTML-indtastning, billeder og logo i mailen, flere skabeloner.
+- En `contenteditable`-editor (formatering direkte i teksten som i Word) og HTML-indtastning. Formatering sker med værktøjslinje og HSG-markup (beslutning 8).
+- Billeder og logo i mailen (se beslutning 8). Flere skabeloner.
+- Formatering ud over HSG-markup version 1: indlejrede lister, tabeller, farver, skriftstørrelser, understregning og fed og kursiv på samme tekst.
+- Mørk tilstand (dark mode) i mailen.
+- Versionshistorik og "gendan tidligere version" for kladder (beslutning 9).
+- Automatisk oprettelse af næste måneds kladde.
 - Flettefelter og personlig hilsen ("Kære {navn}").
 - Sporing af åbninger og klik (pixels, omdirigerede links). Det er bevidst fravalgt af hensyn til databeskyttelse.
 - Registrering af retsgrundlag pr. modtager (afklaret spørgsmål 1).
