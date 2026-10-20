@@ -117,6 +117,9 @@ else
       ok "nyhedsbrev-afmeld.php sender Referrer-Policy, X-Robots-Tag og Cache-Control"
     else bad "nyhedsbrev-afmeld.php mangler sikkerhedsheadere"; fi
 
+    # Nyhedsbrev trin 1: funktionel test af acceptkriterierne (import, afmelding, GDPR, adgang)
+    source "$ROOT/tests/newsletter_funktionel.sh"
+
     grep -iE 'Fatal|Uncaught' /tmp/hsg-php-server.log && bad "PHP-fejl i serverlog"
   fi
 fi
