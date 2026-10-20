@@ -197,6 +197,21 @@ t('afkortet celle: de hele adresser før klippet bevares', in_array('a000001@x.d
 t('afkortet celle: "…" står som ugyldig, så afkortningen ses i forhåndsvisningen', in_array('…', array_column($a['invalid'], 'value'), true));
 $exact = str_repeat('c', 318 - strlen('ok@firma.dk')).'ok@firma.dk; næste@x.dk';
 eq('klippes der lige efter en hel adresse, bevares den', str_repeat('c', 307).'ok@firma.dk …', hsg_newsletter_cap_cell($exact));
+// Testerens tilføjelse: klippet ligger ved tegn 318, så testcellen ovenfor klipper "kim@firma" (ugyldig) og viser ikke, om
+// klip-midt-i-et-ord virker. Her flyttes adressen gennem alle positioner omkring klippet (tegn 295-325), og der må aldrig
+// komme en gyldig adresse ud, som ikke stod i cellen ("kim@firma.com" → "kim@firma.co", "ole@firma.dk" → "ole@firma.d").
+$inventedAt = [];
+for ($start = 295; $start <= 325; $start++) {
+    $cell = str_repeat('b', $start - 3).'; kim@firma.com; ole@firma.dk; pia@firma.com';
+    $out = array_map('hsg_newsletter_normalize_email', hsg_newsletter_split_emails(hsg_newsletter_cap_cell($cell)));
+    foreach ($out as $e) if (hsg_newsletter_is_valid_email($e) && !in_array($e, ['kim@firma.com', 'ole@firma.dk', 'pia@firma.com'], true)) $inventedAt[] = $start.': '.$e;
+}
+eq('klip midt i en adresse (adressen flyttet gennem tegn 295-325): ingen opfundne adresser', [], $inventedAt);
+$mid = str_repeat('b', 304).'; kim@firma.com; ole@firma.dk';
+eq('testcellen: kim@firma.com starter på tegn 307, så klippet ved tegn 318 rammer "kim@firma.co"', 307, strpos($mid, 'kim@firma.com') + 1);
+eq('klip midt i adressen: stykket efter sidste skilletegn fjernes', str_repeat('b', 304).'; …', hsg_newsletter_cap_cell($mid));
+$nl = str_repeat('c', 318 - strlen("; ok@firma.dk\n"))."; ok@firma.dk\nnæste@x.dk";
+eq('klippes der lige efter en nylinje, bevares adressen før den (testerens KAN 6)', str_repeat('c', 304).'; ok@firma.dk …', hsg_newsletter_cap_cell($nl));
 eq('række afkortes til 30 kolonner', 30, count(hsg_newsletter_cap_row(range(1, 40))));
 $cs = hsg_newsletter_clean_sheets(['Ark 1' => [array_merge([str_repeat('y', 400)], array_fill(0, 39, 'z'))]]);
 t('clean_sheets: 30 kolonner og 320 tegn pr. celle', count($cs['sheets']['Ark 1'][0]) === 30 && preg_match_all('/./su', $cs['sheets']['Ark 1'][0][0]) === 320);

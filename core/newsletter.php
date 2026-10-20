@@ -76,7 +76,7 @@ function hsg_newsletter_cap_cell(mixed $value): string {
     $sep = ';,\s\x{00A0}\x{200B}\x{FEFF}'; // som i hsg_newsletter_split_emails()
     $t = $m[1];
     if (!preg_match('/^['.$sep.']/u', $m[2])) {
-        $cut = preg_replace('/[^'.$sep.']+$/u', '', $t) ?? '';
+        $cut = preg_replace('/[^'.$sep.']+$/uD', '', $t) ?? ''; // D: $ er kun slutningen, ikke før en afsluttende nylinje
         if (preg_match('/[^'.$sep.']/u', $cut)) $t = $cut; // ét langt ord uden skilletegn beholdes
     }
     return rtrim($t).' …';

@@ -72,3 +72,33 @@ Kriterie 5 afkorter hver celle til 320 tegn. Er cellen en mailkolonne med flere 
 - `tests/newsletter_funktionel.sh` (+11 tjek): tom `.xlsx`, CSV omdøbt til `.xlsx`, zip med forfalsket størrelse (påstår 2.000 byte, er 8 MB), CSV med præcis 5.000 rækker og tomme rækker til sidst, CSV i Windows-1252 med æøå, og seks tjek af forhåndsvisningens levetid (ny ligger i sessionen, slettes på begge sider ved udløb, 7.100 s er ikke udløbet, et andet token sletter ikke, en udløbet forhåndsvisning kan ikke gennemføres).
 - `tests/newsletter_test.php` (+2 tjek): omvendt skråstreg er ikke et escape-tegn, og dobbelte anførselstegn i et felt.
 - Bevis for værdien: uden kaldene til `hsg_newsletter_preview_expire()` på siderne er udviklerens suite grøn, mens mine to tests fejler.
+
+## Efter rettelsen (commit b92c95c)
+
+**Konklusion: KLAR.** BØR 1 er lukket, og de rettede KAN-punkter virker. Jeg fandt 1 ny KAN og 1 hul i de nye tests (lukket). Ingen SKAL og ingen nye BØR.
+
+| Punkt | Resultat | Bevis |
+|---|---|---|
+| BØR 1: afkortet celle giver ikke en anden, gyldig adresse | LUKKET | Min oprindelige celle (CSV, 321 tegn, `kim@firma.com` fra tegn 309): forhåndsvisningen viser 21 nye (`a000001@x.dk` til `a000021@x.dk`) og under Ugyldige kun fyldordet fra min testcelle og "…". `kim@firma.co` findes ikke, og efter import er der 0 rækker `kim@firma.c%`. Samme resultat for en xlsx med cellen som delt streng (309 tegn, slutter `; …`). |
+| Egenskabstest | BESTÅET | 20.000 tilfældige celler på 250–700 tegn (skilletegn `;`, `,`, mellemrum, nylinje, tab, NBSP, ZWSP, "Navn med æøå <adresse>", flerbyte-start): **0 opfundne gyldige adresser**, længste resultat 320 tegn, 0 ugyldig UTF-8. Kontrol med den gamle kode (902561d): 667 opfundne adresser (3,3 %), så testen kan finde fejlen. |
+| Varianter | BESTÅET | Klip lige efter en hel adresse (skilletegn `;`, `; `, `,`, mellemrum og nylinje): den hele adresse bevares, `…` står som ugyldig. Klip lige efter skilletegnet: bevares. Ét langt ord på 400 tegn: 318 tegn + " …", ugyldig. 60 adresser: de 22 første hele adresser, ingen halve. Celler på 319 og 320 tegn er uændrede, 321 og 322 afkortes. Flytter jeg adressen gennem tegn 295–325: aldrig en opfundet adresse. |
+| KAN 1: neutral 500-tekst | BESTÅET | Kolonne omdøbt: GET og ét klik giver HTTP 500 og teksten "Der opstod en teknisk fejl. Prøv linket igen om lidt." Header-tjek (Referrer-Policy, X-Robots-Tag, Cache-Control) sendes, status er stadig `active`. |
+| KAN 2: README | BESTÅET | Linjen om XMLReader står under KRAV. |
+| KAN 3: spec | BESTÅET | Linje 89 siger "gemmes aldrig i databasen", og S1 nævner mail-linket. |
+| KAN 5: `file[]` og kolonnereference | BESTÅET | `file[]`: "Vælg en Excel-fil (.xlsx) eller CSV-fil." Reference med 30 bogstaver, `7` og `AAAA2` behandles som kolonnen efter den forrige (`[["E-mail","x"],["sjov@x.dk","y"]]`), ingen `TypeError`. `mode[]` og trykfladen (KAN 4) er ikke rettet, som aftalt. |
+| `bash tests/run.sh` på b92c95c | BESTÅET | 128 enhedstests, 121 OK-linjer, "ALLE TESTS BESTÅET", kørt i en ren kopi uden for OneDrive mod en tom MariaDB (`hsg_tester8`). |
+
+### Nyt fund
+
+**KAN 6. Nylinje som sidste tegn før klippet fjerner en hel adresse.** Regex'en `/[^…]+$/u` i `hsg_newsletter_cap_cell()` mangler `D`-modifikatoren, så `$` også matcher før en afsluttende nylinje. Slutter de 318 bevarede tegn på nylinjen (celle med én adresse pr. linje), fjernes den sidste hele adresse, selvom den var komplet (`"a@x.dk;b@x.dk\n"` giver `"a@x.dk;\n"`).
+- **Gentag:** celle med adresser adskilt af nylinje, hvor tegn 318 er nylinjen og tegn 319 starter en ny adresse. Fuzz med nylinjer: 172 af 5.000 afkortede celler mistede én hel adresse.
+- **Konsekvens:** Kun tab af én adresse, der fejler på den sikre side, og "…" står under Ugyldige. Ingen forkert adresse.
+- **Rettelse:** `'/[^'.$sep.']+$/uD'` (eller `\z`).
+
+### Hul i de nye tests (lukket)
+
+Udviklerens test af BØR 1 fanger ikke selve klip-midt-i-et-ord-logikken. Klippet ligger nu ved tegn 318, så testcellen (adressen fra tegn 309) klipper ved `kim@firma`, som er ugyldig alligevel. Fjerner jeg hele mid-word-blokken, er suiten stadig grøn (128 bestået, 0 fejlet). Jeg har tilføjet 3 tjek i `tests/newsletter_test.php` (nu 131): adressen flyttes gennem tegn 295–325 med `kim@firma.com`, `ole@firma.dk` og `pia@firma.com`, og ingen opfundne adresser må komme ud. Desuden en fast celle (adressen fra tegn 307, så klippet rammer `kim@firma.co`) og dens forventede resultat. Uden mid-word-blokken fejler 2 af tjekkene (129 bestået, 2 fejlet), og med blokken er suiten grøn.
+
+### Miljøbemærkning
+
+To af mine egne kørsler af `run.sh` i selve worktree'et fejlede i installationen med "Maximum execution time of 30 seconds exceeded" i `core/catalog_image_seed.php` (kopiering af billeder). Worktree'et ligger i OneDrive, og fil-I/O var langsomt, mens OneDrive synkroniserede billederne fra de tidligere kørsler. Det har ikke noget med rettelsen at gøre. Samme commit er grøn i en ren kopi uden for OneDrive.
