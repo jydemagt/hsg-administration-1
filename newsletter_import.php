@@ -5,8 +5,10 @@ require_module_enabled('newsletter');
 require_capability('newsletter.send');
 require_once __DIR__.'/core/newsletter.php';
 
-// Forhåndsvisningen ligger kun i sessionen under et tilfældigt token – aldrig i storage/,
-// fordi Kims fil kan indeholde andre persondata. Den slettes, når importen er gennemført eller annulleret.
+// Forhåndsvisningen ligger kun i sessionen under et tilfældigt token – aldrig i storage/ eller i databasen,
+// fordi Kims fil kan indeholde andre persondata. Den slettes, når importen er gennemført eller annulleret,
+// og en udløbet forhåndsvisning slettes her, uanset om siden åbnes med dens token.
+hsg_newsletter_preview_expire();
 $expiredMessage = 'Forhåndsvisningen er udløbet – upload filen igen.';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -126,10 +128,10 @@ echo hsg_newsletter_tabs_html('import');
 ?>
 <div class="card">
   <h2>Import af modtagere</h2>
-  <p class="muted">Indlæs Kims kundeliste. Systemet gemmer kun mail, navn, firma og type – andre kolonner læses aldrig ind. Afmeldte, stoppede og slettede modtagere springes altid over og tilmeldes aldrig igen af en import.</p>
+  <p class="muted">Indlæs Kims kundeliste. Systemet gemmer kun mail, navn, firma og type – andre kolonner gemmes aldrig i databasen. Afmeldte, stoppede og slettede modtagere springes altid over og tilmeldes aldrig igen af en import.</p>
   <form method="post" enctype="multipart/form-data"><?=csrf_field()?><input type="hidden" name="action" value="analyse">
     <label>Excel/CSV-fil<input type="file" name="file" accept=".xlsx,.csv" required></label>
-    <p class="muted" style="margin-top:-4px">.xlsx eller .csv, højst 5.000 rækker. Mailkolonnen findes ud fra overskriften (fx "E-mail" eller "Mail") – ellers bruges kolonne D.</p>
+    <p class="muted" style="margin-top:-4px">.xlsx eller .csv, højst 5 MB og 5.000 rækker. Kun kolonne A–AD læses. Mailkolonnen findes ud fra overskriften (fx "E-mail" eller "Mail") – ellers bruges kolonne D.</p>
     <fieldset style="border:0;padding:0;margin:10px 0">
       <legend style="font-weight:700;font-size:13px">Hvem er i filen?</legend>
       <div class="actions" style="margin-top:6px">

@@ -209,7 +209,7 @@ Udvikleren bygger og frigiver ét trin ad gangen. Hvert trin har sine egne accep
 - **Mailadresser i URL'er:** Mailadresser må aldrig stå i URL'er. Offentlige links indeholder kun token og udsendelses-id. Administrationssider bruger `?id=`. Søgning i modtagerlisten filtrerer i browseren (JavaScript), så der aldrig sendes en GET-forespørgsel med mailadressen. Eksport og sletning sker via POST.
 - **Mailadresser i audit-loggen:** Audit-loggen indeholder aldrig mailadresser, kun modtager-id og antal.
 - **Afmeldte bevares** med status *Afmeldt* som spærreliste uden automatisk anonymisering (afklaret spørgsmål 7), så en genimport ikke tilmelder dem igen. Genaktivering kræver, at administratoren sætter flueben ved "Modtageren har selv bedt om at blive tilmeldt igen". Det audit-logges.
-- **Sletning (ret til sletning):** Rækken anonymiseres. `email`, `name`, `company`, `token_hash` og `token_cipher` sættes til NULL, og status sættes til `deleted`. Kun `email_hash` bevares, så personen ikke kommer med igen ved næste import. Rækker i køen og loggen peger kun på modtager-id og indeholder ingen mailadresse.
+- **Sletning (ret til sletning):** Personoplysningerne i rækken slettes. `email`, `name`, `company`, `token_hash` og `token_cipher` sættes til NULL, og status sættes til `deleted`. Mailadressen gemmes kun som en hash (`email_hash`, SHA-256), så personen ikke kommer med igen ved næste import. Hashen er uden salt og derfor ikke anonym: den, der kender adressen, kan genkende den. Den bruges kun som spærring og vises ingen steder. Rækker i køen og loggen peger kun på modtager-id og indeholder ingen mailadresse.
 - **Eksport (ret til indsigt):** CSV med UTF-8 BOM og semikolon. Den indeholder modtagerens felter (mail, navn, firma, type, status, kilde, oprettet, afmeldt) og (fra trin 2) udsendelseshistorikken. Celler, der starter med `=`, `+`, `-` eller `@`, får et foranstillet `'`, så de ikke kan køre som formler i Excel.
 - **Opbevaring (afklaret spørgsmål 7):**
   - Udsendelsesrækker slettes, når udsendelsen blev afsluttet for mere end `newsletter_log_retention_months` (standard 24) måneder siden. Selve udsendelsen (emne og tekst) bevares, da den ikke indeholder personoplysninger. Det er også det, der gør "seneste nyhedsbrev" tilgængeligt (beslutning 9).
@@ -292,7 +292,7 @@ Udvikleren bygger og frigiver ét trin ad gangen. Hvert trin har sine egne accep
 | Modtager rettet | `newsletter.recipient.update` | `newsletter_recipient` / id | navnene på de ændrede felter (ingen værdier) |
 | Afmelding | `newsletter.recipient.unsubscribe` | `newsletter_recipient` / id | `via`: link / one_click / admin |
 | Stoppet / genaktiveret | `newsletter.recipient.stop` / `.reactivate` | `newsletter_recipient` / id | `self_requested: true` ved genaktivering af en afmeldt |
-| Slettet (anonymiseret) | `newsletter.recipient.delete` | `newsletter_recipient` / id | – |
+| Slettet (mail, navn og firma slettet) | `newsletter.recipient.delete` | `newsletter_recipient` / id | – |
 | Dataeksport | `newsletter.recipient.export` | `newsletter_recipient` / id | – |
 | Indstillinger gemt | `newsletter.settings` | `system` / – | nøglerne der er ændret; `m365_secret_changed: true` |
 | Forbindelsestest | `newsletter.smtp_test` | `system` / – | forsendelsesmetode, ok/fejl, SMTP-kode eller Microsoft-fejlkode (`AADSTS…`) |
@@ -522,7 +522,7 @@ Der logges **ikke** pr. afsendt mail (loggen findes i `hsg_newsletter_deliveries
 
 ### E. GDPR-henvendelse (administrator)
 1. Find modtageren med søgefeltet (filtrerer i browseren).
-2. **Eksportér data (CSV)** sender kopien til den registrerede. **Slet modtager** anonymiserer, og personen kommer ikke med igen ved import.
+2. **Eksportér data (CSV)** sender kopien til den registrerede. **Slet modtager** sletter mail, navn og firma. Mailadressen gemmes kun som en hash (SHA-256), så personen ikke kommer med igen ved import.
 
 ### F. Afbrudt udsendelse
 1. Browseren lukkes, eller PHP dør → køen står uændret. Cron eller det næste besøg på siden fortsætter med rækkerne `queued`.
@@ -587,7 +587,7 @@ Søg i listen [______________]  (filtrerer i browseren)  [+ Tilføj modtager]
 - **Rediger** (`?id=N`):
   - Felter: Mail, Navn, Firma og Type, plus (kun læsning) Kilde, Oprettet, Sidst set i import, Afmeldt (tidspunkt og hvordan).
   - Feltet "Personligt afmeldingslink" er kun til læsning med `onclick="this.select()"`. Det er beregnet til manuel hjælp og test. I trin 1 bygges linket med `base_url()` (den aktuelle browserforespørgsel), fra trin 2 med `newsletter_public_base_url`, når den er udfyldt.
-  - Knapper: **Gem** · **Afmeld** (hvis aktiv) · **Stop** (fx afviste mails) / **Genaktivér** (genaktivering fra Afmeldt kræver fluebenet "selv bedt om") · **Eksportér data (CSV)** · **Slet modtager** (`button.danger` + `confirm('Slet modtageren permanent? Mailadressen gemmes kun som en uigenkendelig spærring, så den ikke importeres igen.')`).
+  - Knapper: **Gem** · **Afmeld** (hvis aktiv) · **Stop** (fx afviste mails) / **Genaktivér** (genaktivering fra Afmeldt kræver fluebenet "selv bedt om") · **Eksportér data (CSV)** · **Slet modtager** (`button.danger` + `confirm('Slet modtageren permanent? Mailadressen gemmes kun som en hash (SHA-256), så den ikke importeres igen.')`).
   - Fra trin 2 vises også tabellen *Udsendelseshistorik* (Udsendelse, Emne, Status, Sendt).
 - Søgefeltet er et `<input type="search">` uden for enhver formular, og JavaScript skjuler de rækker, der ikke matcher.
 
@@ -596,7 +596,7 @@ Søg i listen [______________]  (filtrerer i browseren)  [+ Tilføj modtager]
 ```
 Import af modtagere
 +------------------------------------------------------------------+
-| Excel/CSV-fil  [Vælg fil]   (.xlsx eller .csv, højst 5.000 rækker)|
+| Excel/CSV-fil [Vælg fil] (.xlsx/.csv, højst 5 MB og 5.000 rækker) |
 | Hvem er i filen?   (o) Kunder  ( ) Forhandlere  ( ) Brug kolonne   |
 | [Analysér fil]                                                    |
 +------------------------------------------------------------------+
@@ -621,7 +621,8 @@ Skifter type: 2 · Aktive modtagere, der ikke står i filen: 5
 [Importér 25 nye og opdatér 3]   [Annullér]
 ```
 
-- Forhåndsvisningen gemmes i `$_SESSION` under et tilfældigt nøgle-token, der sendes som skjult felt. Den gemmes ikke i `storage/`, fordi Kims fil kan indeholde andre persondata. Når importen er gennemført eller annulleret, slettes den.
+- Forhåndsvisningen gemmes i `$_SESSION` under et tilfældigt nøgle-token, der sendes som skjult felt. Den gemmes ikke i `storage/` og aldrig i databasen, fordi Kims fil kan indeholde andre persondata. Når importen er gennemført eller annulleret, slettes den. En forhåndsvisning, der er ældre end 2 timer, slettes, når *Import* eller *Modtagere* åbnes, uanset token.
+- **Grænser (tilføjet efter reviewet af trin 1):** Filen må højst fylde 5 MB. En xlsx-fil må højst fylde ca. 30 MB udpakket (arkene og de delte strenge lægges sammen før udpakning, som i `core/updater.php`). Kun kolonne A–AD (30 kolonner) læses, og hver celle afkortes til 320 tegn i forhåndsvisningen. Teksten må højst fylde 10 MB i alt, fordi én delt streng i en xlsx kan genbruges i mange celler. Læsningen stopper ved række 5.001 med indhold. xlsx læses med XMLReader (ét element ad gangen), og CSV med en egen `fgetcsv`-løkke i `core/newsletter.php`. `core/supplier_import.php` er uændret.
 - Hvis xlsx-filen har mere end ét ark, vises valget "Ark [v]".
 - Listerne vises i `<details>` med højst 200 linjer og teksten "… og N flere".
 - Afmeldte adresser vises maskeret (`a***@x.dk`).
@@ -629,6 +630,10 @@ Skifter type: 2 · Aktive modtagere, der ikke står i filen: 5
   - "Vælg en Excel-fil (.xlsx) eller CSV-fil."
   - "Filen indeholder ingen gyldige mailadresser."
   - "Filen har mere end 5.000 rækker."
+  - "Filen er for stor (højst 5 MB)."
+  - "Excel-filen fylder for meget, når den pakkes ud. Gem kun arket med modtagerne i en ny fil, eller gem det som CSV."
+  - "Excel-filen kunne ikke læses. Gem den igen som Excel-fil (.xlsx) eller CSV-fil, og prøv igen."
+  - "Filen indeholder for meget tekst. Gem kun kolonnerne med mail, navn, firma og type i en ny fil, og prøv igen."
   - "Forhåndsvisningen er udløbet – upload filen igen."
 
 ### S3. Indstillinger – `newsletter_settings.php` (trin 2)
@@ -1230,6 +1235,7 @@ Indeks: **UNIQUE `uniq_nl_cat (campaign_id, price)`**.
 
 - **Modtager:**
   - `active` → `unsubscribed` (via link, ét klik eller administrator), `active` → `stopped` (administrator), `stopped` → `active` (administrator).
+  - `stopped` → `unsubscribed`, når modtageren selv afmelder sig (via link eller ét klik), så modtagerens eget ønske altid registreres. Administratoren kan kun afmelde aktive modtagere. (Tilføjet efter trin 1, afvigelse 2.)
   - `unsubscribed` → `active` kun med fluebenet "selv bedt om".
   - Alle statusser → `deleted`. En slettet adresse kan kun komme tilbage ved manuel tilføjelse med fluebenet "selv bedt om". Rækken genbruges, og der udstedes et nyt token.
   - En import ændrer aldrig `status`, undtagen når den opretter nye rækker som `active`.
@@ -1273,12 +1279,13 @@ Indeks: **UNIQUE `uniq_nl_cat (campaign_id, price)`**.
 | `modules/newsletter/module.php` | Ny | `id` 'newsletter', `name` 'Nyhedsbrev', `version` '1.0.0', `nav` true, `link_access` false, `admin_default_access` false, `href` 'newsletter.php', `icon` '✉', `capability` 'newsletter.send', `description` 'Månedligt nyhedsbrev til forhandlere og kunder med afmelding og katalog.', `core` false, `sort` 35 |
 | `core/permissions.php` | Ændret | `hsg_admin_can_view_module()`: manglende række eller tabel giver manifestets `admin_default_access` (standard `true`). Ingen ændring for eksisterende moduler. |
 | `modules/newsletter/migrations.php` | Ny | '1.0.0' |
-| `core/newsletter.php` | Ny | Normalisering og validering af mail, maskering, token (via `core/access_links.php`), analyse og gennemførelse af import (bruger `core/supplier_import.php`), afmelding, anonymisering, CSV-eksport, faner, danske etiketter |
+| `core/newsletter.php` | Ny | Normalisering og validering af mail, maskering, token (via `core/access_links.php`), analyse og gennemførelse af import (bruger `core/supplier_import.php`), afmelding, sletning (ret til sletning), CSV-eksport, faner, danske etiketter |
 | `newsletter.php` | Ny | Trin 1: viderestiller til `newsletter_recipients.php` |
 | `newsletter_recipients.php` | Ny | S1 (liste, tilføj, rediger, afmeld/stop/genaktivér, eksport, slet) |
 | `newsletter_import.php` | Ny | S2 |
 | `nyhedsbrev-afmeld.php` | Ny | S7 (offentlig) |
 | `functions.php` | Ændret | Menupunkt under SALG i `page_header()` |
+| `users.php` | Ændret | Fluebenet for et modul følger manifestets `admin_default_access`, så Nyhedsbrev ikke er afkrydset som standard, og et gem ikke giver adgang. (Tilføjet efter trin 1, afvigelse 1.) |
 | `admin.php` | Ændret | Kort "Nyhedsbrev" i "Daglig drift" |
 | `docs/NEWSLETTER.md` | Ny | Vejledning: import, afmelding, GDPR |
 | `tests/run.sh` | Ændret | Nye sider i røgtesten, offentlig side med ugyldigt token |

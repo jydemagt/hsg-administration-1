@@ -13,6 +13,14 @@ require_once __DIR__.'/access_links.php';
 
 const HSG_NEWSLETTER_MAX_ROWS = 5000;
 const HSG_NEWSLETTER_PREVIEW_TTL = 7200;
+// Grænser for importen, så en stor fil eller en zip-bombe giver en fejltekst og ikke HTTP 500.
+const HSG_NEWSLETTER_MAX_UPLOAD = 5 * 1024 * 1024;       // uploadet fil
+const HSG_NEWSLETTER_MAX_XLSX_XML = 30 * 1024 * 1024;    // ark og delte strenge i en xlsx, udpakket
+const HSG_NEWSLETTER_MAX_SHARED = 500000;                // delte strenge i en xlsx
+const HSG_NEWSLETTER_MAX_COLS = 30;                      // kolonne A–AD læses
+const HSG_NEWSLETTER_MAX_CELL = 320;                     // tegn pr. celle i forhåndsvisningen
+const HSG_NEWSLETTER_MAX_TEXT = 10 * 1024 * 1024;        // tekst i alt i forhåndsvisningen (en delt streng kan genbruges i mange celler)
+const HSG_NEWSLETTER_XLSX_TOO_BIG = 'Excel-filen fylder for meget, når den pakkes ud. Gem kun arket med modtagerne i en ny fil, eller gem det som CSV.';
 
 /* ---------------------------------------------------------------------------
  * Rene funktioner (ingen database, ingen globale variabler)
@@ -41,6 +49,29 @@ function hsg_newsletter_clean_cell(mixed $value): string {
     }
     $s = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $s) ?? '';
     return preg_replace('/^[\s\x{00A0}\x{200B}\x{FEFF}]+|[\s\x{00A0}\x{200B}\x{FEFF}]+$/u', '', $s) ?? '';
+}
+
+/**
+ * Klipper en meget lang værdi til højst 4 byte pr. tegn i HSG_NEWSLETTER_MAX_CELL, så rensningen ikke
+ * skal arbejde på megabytes. Gyldig UTF-8 klippes ved en tegngrænse, så den forbliver gyldig.
+ */
+function hsg_newsletter_clip(string $s): string {
+    $max = 4 * HSG_NEWSLETTER_MAX_CELL;
+    if (strlen($s) <= $max) return $s;
+    if (preg_match('//u', $s)) {
+        while ($max > 0 && (ord($s[$max]) & 0xC0) === 0x80) $max--;
+    }
+    return substr($s, 0, $max);
+}
+
+/** En celle i forhåndsvisningen: renset og højst HSG_NEWSLETTER_MAX_CELL tegn. */
+function hsg_newsletter_cap_cell(mixed $value): string {
+    return hsg_newsletter_truncate(hsg_newsletter_clean_cell(hsg_newsletter_clip((string)$value)), HSG_NEWSLETTER_MAX_CELL);
+}
+
+/** En række i forhåndsvisningen: højst HSG_NEWSLETTER_MAX_COLS kolonner, og hver celle renset og afkortet. */
+function hsg_newsletter_cap_row(array $row): array {
+    return array_map('hsg_newsletter_cap_cell', array_slice(array_values($row), 0, HSG_NEWSLETTER_MAX_COLS));
 }
 
 /** Navn og firma: renset, mellemrum samlet til ét, højst 180 tegn. */
@@ -364,7 +395,9 @@ function hsg_newsletter_analysis_counts(array $a): array {
 
 /**
  * Rensning af indlæste ark: cellerne renses, og tomme rækker i slutningen af arket fjernes.
- * Rækkenumrene følger med (fra hsg_newsletter_xlsx_row_numbers(), ellers 1, 2, 3 …).
+ * Hver række begrænses til HSG_NEWSLETTER_MAX_COLS kolonner og hver celle til HSG_NEWSLETTER_MAX_CELL
+ * tegn, fordi rækkerne ligger i sessionen, indtil importen er gennemført eller annulleret.
+ * Rækkenumrene følger med (fra læseren, ellers 1, 2, 3 …).
  *
  * @return array{sheets:array<string,array>,rownums:array<string,list<int>>}
  */
@@ -377,7 +410,7 @@ function hsg_newsletter_clean_sheets(array $sheets, array $rowNumbers = []): arr
             ? array_values(array_map('intval', $rowNumbers[$name]))
             : ($rows ? range(1, count($rows)) : []);
         $clean = [];
-        foreach ($rows as $row) $clean[] = array_map('hsg_newsletter_clean_cell', array_values((array)$row));
+        foreach ($rows as $row) $clean[] = hsg_newsletter_cap_row((array)$row);
         while ($clean && implode('', end($clean)) === '') array_pop($clean);
         if (!$clean) continue;
         $out['sheets'][$name] = $clean;
@@ -524,7 +557,7 @@ function hsg_newsletter_add(PDO $pdo, string $emailRaw, string $name, string $co
     if (!$selfRequested) return ['result' => 'needs_confirmation', 'status' => $status];
 
     if ($status === 'deleted') {
-        // Den anonymiserede række genbruges, og der udstedes et nyt token.
+        // Den slettede række (kun email_hash er tilbage) genbruges, og der udstedes et nyt token.
         $t = hsg_newsletter_new_token();
         $st = $pdo->prepare("UPDATE hsg_newsletter_recipients SET email=?,name=?,company=?,segment=?,status='active',source='manual',
             token_hash=?,token_cipher=?,unsubscribed_at=NULL,unsubscribe_via=NULL WHERE id=? AND status='deleted'");
@@ -637,7 +670,10 @@ function hsg_newsletter_reactivate(PDO $pdo, int $id, bool $selfRequested): stri
     return 'not_allowed';
 }
 
-/** Ret til sletning: rækken anonymiseres, og kun email_hash bevares som spærring. */
+/**
+ * Ret til sletning: mail, navn, firma og token slettes, og kun email_hash bevares som spærring.
+ * email_hash er SHA-256 uden salt og derfor ikke anonym: den, der kender adressen, kan genkende den.
+ */
 function hsg_newsletter_delete(PDO $pdo, int $id): bool {
     $st = $pdo->prepare("UPDATE hsg_newsletter_recipients SET email=NULL,name=NULL,company=NULL,token_hash=NULL,token_cipher=NULL,status='deleted'
         WHERE id=? AND status<>'deleted'");
@@ -651,55 +687,237 @@ function hsg_newsletter_delete(PDO $pdo, int $id): bool {
  * Import
  * ------------------------------------------------------------------------- */
 
-/**
- * De rigtige rækkenumre i et xlsx-ark. hsg_supplier_read_xlsx() springer rækker uden celler over,
- * så uden denne liste ville rækkenumrene i forhåndsvisningen forskydes i forhold til Excel.
- * Listen har samme rækkefølge og samme ark ("Ark N") som læseren. Kun rækkenumre læses her.
+/*
+ * Importens egne læsere. De læser som hsg_supplier_read_xlsx() og hsg_supplier_read_csv() (samme ark,
+ * samme skilletegn), men med grænser undervejs, og xlsx-filen pakkes kun ud og læses én gang.
+ * Rækker uden indhold springes over, men rækkenumrene følger filen (Excel-nummeret i en xlsx).
  */
-function hsg_newsletter_xlsx_row_numbers(string $path): array {
-    if (!class_exists('ZipArchive') || !function_exists('simplexml_load_string')) return [];
-    $z = new ZipArchive();
-    if ($z->open($path) !== true) return [];
-    $out = [];
-    for ($i = 1; $i <= 50; $i++) {
-        $xml = $z->getFromName('xl/worksheets/sheet'.$i.'.xml');
-        if ($xml === false) { if ($i > 10) break; continue; }
-        $x = @simplexml_load_string($xml);
-        if (!$x) continue;
-        $nums = []; $prev = 0;
-        foreach ($x->xpath('//*[local-name()="sheetData"]/*[local-name()="row"]') ?: [] as $row) {
-            $r = (int)(string)($row->attributes()['r'] ?? '');
-            $r = $r > 0 ? $r : $prev + 1;
-            $prev = $r;
-            if ($row->xpath('./*[local-name()="c"]')) $nums[] = $r;
-        }
-        if ($nums) $out['Ark '.$i] = $nums;
-    }
-    $z->close();
-    return $out;
+
+/** Tæller en række med indhold og afviser filen ved mere end HSG_NEWSLETTER_MAX_ROWS rækker eller HSG_NEWSLETTER_MAX_TEXT tekst. */
+function hsg_newsletter_count_row(array $row, int &$rows, int &$bytes): void {
+    if (++$rows > HSG_NEWSLETTER_MAX_ROWS) throw new RuntimeException('Filen har mere end 5.000 rækker.');
+    $bytes += strlen(implode('', $row));
+    if ($bytes > HSG_NEWSLETTER_MAX_TEXT) throw new RuntimeException('Filen indeholder for meget tekst. Gem kun kolonnerne med mail, navn, firma og type i en ny fil, og prøv igen.');
 }
 
 /**
- * Læser en uploadet .xlsx/.csv med de eksisterende læsere i core/supplier_import.php.
+ * Læser en CSV-fil (semikolon eller komma). Læsningen stopper, så snart filen har mere end
+ * HSG_NEWSLETTER_MAX_ROWS rækker med indhold.
+ *
+ * @return array{sheets:array<string,array>,rownums:array<string,list<int>>}
+ */
+function hsg_newsletter_read_csv(string $path): array {
+    $fh = @fopen($path, 'rb');
+    if ($fh === false) throw new RuntimeException('Kunne ikke åbne CSV-filen.');
+    try {
+        $first = (string)fgets($fh);
+        rewind($fh);
+        $d = substr_count($first, ';') > substr_count($first, ',') ? ';' : ',';
+        $rows = []; $nums = []; $no = 0; $count = 0; $bytes = 0;
+        while (($r = fgetcsv($fh, 0, $d, '"', '')) !== false) {
+            $no++;
+            $row = hsg_newsletter_cap_row($r);
+            if (implode('', $row) === '') continue;
+            hsg_newsletter_count_row($row, $count, $bytes);
+            $rows[] = $row;
+            $nums[] = $no;
+        }
+    } finally {
+        fclose($fh);
+    }
+    return $rows ? ['sheets' => ['CSV' => $rows], 'rownums' => ['CSV' => $nums]] : ['sheets' => [], 'rownums' => []];
+}
+
+/*
+ * xlsx-filens XML læses med XMLReader ét element ad gangen. SimpleXML bygger hele dokumentet i
+ * hukommelsen (målt: ca. 25 gange XML-størrelsen, uden for memory_limit), hvilket kan få webhotellet
+ * til at stoppe PHP ved et stort ark. Elementer genkendes på lokalnavn, så navnerummets præfiks er ligegyldigt.
+ */
+
+/** Åbner et XML-dokument til læsning. Et tomt dokument giver null. */
+function hsg_newsletter_xml_reader(string $xml): ?XMLReader {
+    if ($xml === '') return null;
+    $r = new XMLReader();
+    return $r->XML($xml, null, LIBXML_NONET) ? $r : null;
+}
+
+/** Fejler XML-læsningen (fx en ødelagt fil), gives en dansk fejltekst frem for halve data. */
+function hsg_newsletter_xml_check(): void {
+    foreach (libxml_get_errors() as $e) {
+        if ($e->level >= LIBXML_ERR_ERROR) {
+            libxml_clear_errors();
+            throw new RuntimeException('Excel-filen kunne ikke læses. Gem den igen som Excel-fil (.xlsx) eller CSV-fil, og prøv igen.');
+        }
+    }
+    libxml_clear_errors();
+}
+
+/** De delte strenge i en xlsx (xl/sharedStrings.xml): <t> direkte i <si> eller i <r>-afsnit. Fonetiske afsnit (<rPh>) springes over. */
+function hsg_newsletter_xlsx_shared(ZipArchive $z): array {
+    $xml = $z->getFromName('xl/sharedStrings.xml');
+    $r = $xml === false ? null : hsg_newsletter_xml_reader($xml);
+    if ($r === null) return [];
+    $shared = []; $s = null; $phonetic = 0;
+    while ($r->read()) {
+        $type = $r->nodeType;
+        if ($type !== XMLReader::ELEMENT && $type !== XMLReader::END_ELEMENT) continue;
+        $name = $r->localName;
+        if ($type === XMLReader::ELEMENT) {
+            if ($name === 'si') {
+                if (count($shared) >= HSG_NEWSLETTER_MAX_SHARED) throw new RuntimeException(HSG_NEWSLETTER_XLSX_TOO_BIG);
+                $s = '';
+            } elseif ($name === 'rPh') {
+                $phonetic++;
+            } elseif ($name === 't' && $s !== null && $phonetic === 0 && strlen($s) <= 4 * HSG_NEWSLETTER_MAX_CELL) {
+                $s .= $r->readString();
+            }
+            if (!$r->isEmptyElement) continue;
+        }
+        // Slut på elementet (også et tomt element som <si/>, der ikke har et slutmærke).
+        if ($name === 'si' && $s !== null) { $shared[] = hsg_newsletter_clip($s); $s = null; }
+        elseif ($name === 'rPh') $phonetic = max(0, $phonetic - 1);
+    }
+    $r->close();
+    hsg_newsletter_xml_check();
+    return $shared;
+}
+
+/**
+ * Rækkerne i ét ark (som hsg_supplier_sheet_rows(), men kun kolonne A–AD). Rækker uden indhold springes
+ * over. $total og $bytes tæller i alle ark (se hsg_newsletter_count_row()).
+ *
+ * @return array{0:list<array>,1:list<int>} rækker og deres rækkenumre i Excel
+ */
+function hsg_newsletter_xlsx_sheet(string $xml, array $shared, int &$total, int &$bytes): array {
+    $rows = []; $nums = [];
+    $r = hsg_newsletter_xml_reader($xml);
+    if ($r === null) return [$rows, $nums];
+    $prev = 0; $no = 0; $cells = null; $next = 0; $ci = null; $ctype = ''; $val = ''; $phonetic = 0;
+    while ($r->read()) {
+        $type = $r->nodeType;
+        if ($type !== XMLReader::ELEMENT && $type !== XMLReader::END_ELEMENT) continue;
+        $name = $r->localName;
+        if ($type === XMLReader::ELEMENT) {
+            if ($name === 'row') {
+                $no = (int)$r->getAttribute('r');
+                $no = $no > 0 ? $no : $prev + 1;
+                $prev = $no;
+                $cells = []; $next = 0;
+            } elseif ($name === 'c' && $cells !== null) {
+                $ref = (string)$r->getAttribute('r');
+                $ci = $ref !== '' ? hsg_supplier_col_index($ref) : $next;
+                $next = $ci + 1;
+                $ctype = (string)$r->getAttribute('t');
+                $val = '';
+            } elseif ($name === 'rPh') {
+                $phonetic++;
+            } elseif ($ci !== null && strlen($val) <= 4 * HSG_NEWSLETTER_MAX_CELL
+                && (($name === 'v' && $ctype !== 'inlineStr') || ($name === 't' && $ctype === 'inlineStr' && $phonetic === 0))) {
+                $val .= $r->readString();
+            }
+            if (!$r->isEmptyElement) continue;
+        }
+        // Slut på elementet (også et tomt element som <c r="A1" s="1"/>, der ikke har et slutmærke).
+        if ($name === 'c' && $ci !== null) {
+            if ($ci < HSG_NEWSLETTER_MAX_COLS) $cells[$ci] = $ctype === 's' ? (string)($shared[(int)$val] ?? '') : hsg_newsletter_clip($val);
+            $ci = null;
+        } elseif ($name === 'rPh') {
+            $phonetic = max(0, $phonetic - 1);
+        } elseif ($name === 'row' && $cells !== null) {
+            if ($cells) {
+                $dense = [];
+                for ($i = 0, $max = max(array_keys($cells)); $i <= $max; $i++) $dense[] = $cells[$i] ?? '';
+                $dense = hsg_newsletter_cap_row($dense);
+                if (implode('', $dense) !== '') {
+                    hsg_newsletter_count_row($dense, $total, $bytes);
+                    $rows[] = $dense;
+                    $nums[] = $no;
+                }
+            }
+            $cells = null;
+        }
+    }
+    $r->close();
+    hsg_newsletter_xml_check();
+    return [$rows, $nums];
+}
+
+/**
+ * Læser en xlsx-fil. Før noget pakkes ud, lægges den udpakkede størrelse af arkene og de delte strenge
+ * sammen (som core/updater.php gør med opgraderingspakker), og filen afvises over HSG_NEWSLETTER_MAX_XLSX_XML.
+ * Kun kolonne A–AD læses, og læsningen stopper ved mere end HSG_NEWSLETTER_MAX_ROWS rækker med indhold.
+ *
+ * @return array{sheets:array<string,array>,rownums:array<string,list<int>>}
+ */
+function hsg_newsletter_read_xlsx(string $path): array {
+    if (!class_exists('ZipArchive')) throw new RuntimeException('PHP ZipArchive mangler på webhotellet.');
+    if (!class_exists('XMLReader')) throw new RuntimeException('PHP XMLReader mangler på webhotellet. Gem filen som CSV i stedet.');
+    if ((int)@filesize($path) === 0) throw new RuntimeException('Kunne ikke åbne Excel-filen.');
+    $z = new ZipArchive();
+    if ($z->open($path) !== true) throw new RuntimeException('Kunne ikke åbne Excel-filen.');
+    $libxmlErrors = libxml_use_internal_errors(true);
+    libxml_clear_errors();
+    try {
+        // Samme ark som hsg_supplier_read_xlsx(): sheet1–sheet50, og efter ark 10 stoppes ved første hul.
+        $names = []; $unpacked = 0;
+        for ($i = 1; $i <= 50; $i++) {
+            $stat = $z->statName('xl/worksheets/sheet'.$i.'.xml');
+            if ($stat === false) { if ($i > 10) break; continue; }
+            $names[$i] = (string)$stat['name'];
+            $unpacked += (int)$stat['size'];
+        }
+        $stat = $z->statName('xl/sharedStrings.xml');
+        if ($stat !== false) $unpacked += (int)$stat['size'];
+        if ($unpacked > HSG_NEWSLETTER_MAX_XLSX_XML) throw new RuntimeException(HSG_NEWSLETTER_XLSX_TOO_BIG);
+
+        $shared = hsg_newsletter_xlsx_shared($z);
+        $out = ['sheets' => [], 'rownums' => []];
+        $total = 0; $bytes = 0;
+        foreach ($names as $i => $name) {
+            $xml = $z->getFromName($name);
+            if ($xml === false) continue;
+            [$rows, $nums] = hsg_newsletter_xlsx_sheet($xml, $shared, $total, $bytes);
+            unset($xml);
+            if ($rows) {
+                $out['sheets']['Ark '.$i] = $rows;
+                $out['rownums']['Ark '.$i] = $nums;
+            }
+        }
+        return $out;
+    } finally {
+        libxml_clear_errors();
+        libxml_use_internal_errors($libxmlErrors);
+        $z->close();
+    }
+}
+
+/**
+ * Læser en .xlsx- eller .csv-fil til forhåndsvisningen (renset med hsg_newsletter_clean_sheets()).
+ *
+ * @return array{sheets:array<string,array>,rownums:array<string,list<int>>}
+ */
+function hsg_newsletter_read_file(string $path, string $ext): array {
+    $raw = $ext === 'xlsx' ? hsg_newsletter_read_xlsx($path) : hsg_newsletter_read_csv($path);
+    $data = hsg_newsletter_clean_sheets($raw['sheets'], $raw['rownums']);
+    if (!$data['sheets']) throw new RuntimeException('Filen indeholder ingen gyldige mailadresser.');
+    return $data;
+}
+
+/**
+ * Læser en uploadet .xlsx/.csv (højst HSG_NEWSLETTER_MAX_UPLOAD).
  *
  * @return array{sheets:array<string,array>,rownums:array<string,list<int>>}
  */
 function hsg_newsletter_read_upload(array $file): array {
     $error = (int)($file['error'] ?? UPLOAD_ERR_NO_FILE);
     if (in_array($error, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) throw new RuntimeException('Filen er for stor til at blive uploadet.');
+    if ($error === UPLOAD_ERR_OK && (int)($file['size'] ?? 0) > HSG_NEWSLETTER_MAX_UPLOAD) throw new RuntimeException('Filen er for stor (højst 5 MB).');
     $tmp = (string)($file['tmp_name'] ?? '');
     $ext = strtolower(pathinfo((string)($file['name'] ?? ''), PATHINFO_EXTENSION));
     if ($error !== UPLOAD_ERR_OK || $tmp === '' || !is_uploaded_file($tmp) || !in_array($ext, ['xlsx', 'csv'], true)) {
         throw new RuntimeException('Vælg en Excel-fil (.xlsx) eller CSV-fil.');
     }
-    $data = $ext === 'xlsx'
-        ? hsg_newsletter_clean_sheets(hsg_supplier_read_xlsx($tmp), hsg_newsletter_xlsx_row_numbers($tmp))
-        : hsg_newsletter_clean_sheets(hsg_supplier_read_csv($tmp));
-    if (!$data['sheets']) throw new RuntimeException('Filen indeholder ingen gyldige mailadresser.');
-    $total = 0;
-    foreach ($data['sheets'] as $rows) $total += count($rows);
-    if ($total > HSG_NEWSLETTER_MAX_ROWS) throw new RuntimeException('Filen har mere end 5.000 rækker.');
-    return $data;
+    return hsg_newsletter_read_file($tmp, $ext);
 }
 
 function hsg_newsletter_saved_columns(PDO $pdo): array {
@@ -765,7 +983,10 @@ function hsg_newsletter_import_apply(PDO $pdo, array $rows, array $cols, string 
     }
 }
 
-/* Forhåndsvisningen ligger kun i sessionen (Kims fil kan indeholde andre persondata). */
+/*
+ * Forhåndsvisningen ligger kun i sessionen og aldrig i databasen (Kims fil kan indeholde andre persondata).
+ * Den slettes, når importen er gennemført eller annulleret, og når den er udløbet.
+ */
 
 function hsg_newsletter_preview_create(array $data): string {
     $token = bin2hex(random_bytes(16));
@@ -773,10 +994,17 @@ function hsg_newsletter_preview_create(array $data): string {
     return $token;
 }
 
+/** Sletter en udløbet forhåndsvisning uanset token, så filens indhold ikke bliver liggende i sessionen. */
+function hsg_newsletter_preview_expire(): void {
+    if (!array_key_exists('newsletter_import', $_SESSION ?? [])) return;
+    $p = $_SESSION['newsletter_import'];
+    if (!is_array($p) || time() - (int)($p['created'] ?? 0) > HSG_NEWSLETTER_PREVIEW_TTL) unset($_SESSION['newsletter_import']);
+}
+
 function hsg_newsletter_preview_load(string $token): ?array {
+    hsg_newsletter_preview_expire();
     $p = $_SESSION['newsletter_import'] ?? null;
     if (!is_array($p) || $token === '' || !hash_equals((string)($p['token'] ?? ''), $token)) return null;
-    if (time() - (int)($p['created'] ?? 0) > HSG_NEWSLETTER_PREVIEW_TTL) { unset($_SESSION['newsletter_import']); return null; }
     return $p;
 }
 

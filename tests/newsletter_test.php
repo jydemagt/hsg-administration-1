@@ -6,6 +6,7 @@ declare(strict_types=1);
  *   php tests/newsletter_test.php
  */
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
+ini_set('memory_limit', '512M'); // zip-bombe-testen bygger et ark på 30 MB
 
 $root = dirname(__DIR__);
 require_once $root.'/functions.php';
@@ -173,6 +174,116 @@ eq('navn afkortes til 180 tegn', 180, preg_match_all('/./su', hsg_newsletter_cle
 $rows = hsg_newsletter_export_rows(['email' => 'kim@firma.dk', 'name' => '=CMD()', 'company' => '', 'segment' => 'dealer', 'status' => 'active', 'source' => 'manual', 'created_at' => '2026-10-20 10:42:00', 'last_import_at' => null, 'unsubscribed_at' => null, 'unsubscribe_via' => null]);
 eq('eksport: kolonner', ['Mail', 'Navn', 'Firma', 'Type', 'Status', 'Kilde', 'Oprettet', 'Sidst set i import', 'Afmeldt', 'Afmeldt hvordan'], $rows[0]);
 t('eksport: navn som formel neutraliseres', str_contains(hsg_newsletter_csv($rows), "'=CMD()"));
+
+// Grænser i importen (reviewet af trin 1, BØR 1 og 2)
+function nl_throws(callable $fn): string {
+    try { $fn(); return ''; } catch (Throwable $e) { return $e->getMessage(); }
+}
+eq('celle afkortes til 320 tegn', 320, strlen(hsg_newsletter_cap_cell(str_repeat('x', 400))));
+$long = hsg_newsletter_cap_cell(str_repeat('æ', 5000));
+t('lang celle med æ: 320 tegn og gyldig UTF-8', preg_match_all('/./su', $long) === 320 && preg_match('//u', $long) === 1);
+eq('lang Windows-1252-celle omsættes og afkortes', str_repeat('ø', 320), hsg_newsletter_cap_cell(str_repeat("\xF8", 5000)));
+eq('kort celle renses som før', 'Søren', hsg_newsletter_cap_cell(" S\xF8ren "));
+eq('række afkortes til 30 kolonner', 30, count(hsg_newsletter_cap_row(range(1, 40))));
+$cs = hsg_newsletter_clean_sheets(['Ark 1' => [array_merge([str_repeat('y', 400)], array_fill(0, 39, 'z'))]]);
+t('clean_sheets: 30 kolonner og 320 tegn pr. celle', count($cs['sheets']['Ark 1'][0]) === 30 && strlen($cs['sheets']['Ark 1'][0][0]) === 320);
+eq('fil over 5 MB afvises før læsning', 'Filen er for stor (højst 5 MB).', nl_throws(static fn() => hsg_newsletter_read_upload(['error' => UPLOAD_ERR_OK, 'size' => 5 * 1024 * 1024 + 1, 'tmp_name' => __FILE__, 'name' => 'liste.csv'])));
+t('fil på præcis 5 MB afvises ikke på størrelsen', nl_throws(static fn() => hsg_newsletter_read_upload(['error' => UPLOAD_ERR_OK, 'size' => 5 * 1024 * 1024, 'tmp_name' => __FILE__, 'name' => 'liste.csv'])) === 'Vælg en Excel-fil (.xlsx) eller CSV-fil.');
+
+$tmpFiles = [];
+$tmp = static function (string $content, string $ext) use (&$tmpFiles): string {
+    $f = tempnam(sys_get_temp_dir(), 'nl').'.'.$ext;
+    file_put_contents($f, $content);
+    return $tmpFiles[] = $f;
+};
+
+// CSV
+$csv = $tmp("\xEF\xBB\xBFNavn;E-mail\r\nS\xF8ren;s@x.dk\r\n\r\n;;\r\n\"Kim; H\";k@x.dk\r\n\r\n", 'csv');
+$d = hsg_newsletter_read_file($csv, 'csv');
+eq('CSV: tomme rækker springes over', [['Navn', 'E-mail'], ['Søren', 's@x.dk'], ['Kim; H', 'k@x.dk']], $d['sheets']['CSV']);
+eq('CSV: rækkenumre følger filen', [1, 2, 5], $d['rownums']['CSV']);
+$rows5000 = '';
+for ($i = 1; $i <= 5000; $i++) $rows5000 .= "a$i@x.dk\n";
+eq('CSV: 5.000 rækker og tomme rækker til sidst godtages', 5000, count(hsg_newsletter_read_file($tmp($rows5000.str_repeat(",,,\n", 3000), 'csv'), 'csv')['sheets']['CSV']));
+eq('CSV: række 5.001 afvises', 'Filen har mere end 5.000 rækker.', nl_throws(static fn() => hsg_newsletter_read_file($tmp("E-mail\n".$rows5000, 'csv'), 'csv')));
+eq('CSV: tom fil', 'Filen indeholder ingen gyldige mailadresser.', nl_throws(static fn() => hsg_newsletter_read_file($tmp('', 'csv'), 'csv')));
+
+// xlsx (kræver zip og xmlreader, som på webhotellet)
+if (class_exists('ZipArchive') && class_exists('XMLReader')) {
+    $ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"';
+    $xlsx = static function (string $sheet, ?string $shared = null, ?string $sheet2 = null) use ($tmp): string {
+        $f = $tmp('', 'xlsx'); unlink($f);
+        $z = new ZipArchive();
+        $z->open($f, ZipArchive::CREATE);
+        $z->addFromString('xl/worksheets/sheet1.xml', $sheet);
+        if ($sheet2 !== null) $z->addFromString('xl/worksheets/sheet2.xml', $sheet2);
+        if ($shared !== null) $z->addFromString('xl/sharedStrings.xml', $shared);
+        $z->close();
+        return $f;
+    };
+    $ws = static fn(string $rows, string $ns): string => '<?xml version="1.0"?><worksheet '.$ns.'><sheetData>'.$rows.'</sheetData></worksheet>';
+
+    $f = $xlsx($ws('<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>'
+        .'<row r="3"><c r="A3" t="inlineStr"><is><t>Kim</t></is></c><c r="B3" t="s"><v>2</v></c></row>'
+        .'<row r="4"><c r="A4" s="1"/><c r="B4" s="1"/></row><row r="5"/>'
+        .'<row><c t="inlineStr"><is><t>Pia</t></is></c><c><v>pia@x.dk</v></c></row>', $ns),
+        '<?xml version="1.0"?><sst '.$ns.'><si><t>Navn</t></si><si><r><t>E-</t></r><r><t>mail</t></r><rPh sb="0" eb="1"><t>X</t></rPh></si><si><t xml:space="preserve"> kim@x.dk </t></si></sst>');
+    $d = hsg_newsletter_read_file($f, 'xlsx');
+    eq('xlsx: delte strenge, tekstceller og rich text (uden fonetisk afsnit)', [['Navn', 'E-mail'], ['Kim', 'kim@x.dk'], ['Pia', 'pia@x.dk']], $d['sheets']['Ark 1']);
+    eq('xlsx: Excel-rækkenumre, tomme og formaterede tomme rækker springes over, r mangler', [1, 3, 6], $d['rownums']['Ark 1']);
+
+    $f = $xlsx('<?xml version="1.0"?><x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData><x:row r="2"><x:c r="D2" t="inlineStr"><x:is><x:t>a@x.dk</x:t></x:is></x:c></x:row></x:sheetData></x:worksheet>');
+    eq('xlsx: navnerum med præfiks', ['Ark 1' => [['', '', '', 'a@x.dk']]], hsg_newsletter_read_file($f, 'xlsx')['sheets']);
+
+    $cells = '';
+    for ($i = 0; $i < 40; $i++) $cells .= '<c r="'.hsg_newsletter_col_letter($i).'1" t="inlineStr"><is><t>K'.$i.'</t></is></c>';
+    $f = $xlsx($ws('<row r="1">'.$cells.'<c r="XFD1"><v>9</v></c></row><row r="2"><c r="D2" t="inlineStr"><is><t>a@x.dk</t></is></c><c r="XFD2"><v>9</v></c></row>', $ns));
+    $d = hsg_newsletter_read_file($f, 'xlsx');
+    t('xlsx: kun kolonne A–AD læses (også ved en celle i XFD)', count($d['sheets']['Ark 1'][0]) === 30 && $d['sheets']['Ark 1'][0][29] === 'K29' && count($d['sheets']['Ark 1'][1]) === 4);
+
+    $f = $xlsx($ws('<row r="1"><c r="A1" t="inlineStr"><is><t>'.str_repeat('A', HSG_NEWSLETTER_MAX_XLSX_XML + 1).'</t></is></c></row>', $ns));
+    t('zip-bomben er lille pakket', filesize($f) < 1024 * 1024);
+    $t0 = microtime(true);
+    eq('xlsx: over 30 MB udpakket afvises', HSG_NEWSLETTER_XLSX_TOO_BIG, nl_throws(static fn() => hsg_newsletter_read_file($f, 'xlsx')));
+    t('xlsx: zip-bomben afvises uden at blive pakket ud', microtime(true) - $t0 < 0.5);
+    $half = str_repeat('B', intdiv(HSG_NEWSLETTER_MAX_XLSX_XML, 2));
+    eq('xlsx: arkene og de delte strenge lægges sammen', HSG_NEWSLETTER_XLSX_TOO_BIG, nl_throws(static fn() => hsg_newsletter_read_file(
+        $xlsx($ws('<row r="1"><c r="A1"><v>'.$half.'</v></c></row>', $ns), '<sst '.$ns.'><si><t>'.$half.'</t></si></sst>'), 'xlsx')));
+    eq('xlsx: for mange delte strenge afvises', HSG_NEWSLETTER_XLSX_TOO_BIG, nl_throws(static fn() => hsg_newsletter_read_file(
+        $xlsx($ws('<row r="1"><c r="A1" t="s"><v>0</v></c></row>', $ns), '<sst '.$ns.'>'.str_repeat('<si/>', HSG_NEWSLETTER_MAX_SHARED + 1).'</sst>'), 'xlsx')));
+
+    $rows = '';
+    for ($i = 1; $i <= 2000; $i++) {
+        $rows .= '<row r="'.$i.'">';
+        for ($c = 0; $c < 30; $c++) $rows .= '<c r="'.hsg_newsletter_col_letter($c).$i.'" t="s"><v>0</v></c>';
+        $rows .= '</row>';
+    }
+    eq('xlsx: én delt streng genbrugt i mange celler (over 10 MB tekst) afvises', 'Filen indeholder for meget tekst. Gem kun kolonnerne med mail, navn, firma og type i en ny fil, og prøv igen.',
+        nl_throws(static fn() => hsg_newsletter_read_file($xlsx($ws($rows, $ns), '<sst '.$ns.'><si><t>'.str_repeat('s', 320).'</t></si></sst>'), 'xlsx')));
+    $rows = '';
+    for ($i = 1; $i <= 3000; $i++) $rows .= '<row r="'.$i.'"><c r="D'.$i.'"><v>'.$i.'</v></c></row>';
+    eq('xlsx: 6.000 rækker fordelt på to ark afvises', 'Filen har mere end 5.000 rækker.', nl_throws(static fn() => hsg_newsletter_read_file($xlsx($ws($rows, $ns), null, $ws($rows, $ns)), 'xlsx')));
+    eq('xlsx: ødelagt XML', 'Excel-filen kunne ikke læses. Gem den igen som Excel-fil (.xlsx) eller CSV-fil, og prøv igen.', nl_throws(static fn() => hsg_newsletter_read_file($xlsx($ws('<row r="1"><c r="A1"><v>1</v></row>', $ns)), 'xlsx')));
+    eq('xlsx: tom fil', 'Kunne ikke åbne Excel-filen.', nl_throws(static fn() => hsg_newsletter_read_file($tmp('', 'xlsx'), 'xlsx')));
+    eq('xlsx: ikke en zip-fil', 'Kunne ikke åbne Excel-filen.', nl_throws(static fn() => hsg_newsletter_read_file($tmp("E-mail\na@x.dk\n", 'xlsx'), 'xlsx')));
+} else {
+    echo "(xlsx-test sprunget over: zip eller xmlreader mangler)\n";
+}
+foreach ($tmpFiles as $f) { @unlink($f); @unlink(substr($f, 0, -strlen(pathinfo($f, PATHINFO_EXTENSION)) - 1)); }
+
+// Forhåndsvisningen i sessionen
+$_SESSION = ['newsletter_import' => ['token' => 'abc', 'created' => time() - HSG_NEWSLETTER_PREVIEW_TTL - 1, 'sheets' => []], 'andet' => 1];
+hsg_newsletter_preview_expire();
+t('udløbet forhåndsvisning slettes uanset token', !isset($_SESSION['newsletter_import']) && $_SESSION['andet'] === 1);
+$_SESSION['newsletter_import'] = ['token' => 'abc', 'created' => time(), 'sheets' => []];
+hsg_newsletter_preview_expire();
+t('ny forhåndsvisning bevares', isset($_SESSION['newsletter_import']));
+t('forkert token giver null, men sletter ikke en gyldig forhåndsvisning', hsg_newsletter_preview_load('forkert') === null && isset($_SESSION['newsletter_import']));
+$_SESSION['newsletter_import'] = 'ødelagt';
+hsg_newsletter_preview_expire();
+t('ugyldig forhåndsvisning slettes', !isset($_SESSION['newsletter_import']));
+$_SESSION['newsletter_import'] = ['token' => 'abc', 'created' => time() - HSG_NEWSLETTER_PREVIEW_TTL - 1];
+t('udløbet forhåndsvisning med rigtigt token giver null og slettes', hsg_newsletter_preview_load('abc') === null && !isset($_SESSION['newsletter_import']));
 
 echo "Nyhedsbrev: $passes bestået, $fails fejlet\n";
 exit($fails === 0 ? 0 : 1);

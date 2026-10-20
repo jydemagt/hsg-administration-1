@@ -5,7 +5,7 @@ return [
     // Trin 1: modtagertabel og standard "ingen adgang" for eksisterende login-brugere.
     '1.0.0' => static function(PDO $pdo): void {
         if (!db_table_exists($pdo, 'hsg_newsletter_recipients')) {
-            $pdo->exec("CREATE TABLE hsg_newsletter_recipients (
+            $pdo->exec("CREATE TABLE IF NOT EXISTS hsg_newsletter_recipients (
                 id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
                 email VARCHAR(190) NULL,
                 email_hash CHAR(64) NOT NULL,

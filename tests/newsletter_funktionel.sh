@@ -28,6 +28,13 @@ nflink() { nfpage "$BASE/newsletter_recipients.php?id=$1" >/dev/null; grep -o 'v
 nfcode() { curl -s -o "$NF/pub.html" -w '%{http_code}' "$@"; }
 
 info "Nyhedsbrev: funktionel test af trin 1"
+# Værn: testen sletter modtagere, så den må kun køre mod testdatabasen i HSG_TEST_DB_NAME.
+NFDB=$(php -r '$c = require $argv[1]; echo (string)($c["db_name"] ?? "");' "$ROOT/config.php" 2>/dev/null)
+if [ -z "${HSG_TEST_DB_NAME:-}" ] || [ "$NFDB" != "$HSG_TEST_DB_NAME" ]; then
+  bad "Nyhedsbrev: config.php peger ikke på testdatabasen HSG_TEST_DB_NAME – den funktionelle test er ikke kørt"
+  rm -rf "$NF"
+  return 0
+fi
 nfsql "DELETE FROM hsg_newsletter_recipients" >/dev/null
 
 # ---------- Kriterie 6, 9: kolonne D, ugyldige med Excel-rækkenummer (række 4 er udeladt i filen) ----------
@@ -87,6 +94,33 @@ nfpage "$BASE/newsletter_recipients.php" >/dev/null
 nfchk "K28 modtagerlisten: escaped" '! grep -q "<script>alert" "$NF/page.html" && grep -q "&lt;script&gt;alert(1)&lt;/script&gt;" "$NF/page.html"'
 nfpage "$BASE/newsletter_recipients.php?id=$XID" >/dev/null
 nfchk "K28 redigér-siden: escaped" '! grep -q "<img src=x" "$NF/page.html" && grep -q "&lt;img src=x onerror=alert(2)&gt;" "$NF/page.html"'
+nfchk "BØR3 redigér-siden: sletning beskrives som hash (SHA-256), ikke som uigenkendelig eller anonymiseret" 'grep -q "Mailadressen gemmes kun som en hash (SHA-256), så den ikke importeres igen." "$NF/page.html" && ! grep -qiE "uigenkendelig|anonymiser" "$NF/page.html"'
+
+# ---------- Reviewet af trin 1: grænser i importen (BØR 1 og 2) ----------
+nfupload() { # fil -> HTTP-kode efter analyse og viderestilling; siden ligger i page.html
+  local T; T=$(token "$BASE/newsletter_import.php")
+  ( cd "$NF" && curl -s -L -b "$JAR" -c "$JAR" -o "$NF/page.html" -w '%{http_code}' -F "csrf=$T" -F action=analyse -F mode=customer -F "file=@$1" "$BASE/newsletter_import.php" )
+}
+head -c $((5 * 1024 * 1024 + 1)) /dev/zero | tr '\0' 'a' > "$NF/stor.csv"
+c=$(nfupload stor.csv)
+nfchk "BØR1 CSV over 5 MB: dansk fejltekst, ikke HTTP 500" '[ "$c" = "200" ] && nfflash | grep -q "Filen er for stor (højst 5 MB)."'
+php -d memory_limit=512M -r '$z = new ZipArchive(); $z->open($argv[1], ZipArchive::CREATE);
+  $z->addFromString("xl/worksheets/sheet1.xml", "<?xml version=\"1.0\"?><worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData><row r=\"1\"><c r=\"A1\" t=\"inlineStr\"><is><t>".str_repeat("A", 40 * 1024 * 1024)."</t></is></c></row></sheetData></worksheet>");
+  $z->close();' "$NF/bombe.xlsx"
+c=$(nfupload bombe.xlsx)
+nfchk "BØR1 zip-bombe (40 MB udpakket, under 1 MB pakket): dansk fejltekst, ikke HTTP 500" '[ "$c" = "200" ] && [ "$(wc -c < "$NF/bombe.xlsx")" -lt 1048576 ] && nfflash | grep -q "Excel-filen fylder for meget, når den pakkes ud."'
+{ echo "E-mail"; for i in $(seq 1 5000); do echo "r$i@x.dk"; done; } > "$NF/5001.csv"
+c=$(nfupload 5001.csv)
+nfchk "BØR1 CSV med 5.001 rækker afvises" '[ "$c" = "200" ] && nfflash | grep -q "Filen har mere end 5.000 rækker."'
+nfxlsx bred.xlsx "$(php -r '$h = ["E-mail"]; for ($i = 1; $i < 40; $i++) $h[] = "H$i"; echo json_encode([$h, array_merge(["bred1@x.dk"], array_fill(0, 39, "v")), [str_repeat("q", 400)]]);')"
+P=$(nfanalyse bred.xlsx customer); nfpreview "$P"
+Q320=$(printf 'q%.0s' $(seq 1 320))
+nfchk "BØR2 bred fil: kun kolonne A–AD kan vælges, og en lang celle står med 320 tegn" 'grep -q "<option value=\"29\"[^>]*>Kolonne AD" "$NF/page.html" && ! grep -q "<option value=\"30\"" "$NF/page.html" && grep -q "række 3: \"$Q320\"" "$NF/page.html" && ! grep -q "${Q320}q" "$NF/page.html"'
+T=$(token "$BASE/newsletter_import.php"); curl -s -b "$JAR" -c "$JAR" -o /dev/null "$BASE/newsletter_import.php" -d "csrf=$T" -d action=cancel -d "preview_token=$P"
+
+# ---------- KAN: mailadressen i listen er et link til redigering (mobil) ----------
+nfpage "$BASE/newsletter_recipients.php" >/dev/null; KID=$(nfid kim@firma.dk)
+nfchk "KAN mailadressen i listen er et link til ?id= (uden mailadresse i URL'en)" 'grep -q "<td><a href=\"newsletter_recipients.php?id=$KID\">kim@firma.dk</a></td>" "$NF/page.html"'
 
 # ---------- Kriterie 17: manuel tilføjelse ----------
 nfpost "$BASE/newsletter_recipients.php" -d action=create -d email=ikke-en-mail -d segment=customer >/dev/null
@@ -132,6 +166,12 @@ nfchk "K21 ugyldige tokens (GET og POST) giver 404 med neutral tekst, uden PHP-f
 hdr=$(curl -s -D - -o /dev/null -X POST "$URL3")
 nfchk "K24 headerne sendes også på 419-svar" 'echo "$hdr" | grep -qi "^Referrer-Policy: no-referrer" && echo "$hdr" | grep -qi "^X-Robots-Tag: noindex" && echo "$hdr" | grep -qi "^Cache-Control: no-store"'
 
+# ---------- KAN: en databasefejl på afmeldingssiden giver en neutral HTTP 500 ----------
+nfsql "ALTER TABLE hsg_newsletter_recipients RENAME COLUMN token_hash TO token_hash_test" >/dev/null
+c=$(nfcode "$URL3"); cp "$NF/pub.html" "$NF/pub500.html"; c2=$(nfcode -d 'List-Unsubscribe=One-Click' "$URL3")
+nfsql "ALTER TABLE hsg_newsletter_recipients RENAME COLUMN token_hash_test TO token_hash" >/dev/null
+nfchk "KAN afmeldingssiden ved databasefejl: HTTP 500 med neutral dansk tekst uden SQL og PHP-fejl (GET og ét klik)" '[ "$c" = "500" ] && [ "$c2" = "500" ] && grep -q "Afmeldingen kunne ikke gennemføres lige nu" "$NF/pub500.html" && ! grep -qiE "SQLSTATE|PDO|Fatal|Uncaught|Warning:|token_hash|@" "$NF/pub500.html" "$NF/pub.html" && [ "$(nfcode "$URL3")" = "200" ] && [ "$(nfstatus c1@z.dk)" = "active" ]'
+
 # ---------- Afvigelse 2: en stoppet modtager kan afmelde sig ----------
 nfpost "$BASE/newsletter_recipients.php" -d action=create -d email=stop3@x.dk -d segment=customer >/dev/null; SID3=$(nfid stop3@x.dk)
 nfpost "$BASE/newsletter_recipients.php" -d action=stop -d id="$SID3" >/dev/null; SURL=$(nflink "$SID3")
@@ -149,6 +189,7 @@ nfchk "K23 modul slået til igen: siden virker" '[ "$(nfpage "$BASE/newsletter_r
 # ---------- Kriterie 25, 26: slet og eksportér ----------
 nfpost "$BASE/newsletter_recipients.php" -d action=create -d email=slet@x.dk --data-urlencode "name=Slet Mig" -d segment=customer >/dev/null; SID=$(nfid slet@x.dk); SURL=$(nflink "$SID")
 nfpost "$BASE/newsletter_recipients.php" -d action=delete -d id="$SID" >/dev/null
+nfchk "BØR3 slet: beskeden siger hash (SHA-256), ikke uigenkendelig" 'nfflash | grep -q "Modtageren er slettet. Mailadressen gemmes kun som en hash (SHA-256), så den ikke importeres igen." && ! nfflash | grep -qi "uigenkendelig"'
 nfchk "K25 email, navn, firma, token_hash og token_cipher er NULL, status deleted, email_hash bevaret" '[ "$(nfsql "SELECT CONCAT(IFNULL(email,'"'"'N'"'"'),IFNULL(name,'"'"'N'"'"'),IFNULL(company,'"'"'N'"'"'),IFNULL(token_hash,'"'"'N'"'"'),IFNULL(token_cipher,'"'"'N'"'"'),status) FROM hsg_newsletter_recipients WHERE id=$SID")" = "NNNNNdeleted" ] && [ "$(nfsql "SELECT email_hash FROM hsg_newsletter_recipients WHERE id=$SID")" = "$(printf slet@x.dk | sha256sum | cut -d" " -f1)" ]'
 nfchk "K25 vises ikke i listen, redigér = 404, gammelt link = 404, audit logget" '[ "$(nfpage "$BASE/newsletter_recipients.php?id=$SID")" = "404" ] && [ "$(nfcode "$SURL")" = "404" ] && [ "$(nfsql "SELECT COUNT(*) FROM hsg_audit_log WHERE action='"'"'newsletter.recipient.delete'"'"' AND entity_id='"'"'$SID'"'"'")" = "1" ]'
 nfpost "$BASE/newsletter_recipients.php" -d action=create -d email=csv@x.dk --data-urlencode "name==CMD()" -d segment=dealer >/dev/null; CID=$(nfid csv@x.dk)
