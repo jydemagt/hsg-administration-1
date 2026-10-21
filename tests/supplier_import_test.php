@@ -2,7 +2,8 @@
 declare(strict_types=1);
 /*
  * Enhedstest af Kims uploadfil (core/supplier_import.php).
- * Kun rene funktioner med syntetiske data: ingen database, ingen ZipArchive og intet netværk.
+ * Kun rene funktioner med syntetiske data: ingen database, ingen ZipArchive og intet netværk. Alias-opslaget
+ * testes med en fake-PDO (FakeAliasPdo) og en stub af db_table_exists. KAN-3 bruger en midlertidig fil i systemets temp-mappe.
  * Køres af tests/run.sh:  php tests/supplier_import_test.php   (exit-kode ≠ 0 ved fejl)
  */
 
@@ -89,6 +90,41 @@ function item_by_sku(array $items, string $sku): ?array {
     foreach ($items as $it) if (strcasecmp((string)($it['source']['sku'] ?? ''), $sku) === 0) return $it;
     return null;
 }
+
+/*
+ * Fake-PDO til alias-opslaget i hsg_supplier_find_match (spec 2026-10-20, afsnit 8). Ingen database:
+ * svarer kun på "SELECT product_id FROM hsg_supplier_sku_aliases …" ud fra et kort [leverandør-SKU => product_id]
+ * uden forskel på store og små bogstaver (som MySQL-kollationen). Alle andre forespørgsler kaster en undtagelse.
+ */
+final class FakeAliasPdo extends PDO {
+    /** @param array<string,int> $aliases */
+    public function __construct(private array $aliases = []) {}
+    public function prepare(string $query, array $options = []): PDOStatement|false {
+        if (preg_match('/^\s*SELECT\s+product_id\s+FROM\s+hsg_supplier_sku_aliases\b/i', $query) !== 1) throw new LogicException('FakeAliasPdo: uventet forespørgsel: '.$query);
+        return new FakeAliasStatement($this->aliases);
+    }
+    public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement|false { throw new LogicException('FakeAliasPdo: uventet forespørgsel: '.$query); }
+    public function exec(string $statement): int|false { throw new LogicException('FakeAliasPdo: uventet forespørgsel: '.$statement); }
+}
+final class FakeAliasStatement extends PDOStatement {
+    private int|false $result = false;
+    /** @param array<string,int> $aliases */
+    public function __construct(private array $aliases) {}
+    public function execute(?array $params = null): bool {
+        $sku = (string)($params[0] ?? '');
+        $this->result = false;
+        foreach ($this->aliases as $alias => $pid) if (strcasecmp((string)$alias, $sku) === 0) { $this->result = (int)$pid; break; }
+        return true;
+    }
+    public function fetchColumn(int $column = 0): mixed { return $this->result; }
+}
+if (!function_exists('db_table_exists')) {
+    /** Stub: den rigtige ligger i migrations.php, som ikke indlæses her. Kun alias-tabellen "findes". */
+    function db_table_exists(PDO $pdo, string $table): bool { return $table === 'hsg_supplier_sku_aliases'; }
+}
+
+/** Kildekoden til en fil i projektet (til de få tjek af sidens tekster, der ikke kræver en server). */
+function project_source(string $relative): string { return (string)file_get_contents(__DIR__.'/../'.$relative); }
 
 /* ---------- A. Kolonnegæt ---------- */
 
@@ -415,6 +451,188 @@ t_case('31 Ny reservation efter previewet bruges ved Anvend (ren del)', function
 t_case('stock_file_total er aldrig en ændring', function () {
     $changes = hsg_supplier_changes_for_product(['stock_file_total' => 99, 'stock_loc_1' => 1], hsg_product(['stock_loc_1' => 1]));
     t_eq([], $changes, 'ingen ændringer');
+});
+
+/* ---------- E. Rettelser efter review (tillæg 2026-10-20, kriterie 39–59) ----------
+ * Kriterie 43 dækkes af de eksisterende tests 21, 22, 23, 23b, F2 og 26, og kriterie 52 af test 1, 2, 4, 5, 6 og 8.
+ * Kriterie 57 (siden) og den del af 59, der kræver en POST, testes også i tests/supplier_upload_flow_test.php. */
+
+// R1 – basens ejer og brand-filter
+
+t_case('39 Gammel alias-kobling og brand-filter: 12-1123a matcher ikke 12-1123', function () {
+    $product = hsg_product(['id' => 21, 'sku' => '12-1123', 'name' => 'St. Bridget Kirk, John Barleycorn Edition', 'distillery' => 'N/A', 'brand_id' => 9, 'stock_loc_1' => 15]);
+    $pdo = new FakeAliasPdo(['12-1123a' => 21]);
+    $items = hsg_supplier_merge_raw_items([clynelish_rows()[1]], kim_map(false), [$product], 5, 1, $pdo, merge_opts());
+    t_eq(1, count($items), 'én vare');
+    if (count($items) !== 1) return;
+    t_eq('12-1123a', $items[0]['source']['sku'] ?? null, 'source.sku');
+    t_true((int)$items[0]['match']['id'] !== 21, 'match.id ≠ 21');
+    t_true(in_array('variant_split', $items[0]['flags'], true), 'flag variant_split');
+    t_has_note($items[0], '12-1123a er ikke flettet med 12-1123', 'bemærkning');
+    t_true(!$items[0]['selected'], 'ikke forvalgt');
+});
+
+t_case('40 Basen er kun koblet via alias: 12-1123 beholder HSG-55, 12-1123a står alene', function () {
+    $product = hsg_product(['id' => 55, 'sku' => 'HSG-55', 'name' => 'St. Bridget Kirk, John Barleycorn Edition', 'distillery' => 'N/A', 'brand_id' => 9, 'stock_loc_1' => 24]);
+    $pdo = new FakeAliasPdo(['12-1123' => 55, '12-1123a' => 55]);
+    $rows = [clynelish_rows()[1], clynelish_rows()[0]];   // 12-1123a står først i filen
+    $items = hsg_supplier_merge_raw_items($rows, kim_map(false), [$product], 9, 1, $pdo, merge_opts());
+    $base = item_by_sku($items, '12-1123');
+    $variant = item_by_sku($items, '12-1123a');
+    t_true($base !== null && $variant !== null, 'begge varenumre findes');
+    if ($base === null || $variant === null) return;
+    t_eq(55, $base['match']['id'], '12-1123 matcher 55');
+    t_true(!in_array('match_conflict', $base['flags'], true), '12-1123 har intet match_conflict');
+    t_true((int)$variant['match']['id'] !== 55, '12-1123a matcher ikke 55');
+    t_true(in_array('variant_split', $variant['flags'], true), '12-1123a har flag variant_split');
+    t_true(!$variant['selected'], '12-1123a er ikke forvalgt');
+});
+
+function jane_2015_product(): array {
+    return hsg_product(['id' => 30, 'sku' => '17-1030', 'name' => 'Jane Street 2015', 'distillery' => 'Jane', 'brand_id' => 9, 'stock_loc_1' => 1]);
+}
+function jane_2015_variant_row(): array {
+    return kim_row(['sku' => '17-1030a', 'name' => 'Jane Street 2015', 'dist' => 'Jane', 'R' => 4]);
+}
+
+t_case('41 Brand-filteret respekteres: varianten flettes ikke ind i et produkt fra et andet brand', function () {
+    $items = hsg_supplier_merge_raw_items([jane_2015_variant_row()], kim_map(false), [jane_2015_product()], 5, 1, new FakeAliasPdo([]), merge_opts());
+    t_eq(1, count($items), 'én vare');
+    if (count($items) !== 1) return;
+    t_eq([], $items[0]['merged_skus'], 'merged_skus = []');
+    t_eq('17-1030a', $items[0]['source']['sku'] ?? null, 'source.sku');
+    t_true(!in_array('variant_split', $items[0]['flags'], true), 'intet variant_split');
+    t_true((int)$items[0]['match']['id'] !== 30, 'match.id ≠ 30');
+});
+
+t_case('42 Gemt alias for basen: varianten flettes ind som i dag, også med brand-filter', function () {
+    $items = hsg_supplier_merge_raw_items([jane_2015_variant_row()], kim_map(false), [jane_2015_product()], 5, 1, new FakeAliasPdo(['17-1030' => 30]), merge_opts());
+    t_eq(1, count($items), 'én vare');
+    if (count($items) !== 1) return;
+    t_eq(30, $items[0]['match']['id'], 'match.id = 30');
+    t_eq('17-1030', $items[0]['source']['sku'] ?? null, 'source.sku');
+    t_eq(['17-1030a'], $items[0]['merged_skus'], 'merged_skus');
+});
+
+// R2 – fadnummer uden ciffer
+
+t_case('44 Fadnummer uden ciffer tæller som tomt (variant_compatible)', function () {
+    $name = 'Benriach 2010 Sherry Cask Finish';
+    t_eq(['ok' => true, 'reason' => 'samme navn'], hsg_supplier_variant_compatible(['name' => $name, 'cask_number' => 'FINISH'], ['name' => $name, 'cask_number' => '4567']), 'FINISH over for 4567');
+    t_true(hsg_supplier_variant_compatible(['name' => $name, 'cask_number' => 'CRAFT'], ['name' => $name, 'cask_number' => 'FINISH'])['ok'], 'CRAFT over for FINISH');
+});
+
+t_case('45 Rigtige fadnumre afviser stadig', function () {
+    $r = hsg_supplier_variant_compatible(['name' => 'Ben Nevis 1996', 'cask_number' => 'R10/123'], ['name' => 'Ben Nevis 1996', 'cask_number' => 'R10/124']);
+    t_eq(false, $r['ok'], 'R10/123 over for R10/124: ok=false');
+    t_true(str_contains($r['reason'], 'forskelligt fadnummer'), 'reason: '.$r['reason']);
+});
+
+t_case('46 match_score: "fadnummer er identisk" kræver et ciffer', function () {
+    $m = hsg_supplier_match_score(['name' => 'Glenfarclas 15 Cask Strength', 'cask_number' => 'STRENGTH'], ['id' => 1, 'sku' => 'X-1', 'name' => 'Ardbeg Corryvreckan Cask Strength', 'cask_number' => 'STRENGTH']);
+    t_true($m['score'] < 90, 'STRENGTH/STRENGTH: score under 90 (fik '.$m['score'].')');
+    t_true(!str_contains($m['reason'], 'fadnummer er identisk'), 'STRENGTH/STRENGTH: reason uden "fadnummer er identisk" ('.$m['reason'].')');
+    t_eq(['score' => 98, 'reason' => 'fadnummer er identisk'], hsg_supplier_match_score(['name' => 'Clynelish 2013', 'cask_number' => '231584'], ['id' => 2, 'sku' => 'X-2', 'name' => 'St. Bridget Kirk', 'cask_number' => '231584']), '231584/231584 uændret');
+});
+
+// R3 – lokationsceller
+
+t_case('47 En lokationscelle skal være ét tal', function () {
+    $map = ['stock_loc_1' => 17];
+    foreach (['3 + 2', '2 (1 i bil)', '1/2', 'ca. 5', 'se note 2', '3 2', '1.234', '1,234', '1 234', '?'] as $x) {
+        t_eq(['values' => [], 'blank' => [], 'invalid' => ['stock_loc_1' => $x]], hsg_supplier_location_cells(kim_row(['R' => $x]), $map), 'ugyldig: '.$x);
+    }
+    $numbers = ['41' => 41, '0' => 0, '41.0' => 41, '2,4' => 2, '2.6' => 3, '-2' => 0, "5\u{00A0}" => 5, "\u{202F}7" => 7, '40.999999999999993' => 41,
+        // Ikke i spec'ens tabel: komma med mange decimaler læses også som decimaltegn (ikke som 40999999999999993).
+        '40,999999999999993' => 41];
+    foreach ($numbers as $x => $n) {
+        t_eq(['values' => ['stock_loc_1' => $n], 'blank' => [], 'invalid' => []], hsg_supplier_location_cells(kim_row(['R' => (string)$x]), $map), 'tal: '.json_encode((string)$x, JSON_UNESCAPED_UNICODE));
+    }
+});
+
+t_case('48 Fritekst i en lokationscelle ændrer ikke lokationen', function () {
+    $product = hsg_product(['id' => 48, 'sku' => '48-1', 'name' => 'Fritekst Whisky', 'stock_loc_1' => 5]);
+    $row = kim_row(['sku' => '48-1', 'name' => 'Fritekst Whisky', 'R' => '3 + 2', 'S' => '', 'T' => 12]);
+    $items = hsg_supplier_merge_raw_items([$row], kim_map(false), [$product], null, 1, null, merge_opts());
+    t_eq(1, count($items), 'én vare');
+    if (count($items) !== 1) return;
+    t_eq(['stock_loc_2' => 0, 'stock_loc_3' => 12], $items[0]['stock_file']['locations'], 'stock_file.locations');
+    t_eq(['stock_loc_1' => '3 + 2'], $items[0]['stock_file']['invalid'], 'stock_file.invalid');
+    t_true(!array_key_exists('stock_loc_1', $items[0]['changes']), 'ingen ændring af Christiansfeld');
+    t_has_note($items[0], 'Bemærk: Ugyldig værdi „3 + 2“ for Christiansfeld – lokationen ændres ikke.', 'bemærkning');
+});
+
+// R4 – kolonnegæt
+
+t_case('49 Bar "Price" tager ikke udsalgsprisen fra "Retail Price (inc VAT)"', function () {
+    t_eq([0 => 'sku', 1 => 'name', 2 => 'stock_quantity', 3 => '', 4 => 'wholesale_price', 5 => 'retail_price'],
+        hsg_supplier_suggest_columns(['SKU', 'Product', 'Stock', 'Price', 'Trade Price', 'Retail Price (inc VAT)']), 'kolonnevalg');
+});
+
+t_case('50 Brugerens eksempel uden SKU-kolonne', function () {
+    $map = hsg_supplier_suggest_columns(['Product', 'Stock', 'Price', 'Trade Price', 'Retail Price (inc VAT)']);
+    t_eq('', $map[2] ?? null, 'kolonne 2 (Price)');
+    t_eq('wholesale_price', $map[3] ?? null, 'kolonne 3 (Trade Price)');
+    t_eq('retail_price', $map[4] ?? null, 'kolonne 4 (Retail Price (inc VAT))');
+});
+
+t_case('51 En bar "Price" får første ledige prisfelt (uændret)', function () {
+    t_eq([0 => 'sku', 1 => 'wholesale_price', 2 => 'retail_price'], hsg_supplier_suggest_columns(['SKU', 'Price', 'Retail Price (inc VAT)']), 'SKU, Price, Retail Price (inc VAT)');
+    t_eq([0 => 'sku', 1 => 'wholesale_price', 2 => 'retail_price'], hsg_supplier_suggest_columns(['SKU', 'Trade Price', 'Price']), 'SKU, Trade Price, Price');
+    t_eq([0 => 'sku', 1 => 'wholesale_price'], hsg_supplier_suggest_columns(['SKU', 'Price']), 'SKU, Price');
+});
+
+// KAN-punkter
+
+t_case('56 KAN-1: "Ingen tal i lokationskolonnerne" er en amber bemærkning', function () {
+    $row = kim_row(['sku' => '10-1', 'name' => 'Tom vare', 'R' => '', 'S' => '', 'T' => '', 'Q' => 5]);
+    $items = hsg_supplier_merge_raw_items([$row], kim_map(), [], null, 1, null, merge_opts());
+    t_true(in_array('Bemærk: Ingen tal i lokationskolonnerne – lageret ændres ikke.', $items[0]['notes'] ?? [], true), 'notes indeholder præcis teksten');
+    // Previewet viser bemærkninger, der starter med "Bemærk", i amber.
+    t_true(str_contains(project_source('supplier_upload.php'), "str_starts_with((string)\$note,'Bemærk')?'style=\"color:var(--amber)"), 'supplier_upload.php viser "Bemærk …" i amber');
+});
+
+t_case('57 KAN-2: hjælpetekst under reservationsvalget', function () {
+    $src = project_source('supplier_upload.php');
+    $form = strpos($src, 'name="action" value="reservation_mode"');
+    $text = strpos($src, "<small>Et nyt valg bruges først, når du har trykket 'Genberegn preview'. Tallene beregnes igen med de aktuelle reservationer, når du trykker 'Anvend'.</small>");
+    t_true($text !== false, 'teksten findes i supplier_upload.php');
+    t_true($form !== false && $text !== false && $text > $form, 'teksten står under reservationsvalget');
+});
+
+t_case('58 KAN-3: CSV læses med eksplicit enclosure og escape', function () {
+    $path = tempnam(sys_get_temp_dir(), 'hsgcsv');
+    t_true($path !== false, 'midlertidig fil');
+    if ($path === false) return;
+    $deprecations = [];
+    try {
+        file_put_contents($path, "SKU;Navn\n12-1;\"A;B\"\n");
+        set_error_handler(static function (int $no, string $message, string $file, int $line) use (&$deprecations): bool {
+            if (in_array($no, [E_DEPRECATED, E_USER_DEPRECATED], true)) { $deprecations[] = $message; return true; }
+            throw new ErrorException($message, 0, $no, $file, $line);
+        });
+        try { $result = hsg_supplier_read_csv($path); } finally { restore_error_handler(); }
+        t_eq(['CSV' => [['SKU', 'Navn'], ['12-1', 'A;B']]], $result, 'resultat');
+        t_eq([], $deprecations, 'ingen deprecation fra fgetcsv');
+    } finally {
+        @unlink($path);
+    }
+    $fn = new ReflectionFunction('hsg_supplier_read_csv');
+    $lines = array_slice((array)file((string)$fn->getFileName()), $fn->getStartLine() - 1, $fn->getEndLine() - $fn->getStartLine() + 1);
+    $call = <<<'PHP'
+fgetcsv($fh,0,$d,'"','\\')
+PHP;
+    t_true(str_contains(implode('', $lines), $call), 'koden kalder fgetcsv med eksplicit escape-parameter');
+});
+
+t_case('59 KAN-4: preview-token valideres ét sted', function () {
+    t_true(hsg_supplier_preview_token_valid(str_repeat('abcdef0123', 4)), '40 små hex-tegn er gyldigt');
+    t_true(!hsg_supplier_preview_token_valid(''), "'' er ugyldigt");
+    t_true(!hsg_supplier_preview_token_valid('../x'), "'../x' er ugyldigt");
+    t_true(!hsg_supplier_preview_token_valid(str_repeat('ABCDEF0123', 4)), '40 store hex-tegn er ugyldigt');
+    $message = '';
+    try { hsg_supplier_preview_load('../x'); } catch (RuntimeException $e) { $message = $e->getMessage(); }
+    t_eq('Ugyldigt preview-token.', $message, 'preview_load afviser ../x, før der bygges en filsti');
 });
 
 /* ---------- Resultat ---------- */

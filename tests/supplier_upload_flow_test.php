@@ -3,7 +3,8 @@ declare(strict_types=1);
 /*
  * Flowtest af Kims uploadfil via HTTP (supplier_upload.php) mod den installerede testdatabase:
  * upload → kolonnegæt/husket valg → gæt forfra → lokationskolonner → reservationsvalg → anvend (lager, lagerbevægelser,
- * alias, audit-log, flash) og afvisning af gamle previews (spec 2026-10-19, kriterie 5, 8, 13, 16, 24, 27, 28, 30, 32, 33, 34).
+ * alias, audit-log, flash) og afvisning af gamle previews (spec 2026-10-19, kriterie 5, 8, 13, 16, 24, 27, 28, 30, 32, 33, 34)
+ * samt hjælpeteksten ved reservationsvalget og ugyldige preview-tokens (tillæg 2026-10-20, kriterie 57 og 59).
  *
  * KØRES KUN af tests/run.sh, mens røgtestens server kører:
  *     php tests/supplier_upload_flow_test.php http://127.0.0.1:8787 testadmin 'Test-Pass-12345!'
@@ -188,6 +189,7 @@ try {
         t_true(str_contains(page_text($page['body']), 'Husket valg "Lagerantal i alt" er ikke brugt: overskriften ligner et beløb.'), 'panelet viser bemærkningen');
         t_true(str_contains($page['body'], '<details class="card" open>'), 'panelet åbner automatisk');
         t_true((bool)preg_match('#<option value="add"\s+selected>#', $page['body']), '"add" er forvalgt i reservationsvalget');
+        t_true(str_contains(page_text($page['body']), "Et nyt valg bruges først, når du har trykket 'Genberegn preview'."), '57: hjælpeteksten står under reservationsvalget');
         t_eq('supplier_import.preview', (string)q1($pdo, "SELECT action FROM hsg_audit_log WHERE action='supplier_import.preview' ORDER BY id DESC LIMIT 1"), 'upload logges');
     });
     if ($token === '') throw new RuntimeException('Upload gav intet preview – de øvrige trin springes over');
@@ -255,6 +257,23 @@ try {
         t_true(has_flash($page['body'], 'error', 'Previewet er lavet med en ældre version af systemet. Upload filen igen.'), 'fejl-flash', json_encode(flashes($page['body']), JSON_UNESCAPED_UNICODE));
         t_eq($before, db_stock($pdo, $octo), 'lageret er uændret');
         t_eq($runs, (int)q1($pdo, 'SELECT COUNT(*) FROM hsg_supplier_import_runs'), 'ingen ny import-kørsel');
+    });
+
+    t_case('59 Ugyldigt preview-token: fejlbesked, redirect uden token og ingen ændringer', function () use (&$pv, $http, $octo, $pdo) {
+        $i = item_index($pv, 'TSTKIM-7002');
+        $before = db_stock($pdo, $octo); $runs = (int)q1($pdo, 'SELECT COUNT(*) FROM hsg_supplier_import_runs');
+        $r = $http->post('supplier_upload.php', ['action' => 'apply', 'preview_token' => '../x', 'apply_rows' => [$i], 'product_'.$i => (string)$octo]);
+        t_eq(302, $r['code'], 'POST giver redirect');
+        t_eq('supplier_upload.php', basename((string)parse_url((string)$r['loc'], PHP_URL_PATH)), 'redirect til supplier_upload.php');
+        t_eq(null, parse_url((string)$r['loc'], PHP_URL_QUERY), 'intet token i URL\'en');
+        $page = $http->follow($r);
+        t_true(has_flash($page['body'], 'error', 'Kunne ikke anvende ændringer: Ugyldigt preview-token.'), 'fejl-flash', json_encode(flashes($page['body']), JSON_UNESCAPED_UNICODE));
+        t_eq($before, db_stock($pdo, $octo), 'lageret er uændret');
+        t_eq($runs, (int)q1($pdo, 'SELECT COUNT(*) FROM hsg_supplier_import_runs'), 'ingen ny import-kørsel');
+        // GET med et ugyldigt token viser upload-siden uden preview.
+        $get = $http->get('supplier_upload.php?preview='.rawurlencode('../x'));
+        t_eq(200, $get['code'], 'GET svarer 200');
+        t_true(str_contains($get['body'], 'Upload Kims masterfil') && !str_contains($get['body'], '<h2>Preview:'), 'GET viser upload-siden uden preview');
     });
 
     t_case('13/16/24/27/32/33 Anvend: lager, lagerbevægelser, alias, audit og flash', function () use (&$pv, $http, $root, $token, $L1, $L2, $L3, $alpha, $octo, $epsilon, $pdo, $col) {
