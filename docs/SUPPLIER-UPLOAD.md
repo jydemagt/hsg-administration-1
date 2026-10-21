@@ -28,9 +28,11 @@ Kolonnevalget foreslås i denne rækkefølge:
 
 1. **Husket valg** fra seneste upload (se nedenfor) – også "Ignorer kolonne".
 2. **Præcise match** på overskriften, fra venstre mod højre. Den første kolonne pr. felt vinder.
-3. **Delvise match** for de kolonner, der stadig er tomme, og kun til felter, der ikke allerede er brugt.
+3. **Delvise match** for de kolonner, der stadig er tomme, og kun til felter, der ikke allerede er brugt. Det sker i to trin, begge fra venstre mod højre:
+   1. Overskriften **indeholder** et alias (fx "Retail Price (inc VAT)" → Udsalgspris).
+   2. Derefter, for de kolonner der stadig er tomme: et alias **indeholder** overskriften (fx "Price" → første ledige prisfelt).
 
-Et præcist match vinder derfor altid over et delvist match, uanset kolonnernes placering ("Lagerbeholdning" vinder over "Lagerværdi").
+Et præcist match vinder derfor altid over et delvist match, uanset kolonnernes placering ("Lagerbeholdning" vinder over "Lagerværdi"). En mere præcis overskrift vinder over en bar overskrift: I `SKU, Product, Stock, Price, Trade Price, Retail Price (inc VAT)` bliver "Trade Price" engrospris og "Retail Price (inc VAT)" udsalgspris, mens "Price" ignoreres, fordi begge prisfelter er taget. Ellers får "Price" det første ledige prisfelt i rækkefølgen engrospris, udsalgspris: engrospris i `SKU, Price` og `SKU, Price, Retail Price (inc VAT)`, men udsalgspris i `SKU, Trade Price, Price`.
 
 Ekstra regler:
 
@@ -58,6 +60,8 @@ Et varenummer med ét bogstav direkte efter et tal (fx `17-1028a`) er en variant
   - Står basen i filen, sammenlignes med den første række med basens varenummer. Findes basen kun i HSG, sammenlignes med HSG-produktet.
 - Ved fletning lægges lagerantallet (også pr. lokation) sammen og skrives på `17-1028`. Øvrige oplysninger tages fra rækken uden bogstav. Previewet viser begrundelsen, fx "(samme navn)".
 - Er det **ikke** samme vare, står varianten alene med sit eget varenummer, en bemærkning med begrundelsen og er ikke valgt på forhånd. Dens automatiske match peger aldrig på HSG-produktet med basens varenummer – heller ikke via en gammel alias-kobling, fadnummer eller navn.
+- **Basens ejer** i HSG er produktet, som en gemt alias-kobling for `17-1028` peger på, ellers produktet med SKU `17-1028`. Ejeren findes **uden** brand-filteret og bruges kun til at udelukke: Er varianten ikke samme vare som ejeren, kan dens match hverken pege på ejeren eller på produktet med basens SKU – også når ejeren hører til et andet brand end det valgte, eller kun er koblet via alias (fx et HSG-produkt med SKU `HSG-55`).
+- **Brand-filteret respekteres ved fletning.** Er uploaden begrænset til ét brand, flettes varianten kun ind i basen, når basen findes med brand-filteret (eller via en gemt alias-kobling for basen). Ligger basen uden for brandet, står varianten som en almindelig række.
 - Varianten gemmes som alias (`hsg_supplier_sku_aliases`) for produktet, når ændringerne anvendes. Oprettes en række som nyt produkt, gemmes rækkens eget varenummer også som alias for det nye produkt, og ældre koblinger fra samme varenummer slettes.
 - Findes kun `17-1028a`, og findes `17-1028` heller ikke i HSG, behandles `17-1028a` som sit eget varenummer, ligesom før. Der oprettes ikke noget `17-1028`.
 - Findes `17-1028a` allerede som et selvstændigt produkt i HSG, ændres det ikke. Previewet viser en advarsel, så det kan sættes som udgået, og lageret ikke tælles dobbelt.
@@ -71,6 +75,8 @@ Match prioriteres i denne rækkefølge:
 2. Eksakt fadnummer
 3. Stærkt navnematch
 4. Supplerende kontrol af destilleri, årgang, alder og ABV
+
+Et fadnummer skal indeholde mindst ét ciffer for at tælle. Ord som "Finish", "Strength" og "Craft", der kan blive læst som fadnummer ud fra navnet ("Cask Finish", "Cask Strength"), giver hverken match på fadnummer eller "forskelligt fadnummer", når varianter sammenlignes.
 
 Match på 90 % eller mere er valgt som udgangspunkt i previewet. Usikre matches opdateres aldrig automatisk. Rækker med en ikke-flettet variant, en matchkonflikt eller en kontrolafvigelse på lageret er aldrig valgt på forhånd.
 
@@ -90,7 +96,19 @@ Hvordan lageret skrives, afgøres af kolonnevalget:
 | **Total** | Kun "Lagerantal i alt" er valgt | Tallet skrives på første aktive lokation (laveste sortering). Previewet viser det som en ændring af den lokation og advarer, hvis produktet også har lager andre steder. |
 | **Intet** | Ingen lagerkolonner | Lageret ændres ikke. |
 
-**Tomme lokationsceller:** Har en række et tal i mindst én lokationskolonne, tæller tomme lokationsceller i samme række som 0 (som i Kims egen formel). Er alle lokationsceller tomme, ændres lageret ikke for rækken. Tekst, der ikke er et tal (fx "?"), ændrer aldrig lokationen og giver en bemærkning.
+**Tomme lokationsceller:** Har en række et tal i mindst én lokationskolonne, tæller tomme lokationsceller i samme række som 0 (som i Kims egen formel). Er alle lokationsceller tomme, ændres lageret ikke for rækken. Tekst, der ikke er ét tal (fx "?"), ændrer aldrig lokationen og giver en bemærkning.
+
+**Hvad er et tal i en lokationscelle?** Cellen skal være præcis ét tal: valgfrit minus, cifre og højst ét decimaltegn (`.` eller `,`) med cifre efter. Mellemrum (også hårde mellemrum) før og efter tallet ignoreres. Decimaler afrundes, og negative tal bliver 0.
+
+| Celle | Tolkes som |
+|---|---|
+| `41`, `0`, `41.0` | 41, 0, 41 |
+| `2,4`, `2.6`, `-2` | 2, 3, 0 |
+| `40.999999999999993` (formelresultat) | 41 |
+| `3 + 2`, `2 (1 i bil)`, `1/2`, `ca. 5`, `se note 2`, `3 2`, `?` | Ugyldig – lokationen ændres ikke |
+| `1.234`, `1,234`, `1 234` | Ugyldig – lokationen ændres ikke |
+
+**Tusindtalsformater er ugyldige:** præcis tre cifre efter `.` eller `,`, mellemrum inde i tallet eller både `.` og `,`. Læsningen ville ellers være tvetydig ("1.234" som 1 eller 1234). Ingen lokation har så mange flasker, og Excel gemmer tal uden tusindtalsseparator, så reglen rammer kun tekstceller og CSV.
 
 **Kontroltal:** Er både lokationer og "Lagerantal i alt" valgt, sammenlignes summen af lokationstallene med totalen (før reservationer). Afviger de, får varen en bemærkning og er ikke valgt på forhånd. Previewet viser desuden "Lager i filen" og "Sum af lokationskolonner" for hele filen.
 

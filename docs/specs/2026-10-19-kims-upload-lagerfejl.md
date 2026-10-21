@@ -184,7 +184,7 @@ Kolonnerne er uændrede: Opdatér | Filrække | Leverandørens vare | Match i HS
 | Variant ikke flettet | `Bemærk: 12-1123a er ikke flettet med 12-1123: <begrundelse>. Varen behandles som sit eget varenummer og er ikke valgt på forhånd.` |
 | To enheder matcher samme HSG-produkt, men er forskellige varer | `Bemærk: Matcher samme HSG-produkt som 12-1123, men er en anden vare: <begrundelse>. Vælg produkt manuelt eller opret nyt.` |
 | Kontrolafvigelse | `Bemærk: Summen af lokationskolonnerne (53) passer ikke med lagerantal i alt (60). Tjek kolonnevalget og rækken i Kims fil. Rækken er ikke valgt på forhånd.` |
-| Alle lokationsceller tomme | `Ingen tal i lokationskolonnerne – lageret ændres ikke.` |
+| Alle lokationsceller tomme | `Bemærk: Ingen tal i lokationskolonnerne – lageret ændres ikke.` (ændret i tillæg 2026-10-20, KAN-1) |
 | Tekst i en lokationscelle | `Bemærk: Ugyldig værdi „?“ for Gert – lokationen ændres ikke.` |
 | Totaltilstand med lager på andre lokationer | `Bemærk: Lagerantal i alt (53) skrives på Christiansfeld. Produktet har også 14 stk. på andre lokationer, så lageret i alt bliver 67.` |
 | Reservationsvalg `none` og Kims tal < reserveret | `Bemærk: Christiansfeld får 0 fysisk efter import, men 2 er reserveret. Disponibelt bliver −2, varen kan forsvinde fra Lagerstatus, og reservationen kan ikke markeres som solgt.` |
