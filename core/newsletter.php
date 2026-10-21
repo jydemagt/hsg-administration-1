@@ -71,11 +71,16 @@ function hsg_newsletter_clip(string $s): string {
  * Ugyldige i forhåndsvisningen. Ellers står " …" efter det sidste hele ord.
  */
 function hsg_newsletter_cap_cell(mixed $value): string {
-    $s = (string)$value;
-    if ($s === '') return ''; // tomme celler er langt de fleste
-    $s = hsg_newsletter_clean_cell(hsg_newsletter_clip($s));
+    $raw = (string)$value;
+    if ($raw === '') return ''; // tomme celler er langt de fleste
+    $clipped = hsg_newsletter_clip($raw);
+    $s = hsg_newsletter_clean_cell($clipped);
     $keep = HSG_NEWSLETTER_MAX_CELL - 2;
-    if (!preg_match('/^(.{'.$keep.'})(..)./su', $s, $m)) return $s; // højst HSG_NEWSLETTER_MAX_CELL tegn
+    if (!preg_match('/^(.{'.$keep.'})(..)./su', $s, $m)) {
+        // Højst HSG_NEWSLETTER_MAX_CELL tegn. Blev cellen klippet før rensningen (fx efter mange mellemrum), får
+        // det sidste ord også "…", så det afklippede ikke bliver en anden, gyldig adresse.
+        return $s !== '' && strlen($clipped) < strlen($raw) ? $s.'…' : $s;
+    }
     $sep = ';,\s\x{00A0}\x{200B}\x{FEFF}'; // som i hsg_newsletter_split_emails()
     $midWord = !preg_match('/['.$sep.']$/uD', $m[1]) && !preg_match('/^['.$sep.']/u', $m[2]); // D: $ er kun slutningen
     return $midWord ? $m[1].'…' : rtrim($m[1]).' …';

@@ -214,7 +214,8 @@ $nl = str_repeat('c', 318 - strlen("; ok@firma.dk\n"))."; ok@firma.dk\nnæste@x.
 eq('klippes der lige efter en nylinje, bevares adressen før den (testerens KAN 6)', str_repeat('c', 304).'; ok@firma.dk …', hsg_newsletter_cap_cell($nl));
 // Reviewerens fund: kun skilletegn (eller <>) før et langt ord må heller ikke give en gyldig adresse
 $invented = [];
-foreach ([str_repeat(';', 305).'kim@firma.community.dk', str_repeat(',', 300).'ole@firma.dk.example.org', str_repeat('<', 305).'kim@firma.community.dk', str_repeat(' ', 2).str_repeat(';', 303).'kim@firma.community.dk'] as $cell) {
+foreach ([str_repeat(';', 305).'kim@firma.community.dk', str_repeat(',', 300).'ole@firma.dk.example.org', str_repeat('<', 305).'kim@firma.community.dk', str_repeat(' ', 2).str_repeat(';', 303).'kim@firma.community.dk',
+    str_repeat(' ', 1268).'kim@firma.community.dk', str_repeat("\x01", 1268).'kim@firma.community.dk', str_repeat("\u{00A0}", 634).'kim@firma.community.dk'] as $cell) {
     foreach (hsg_newsletter_split_emails(hsg_newsletter_cap_cell($cell)) as $part) {
         $e = hsg_newsletter_normalize_email($part);
         if (hsg_newsletter_is_valid_email($e)) $invented[] = $e;
