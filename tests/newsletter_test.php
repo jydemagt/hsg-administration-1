@@ -179,11 +179,11 @@ t('eksport: navn som formel neutraliseres', str_contains(hsg_newsletter_csv($row
 function nl_throws(callable $fn): string {
     try { $fn(); return ''; } catch (Throwable $e) { return $e->getMessage(); }
 }
-eq('celle afkortes til 320 tegn og slutter med " …"', str_repeat('x', 318).' …', hsg_newsletter_cap_cell(str_repeat('x', 400)));
+eq('celle afkortes midt i et ord: "…" sættes direkte på ordet', str_repeat('x', 318).'…', hsg_newsletter_cap_cell(str_repeat('x', 400)));
 eq('celle på præcis 320 tegn afkortes ikke', str_repeat('x', 320), hsg_newsletter_cap_cell(str_repeat('x', 320)));
 $long = hsg_newsletter_cap_cell(str_repeat('æ', 5000));
-t('lang celle med æ: 320 tegn og gyldig UTF-8', preg_match_all('/./su', $long) === 320 && preg_match('//u', $long) === 1);
-eq('lang Windows-1252-celle omsættes og afkortes', str_repeat('ø', 318).' …', hsg_newsletter_cap_cell(str_repeat("\xF8", 5000)));
+t('lang celle med æ: højst 320 tegn og gyldig UTF-8', $long === str_repeat('æ', 318).'…' && preg_match('//u', $long) === 1);
+eq('lang Windows-1252-celle omsættes og afkortes', str_repeat('ø', 318).'…', hsg_newsletter_cap_cell(str_repeat("\xF8", 5000)));
 eq('kort celle renses som før', 'Søren', hsg_newsletter_cap_cell(" S\xF8ren "));
 // Testerens fund: afkortningen må aldrig gøre en adresse til en anden, gyldig adresse (kim@firma.com → kim@firma.co)
 $many = '';
@@ -194,7 +194,7 @@ $a = hsg_newsletter_analyse([hsg_newsletter_cap_row([$cell])], ['header_row' => 
 $emails = array_column($a['entries'], 'email');
 t('afkortet celle: kim@firma.co bliver ikke en ny modtager', !in_array('kim@firma.co', $emails, true) && !in_array('kim@firma.c', $emails, true));
 t('afkortet celle: de hele adresser før klippet bevares', in_array('a000001@x.dk', $emails, true) && in_array('a000021@x.dk', $emails, true));
-t('afkortet celle: "…" står som ugyldig, så afkortningen ses i forhåndsvisningen', in_array('…', array_column($a['invalid'], 'value'), true));
+t('afkortet celle: den afklippede adresse står som ugyldig med "…"', in_array('kim@firma.…', array_column($a['invalid'], 'value'), true));
 $exact = str_repeat('c', 318 - strlen('ok@firma.dk')).'ok@firma.dk; næste@x.dk';
 eq('klippes der lige efter en hel adresse, bevares den', str_repeat('c', 307).'ok@firma.dk …', hsg_newsletter_cap_cell($exact));
 // Testerens tilføjelse: klippet ligger ved tegn 318, så testcellen ovenfor klipper "kim@firma" (ugyldig) og viser ikke, om
@@ -209,12 +209,21 @@ for ($start = 295; $start <= 325; $start++) {
 eq('klip midt i en adresse (adressen flyttet gennem tegn 295-325): ingen opfundne adresser', [], $inventedAt);
 $mid = str_repeat('b', 304).'; kim@firma.com; ole@firma.dk';
 eq('testcellen: kim@firma.com starter på tegn 307, så klippet ved tegn 318 rammer "kim@firma.co"', 307, strpos($mid, 'kim@firma.com') + 1);
-eq('klip midt i adressen: stykket efter sidste skilletegn fjernes', str_repeat('b', 304).'; …', hsg_newsletter_cap_cell($mid));
+eq('klip midt i adressen: "…" på det afklippede stykke gør det ugyldigt', str_repeat('b', 304).'; kim@firma.co…', hsg_newsletter_cap_cell($mid));
 $nl = str_repeat('c', 318 - strlen("; ok@firma.dk\n"))."; ok@firma.dk\nnæste@x.dk";
 eq('klippes der lige efter en nylinje, bevares adressen før den (testerens KAN 6)', str_repeat('c', 304).'; ok@firma.dk …', hsg_newsletter_cap_cell($nl));
+// Reviewerens fund: kun skilletegn (eller <>) før et langt ord må heller ikke give en gyldig adresse
+$invented = [];
+foreach ([str_repeat(';', 305).'kim@firma.community.dk', str_repeat(',', 300).'ole@firma.dk.example.org', str_repeat('<', 305).'kim@firma.community.dk', str_repeat(' ', 2).str_repeat(';', 303).'kim@firma.community.dk'] as $cell) {
+    foreach (hsg_newsletter_split_emails(hsg_newsletter_cap_cell($cell)) as $part) {
+        $e = hsg_newsletter_normalize_email($part);
+        if (hsg_newsletter_is_valid_email($e)) $invented[] = $e;
+    }
+}
+eq('lange rækker af skilletegn eller < før et langt ord: ingen opfundne adresser', [], $invented);
 eq('række afkortes til 30 kolonner', 30, count(hsg_newsletter_cap_row(range(1, 40))));
 $cs = hsg_newsletter_clean_sheets(['Ark 1' => [array_merge([str_repeat('y', 400)], array_fill(0, 39, 'z'))]]);
-t('clean_sheets: 30 kolonner og 320 tegn pr. celle', count($cs['sheets']['Ark 1'][0]) === 30 && preg_match_all('/./su', $cs['sheets']['Ark 1'][0][0]) === 320);
+t('clean_sheets: 30 kolonner og 320 tegn pr. celle', count($cs['sheets']['Ark 1'][0]) === 30 && $cs['sheets']['Ark 1'][0][0] === str_repeat('y', 318).'…');
 eq('upload med file[] (flere filer) giver "Vælg en fil", ikke "for stor"', 'Vælg en Excel-fil (.xlsx) eller CSV-fil.', nl_throws(static fn() => hsg_newsletter_read_upload(['error' => [0, 0], 'size' => [1, 1], 'tmp_name' => ['a', 'b'], 'name' => ['a.csv', 'b.csv']])));
 eq('fil over 5 MB afvises før læsning', 'Filen er for stor (højst 5 MB).', nl_throws(static fn() => hsg_newsletter_read_upload(['error' => UPLOAD_ERR_OK, 'size' => 5 * 1024 * 1024 + 1, 'tmp_name' => __FILE__, 'name' => 'liste.csv'])));
 t('fil på præcis 5 MB afvises ikke på størrelsen', nl_throws(static fn() => hsg_newsletter_read_upload(['error' => UPLOAD_ERR_OK, 'size' => 5 * 1024 * 1024, 'tmp_name' => __FILE__, 'name' => 'liste.csv'])) === 'Vælg en Excel-fil (.xlsx) eller CSV-fil.');

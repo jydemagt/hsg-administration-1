@@ -115,12 +115,12 @@ nfchk "BØR1 CSV med 5.001 rækker afvises" '[ "$c" = "200" ] && nfflash | grep 
 nfxlsx bred.xlsx "$(php -r '$h = ["E-mail"]; for ($i = 1; $i < 40; $i++) $h[] = "H$i"; echo json_encode([$h, array_merge(["bred1@x.dk"], array_fill(0, 39, "v")), [str_repeat("q", 400)]]);')"
 P=$(nfanalyse bred.xlsx customer); nfpreview "$P"
 Q318=$(printf 'q%.0s' $(seq 1 318))
-nfchk "BØR2 bred fil: kun kolonne A–AD kan vælges, og en lang celle afkortes til 320 tegn med \" …\"" 'grep -q "<option value=\"29\"[^>]*>Kolonne AD" "$NF/page.html" && ! grep -q "<option value=\"30\"" "$NF/page.html" && grep -q "række 3: \"$Q318\"" "$NF/page.html" && grep -q "række 3: \"…\"" "$NF/page.html" && ! grep -q "${Q318}q" "$NF/page.html"'
+nfchk "BØR2 bred fil: kun kolonne A–AD kan vælges, og en lang celle afkortes til højst 320 tegn med \"…\"" 'grep -q "<option value=\"29\"[^>]*>Kolonne AD" "$NF/page.html" && ! grep -q "<option value=\"30\"" "$NF/page.html" && grep -q "række 3: \"${Q318}…\"" "$NF/page.html" && ! grep -q "${Q318}q" "$NF/page.html"'
 T=$(token "$BASE/newsletter_import.php"); curl -s -b "$JAR" -c "$JAR" -o /dev/null "$BASE/newsletter_import.php" -d "csrf=$T" -d action=cancel -d "preview_token=$P"
 # Testerens fund: en celle på 321 tegn, hvor kim@firma.com starter på tegn 309, må ikke give modtageren kim@firma.co
 php -r '$m = ""; for ($i = 1; strlen($m) < 290; $i++) $m .= "a".str_pad((string)$i, 6, "0", STR_PAD_LEFT)."@lang.dk; "; $m = substr($m, 0, 306); echo "E-mail\n\"", $m, "; kim@firma.com\"\n";' > "$NF/lang-celle.csv"
 P=$(nfanalyse lang-celle.csv customer); nfpreview "$P"
-nfchk "BØR2 afkortet celle: kim@firma.co vises ikke som ny, og afkortningen står som ugyldig" '! grep -q "kim@firma.co" "$NF/page.html" && grep -q "række 2: \"…\"" "$NF/page.html"'
+nfchk "BØR2 afkortet celle: kim@firma.co vises ikke som ny, og afkortningen står som ugyldig" '! grep -q "kim@firma.co" "$NF/page.html" && grep -q "række 2: \"kim@firma.…\"" "$NF/page.html"'
 nfapply "$P"
 nfchk "BØR2 afkortet celle: kim@firma.co er ikke importeret" '[ "$(nfsql "SELECT COUNT(*) FROM hsg_newsletter_recipients WHERE email LIKE '"'"'kim@firma.c%'"'"'")" = "0" ]'
 

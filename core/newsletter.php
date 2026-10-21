@@ -16,7 +16,7 @@ const HSG_NEWSLETTER_PREVIEW_TTL = 7200;
 // Grænser for importen, så en stor fil eller en zip-bombe giver en fejltekst og ikke HTTP 500.
 const HSG_NEWSLETTER_MAX_UPLOAD = 5 * 1024 * 1024;       // uploadet fil
 const HSG_NEWSLETTER_MAX_XLSX_XML = 30 * 1024 * 1024;    // ark og delte strenge i en xlsx, udpakket
-const HSG_NEWSLETTER_MAX_SHARED = 500000;                // delte strenge i en xlsx
+const HSG_NEWSLETTER_MAX_SHARED = 200000;                // delte strenge i en xlsx (5.000 rækker × 30 kolonner er 150.000)
 const HSG_NEWSLETTER_MAX_COLS = 30;                      // kolonne A–AD læses
 const HSG_NEWSLETTER_MAX_CELL = 320;                     // tegn pr. celle i forhåndsvisningen
 const HSG_NEWSLETTER_MAX_TEXT = 10 * 1024 * 1024;        // tekst i alt i forhåndsvisningen (en delt streng kan genbruges i mange celler)
@@ -66,20 +66,19 @@ function hsg_newsletter_clip(string $s): string {
 
 /**
  * En celle i forhåndsvisningen: renset og højst HSG_NEWSLETTER_MAX_CELL tegn. En længere celle afkortes og
- * slutter med " …". Klippes der midt i et ord, fjernes det afklippede stykke, så en adresse aldrig kan blive
- * til en anden, gyldig adresse (kim@firma.com → kim@firma.co). "…" står som ugyldig i forhåndsvisningen.
+ * slutter med "…". Klippes der midt i et ord, sættes "…" direkte på ordet, så en afklippet adresse altid er
+ * ugyldig og aldrig bliver til en anden, gyldig adresse (kim@firma.com → kim@firma.co…). Den står så under
+ * Ugyldige i forhåndsvisningen. Ellers står " …" efter det sidste hele ord.
  */
 function hsg_newsletter_cap_cell(mixed $value): string {
-    $s = hsg_newsletter_clean_cell(hsg_newsletter_clip((string)$value));
+    $s = (string)$value;
+    if ($s === '') return ''; // tomme celler er langt de fleste
+    $s = hsg_newsletter_clean_cell(hsg_newsletter_clip($s));
     $keep = HSG_NEWSLETTER_MAX_CELL - 2;
     if (!preg_match('/^(.{'.$keep.'})(..)./su', $s, $m)) return $s; // højst HSG_NEWSLETTER_MAX_CELL tegn
     $sep = ';,\s\x{00A0}\x{200B}\x{FEFF}'; // som i hsg_newsletter_split_emails()
-    $t = $m[1];
-    if (!preg_match('/^['.$sep.']/u', $m[2])) {
-        $cut = preg_replace('/[^'.$sep.']+$/uD', '', $t) ?? ''; // D: $ er kun slutningen, ikke før en afsluttende nylinje
-        if (preg_match('/[^'.$sep.']/u', $cut)) $t = $cut; // ét langt ord uden skilletegn beholdes
-    }
-    return rtrim($t).' …';
+    $midWord = !preg_match('/['.$sep.']$/uD', $m[1]) && !preg_match('/^['.$sep.']/u', $m[2]); // D: $ er kun slutningen
+    return $midWord ? $m[1].'…' : rtrim($m[1]).' …';
 }
 
 /** En række i forhåndsvisningen: højst HSG_NEWSLETTER_MAX_COLS kolonner, og hver celle renset og afkortet. */
@@ -838,15 +837,15 @@ function hsg_newsletter_xlsx_sheet(string $xml, array $shared, int &$total, int 
         } elseif ($name === 'rPh') {
             $phonetic = max(0, $phonetic - 1);
         } elseif ($name === 'row' && $cells !== null) {
-            if ($cells) {
+            // Kun cellerne, der findes, renses, og en tom række springes over, før den fyldes ud til fuld
+            // bredde. Ellers kan en lille fil med en million tomme rækker tage over 30 sekunder.
+            $cells = array_map('hsg_newsletter_cap_cell', $cells);
+            if (implode('', $cells) !== '') {
                 $dense = [];
                 for ($i = 0, $max = max(array_keys($cells)); $i <= $max; $i++) $dense[] = $cells[$i] ?? '';
-                $dense = hsg_newsletter_cap_row($dense);
-                if (implode('', $dense) !== '') {
-                    hsg_newsletter_count_row($dense, $total, $bytes);
-                    $rows[] = $dense;
-                    $nums[] = $no;
-                }
+                hsg_newsletter_count_row($dense, $total, $bytes);
+                $rows[] = $dense;
+                $nums[] = $no;
             }
             $cells = null;
         }

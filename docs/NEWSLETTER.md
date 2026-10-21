@@ -51,10 +51,10 @@ så gem kun arket med modtagerne i en ny fil, eller gem det som CSV. Teksten i k
   Typeskift vises tydeligt i forhåndsvisningen, før du importerer.
 - **Afmeldte, stoppede og slettede modtagere ændres aldrig af en import** og tilmeldes aldrig igen.
 - Aktive modtagere, der ikke står i filen, ændres ikke. Forhåndsvisningen viser kun antallet.
-- Forhåndsvisningen gemmes kun midlertidigt i din session og aldrig i databasen. En celle på mere end 320 tegn
-  afkortes og slutter med " …". Det afklippede stykke af en mailadresse fjernes, så "…" står under *Ugyldige*.
-  Den slettes, når importen er gennemført eller annulleret. Efter 2 timer er den udløbet og slettes,
-  næste gang du åbner *Nyhedsbrev*.
+- Forhåndsvisningen gemmes kun midlertidigt i din session og aldrig i databasen. Den slettes, når importen er
+  gennemført eller annulleret. Efter 2 timer er den udløbet og slettes, næste gang du åbner *Nyhedsbrev*.
+- En celle på mere end 320 tegn afkortes og slutter med "…". Klippes en mailadresse midt over, står den
+  afklippede del med "…" under *Ugyldige* og importeres aldrig.
 
 ## Modtagere
 
