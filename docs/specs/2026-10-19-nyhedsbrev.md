@@ -621,7 +621,7 @@ Skifter type: 2 · Aktive modtagere, der ikke står i filen: 5
 [Importér 25 nye og opdatér 3]   [Annullér]
 ```
 
-- Forhåndsvisningen gemmes i `$_SESSION` under et tilfældigt nøgle-token, der sendes som skjult felt. Den gemmes ikke i `storage/` og aldrig i databasen, fordi Kims fil kan indeholde andre persondata. Når importen er gennemført eller annulleret, slettes den. En forhåndsvisning, der er ældre end 2 timer, slettes, når *Import* eller *Modtagere* åbnes, uanset token.
+- Forhåndsvisningen gemmes i `$_SESSION` under et tilfældigt nøgle-token, der sendes som skjult felt. Den gemmes ikke i `storage/` og aldrig i databasen, fordi Kims fil kan indeholde andre persondata. Når importen er gennemført eller annulleret, slettes den. En forhåndsvisning, der er ældre end 2 timer, slettes uanset token, når en side bag `auth.php` åbnes, og modulet er slået til (`modules/newsletter/hooks.php`). Den offentlige afmeldingsside og login-siden rydder ikke op. Ellers forsvinder den med sessionen.
 - **Grænser (tilføjet efter reviewet af trin 1):** Filen må højst fylde 5 MB. En xlsx-fil må højst fylde ca. 30 MB udpakket (arkene og de delte strenge lægges sammen før udpakning, som i `core/updater.php`). Kun kolonne A–AD (30 kolonner) læses, og hver celle afkortes til 320 tegn i forhåndsvisningen. En afkortet celle slutter med "…". Klippes der midt i et ord, sættes "…" direkte på ordet, så en afklippet adresse altid er ugyldig og aldrig bliver til en anden, gyldig adresse (fund fra testen og reviewet). Teksten må højst fylde 10 MB i alt, fordi én delt streng i en xlsx kan genbruges i mange celler. Læsningen stopper ved række 5.001 med indhold. xlsx læses med XMLReader (ét element ad gangen), og CSV med en egen `fgetcsv`-løkke i `core/newsletter.php`. `core/supplier_import.php` er uændret.
 - Hvis xlsx-filen har mere end ét ark, vises valget "Ark [v]".
 - Listerne vises i `<details>` med højst 200 linjer og teksten "… og N flere".
@@ -1279,6 +1279,8 @@ Indeks: **UNIQUE `uniq_nl_cat (campaign_id, price)`**.
 | `modules/newsletter/module.php` | Ny | `id` 'newsletter', `name` 'Nyhedsbrev', `version` '1.0.0', `nav` true, `link_access` false, `admin_default_access` false, `href` 'newsletter.php', `icon` '✉', `capability` 'newsletter.send', `description` 'Månedligt nyhedsbrev til forhandlere og kunder med afmelding og katalog.', `core` false, `sort` 35 |
 | `core/permissions.php` | Ændret | `hsg_admin_can_view_module()`: manglende række eller tabel giver manifestets `admin_default_access` (standard `true`). Ingen ændring for eksisterende moduler. |
 | `modules/newsletter/migrations.php` | Ny | '1.0.0' |
+| `modules/newsletter/hooks.php` | Ny | Sletter en udløbet importforhåndsvisning fra sessionen på alle sider. (Tilføjet efter reviewet af trin 1.) |
+| `core/newsletter_import_preview.php` | Ny | Forhåndsvisningen i sessionen (`HSG_NEWSLETTER_PREVIEW_TTL`, opret, indlæs, gem, slet, udløb), så `hooks.php` ikke indlæser hele `core/newsletter.php`. (Tilføjet efter reviewet af trin 1.) |
 | `core/newsletter.php` | Ny | Normalisering og validering af mail, maskering, token (via `core/access_links.php`), analyse og gennemførelse af import (bruger `core/supplier_import.php`), afmelding, sletning (ret til sletning), CSV-eksport, faner, danske etiketter |
 | `newsletter.php` | Ny | Trin 1: viderestiller til `newsletter_recipients.php` |
 | `newsletter_recipients.php` | Ny | S1 (liste, tilføj, rediger, afmeld/stop/genaktivér, eksport, slet) |

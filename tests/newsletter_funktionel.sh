@@ -162,6 +162,11 @@ nfsess age "$JAR" 7300 >/dev/null; nfpage "$BASE/newsletter_import.php" >/dev/nu
 nfchk "TEST en udløbet forhåndsvisning slettes øverst i newsletter_import.php uden token" '[ "$(nfsess show "$JAR")" = "nej" ]'
 P=$(nfanalyse udloeb.csv customer); nfsess age "$JAR" 7300 >/dev/null; nfpage "$BASE/newsletter_recipients.php" >/dev/null
 nfchk "TEST en udløbet forhåndsvisning slettes også i newsletter_recipients.php" '[ "$(nfsess show "$JAR")" = "nej" ]'
+P=$(nfanalyse udloeb.csv customer); nfsess age "$JAR" 7300 >/dev/null; nfpage "$BASE/products.php" >/dev/null
+nfchk "Opfølgning: en udløbet forhåndsvisning slettes også på en side uden for nyhedsbrevet (products.php, via modules/newsletter/hooks.php)" '[ "$(nfsess show "$JAR")" = "nej" ]'
+P=$(nfanalyse udloeb.csv customer); nfsess age "$JAR" 7100 >/dev/null; nfpage "$BASE/products.php" >/dev/null
+nfchk "Opfølgning: en forhåndsvisning på 7.100 sekunder bevares på products.php" '[ "$(nfsess show "$JAR" | cut -d" " -f1)" = "ja" ]'
+nfcancel "$P"
 P=$(nfanalyse udloeb.csv customer); nfsess age "$JAR" 7100 >/dev/null; nfpage "$BASE/newsletter_import.php" >/dev/null
 nfchk "TEST en forhåndsvisning på 7.100 sekunder er ikke udløbet" '[ "$(nfsess show "$JAR" | cut -d" " -f1)" = "ja" ]'
 nfpage "$BASE/newsletter_import.php?preview=forkert" >/dev/null
@@ -245,6 +250,27 @@ nfpost "$BASE/newsletter_recipients.php" -d action=create -d email=csv@x.dk --da
 T=$(token "$BASE/newsletter_recipients.php")
 curl -s -b "$JAR" -c "$JAR" -D "$NF/exp_h.txt" -o "$NF/exp.csv" "$BASE/newsletter_recipients.php" -d "csrf=$T" -d action=export -d id="$CID"
 nfchk "K26 CSV: BOM, semikolon, '=CMD() som tekst, Content-Disposition attachment, audit logget" '[ "$(head -c3 "$NF/exp.csv" | od -An -tx1 | tr -d " \n")" = "efbbbf" ] && grep -q "Mail;Navn;Firma;Type;Status;Kilde;Oprettet" "$NF/exp.csv" && grep -q "csv@x.dk;'"'"'=CMD()" "$NF/exp.csv" && grep -qi "content-disposition: attachment" "$NF/exp_h.txt" && [ "$(nfsql "SELECT COUNT(*) FROM hsg_audit_log WHERE action='"'"'newsletter.recipient.export'"'"' AND entity_id='"'"'$CID'"'"'")" = "1" ]'
+
+# ---------- Opfølgning: felter sendt som lister (fx mode[]=x) giver ingen PHP-advarsel og rammer ikke modtager 1 ----------
+nfwarn() { grep -c "Array to string\|must be of type string" "${HSG_PHP_LOG:-/tmp/hsg-php-server.log}" 2>/dev/null || true; }
+W0=$(nfwarn); codes=""
+nfarr() { local c; c=$(curl -g -s -L -b "$JAR" -c "$JAR" -o "$NF/arr.html" -w '%{http_code}' "$@"); codes="$codes $c"; ! grep -qiE "<b>(Warning|Notice|Deprecated|Fatal error)</b>|(Warning|Notice|Deprecated|Fatal error): |Uncaught|Array to string" "$NF/arr.html"; }  # begge formater (html_errors 0 og 1)
+P=$(nfanalyse udloeb.csv customer); T=$(token "$BASE/newsletter_import.php")
+arrok=1
+nfarr "$BASE/newsletter_import.php" -d "csrf=$T" -d action=remap -d "preview_token=$P" -d "sheet[]=x" -d "mode[]=x" -d "col_email[]=0" -d "col_name[]=1" || arrok=0
+nfarr "$BASE/newsletter_import.php" -d "csrf=$T" -d "action[]=apply" -d "preview_token[]=$P" || arrok=0
+nfarr "$BASE/newsletter_import.php?preview[]=$P" || arrok=0
+nfcancel "$P"
+T=$(token "$BASE/newsletter_recipients.php")
+nfarr "$BASE/newsletter_recipients.php" -d "csrf=$T" -d action=create -d "email[]=arr@x.dk" -d "name[]=A" -d "company[]=B" -d "segment[]=dealer" || arrok=0
+nfchk "Opfølgning: create med email[] afvises (\"Formularen er ugyldig\") og opretter ingen modtager" 'grep -q "Formularen er ugyldig. Genindlæs siden, og prøv igen." "$NF/arr.html" && [ "$(nfsql "SELECT COUNT(*) FROM hsg_newsletter_recipients WHERE email='"'"'arr@x.dk'"'"'")" = "0" ]'
+nfarr "$BASE/newsletter_recipients.php?filter[]=x" || arrok=0
+nfarr "$BASE/newsletter_recipients.php?id[]=1" || arrok=0
+FIRST1=$(nfsql "SELECT status FROM hsg_newsletter_recipients WHERE id=1"); XID2=$(nfid kim@firma.dk); XST=$(nfstatus kim@firma.dk)
+T=$(token "$BASE/newsletter_recipients.php")
+nfarr "$BASE/newsletter_recipients.php" -d "csrf=$T" -d action=delete -d "id[]=$XID2" || arrok=0
+nfchk "Opfølgning: delete med id[] afvises og sletter hverken den valgte modtager eller modtager 1 (id[] blev før til 1)" 'grep -q "Formularen er ugyldig. Genindlæs siden, og prøv igen." "$NF/arr.html" && [ "$(nfsql "SELECT status FROM hsg_newsletter_recipients WHERE id=1")" = "$FIRST1" ] && [ "$(nfstatus kim@firma.dk)" = "$XST" ]'
+nfchk "Opfølgning: felter sendt som lister giver hverken HTTP 500 eller PHP-advarsler (side og serverlog; koder:$codes)" '[ "$arrok" = "1" ] && ! echo "$codes" | grep -q " 5[0-9][0-9]" && [ "$(nfwarn)" = "$W0" ]'
 
 # ---------- Kriterie 27: ingen mailadresser i href/src/action, søgefelt uden for formular ----------
 for pg in "newsletter_recipients.php" "newsletter_recipients.php?filter=unsubscribed" "newsletter_recipients.php?id=$CID" "newsletter_import.php"; do

@@ -52,7 +52,8 @@ så gem kun arket med modtagerne i en ny fil, eller gem det som CSV. Teksten i k
 - **Afmeldte, stoppede og slettede modtagere ændres aldrig af en import** og tilmeldes aldrig igen.
 - Aktive modtagere, der ikke står i filen, ændres ikke. Forhåndsvisningen viser kun antallet.
 - Forhåndsvisningen gemmes kun midlertidigt i din session og aldrig i databasen. Den slettes, når importen er
-  gennemført eller annulleret. Efter 2 timer er den udløbet og slettes, næste gang du åbner *Nyhedsbrev*.
+  gennemført eller annulleret. Efter 2 timer er den udløbet og slettes, næste gang du åbner en side i
+  administrationen (når modulet er slået til). Ellers forsvinder den, når sessionen udløber.
 - En celle på mere end 320 tegn afkortes og slutter med "…". Klippes en mailadresse midt over, står den
   afklippede del med "…" under *Ugyldige* og importeres aldrig.
 
@@ -101,6 +102,8 @@ mailadresser – kun modtager-id og antal.
 - Afmeldingstokens gemmes som SHA-256 (opslag) og krypteret med samme nøgle som de personlige adgangslinks
   (`storage/data/access-link.key`), så linket kan vises igen og virker efter en gendannelse.
 - Indstillingen `newsletter_import_columns` husker kolonnevalget ved import.
+- `modules/newsletter/hooks.php` rydder en udløbet importforhåndsvisning op på alle sider (via `core/newsletter_import_preview.php`).
+  Formularer på nyhedsbrevssiderne, hvor et felt er sendt som liste (fx `name[]`), afvises med "Formularen er ugyldig".
 - Importen har sine egne læsere i `core/newsletter.php` (`core/supplier_import.php` er uændret). En xlsx-fil
   læses med PHP's XMLReader ét element ad gangen, og den udpakkede størrelse kontrolleres, før noget pakkes ud.
   Kræver PHP-udvidelserne zip og xmlreader. CSV kræver ingen udvidelser.

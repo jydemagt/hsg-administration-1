@@ -65,6 +65,8 @@ hsg_add_action('reservation.created', function(array $payload): void {
 
 Det gør det muligt senere at lade fx WooCommerce-, salgs- eller økonomimoduler reagere på lagerhændelser uden at ændre reservationskoden.
 
+Et moduls `hooks.php` indlæses af `auth.php` på hver side, når modulet er slået til, og det sker før login-tjek og `verify_csrf`. Filen må derfor kun registrere lyttere eller lave billigt arbejde i brugerens egen session (fx rydder `modules/newsletter/hooks.php` en udløbet importforhåndsvisning op) og må ikke indlæse tunge filer.
+
 ## Sikkerhed
 
 - Personlige lagerlinks har modulrettigheder pr. bruger og er ikke administrative.
