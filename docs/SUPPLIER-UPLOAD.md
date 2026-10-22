@@ -101,8 +101,8 @@ Hvordan lageret skrives, afgøres af kolonnevalget:
 **Hvad er et tal i en lagercelle?** Reglen gælder både lokationscellerne og "Lagerantal i alt". Cellen skal være præcis ét tal: valgfrit minus, cifre og højst ét decimaltegn (`.` eller `,`) med cifre efter.
 
 - Mellemrum (også hårde mellemrum) før og efter tallet ignoreres. En celle med kun mellemrum er tom.
-- Der må højst være **5 cifre før decimaltegnet** (op til 99.999), og foranstillede nuller tæller med. Så bliver EAN-numre, lange varenumre og meget store tal ugyldige. Decimaldelen må være så lang, den vil.
-- Decimaler afrundes **én gang** til nærmeste hele tal (,5 rundes op), så `0.4999` bliver 0. Negative tal bliver 0.
+- Der må højst være **5 cifre før decimaltegnet** (så højst 100.000 efter afrunding), og foranstillede nuller tæller med. Så bliver EAN-numre, lange varenumre og meget store tal ugyldige. Decimaldelen må være så lang, den vil.
+- Decimaler afrundes **én gang** til nærmeste hele tal (,5 rundes væk fra 0), så `0.4999` bliver 0. Negative tal bliver 0.
 - Ugyldig tekst vises i bemærkningen og på "Fil:"-linjen, afkortet til 40 tegn + "…".
 
 | Celle | Tolkes som |
@@ -122,7 +122,7 @@ Hvordan lageret skrives, afgøres af kolonnevalget:
 
 **Tusindtalsformater er ugyldige:** præcis tre cifre efter `.` eller `,`, mellemrum inde i tallet eller både `.` og `,`. Læsningen ville ellers være tvetydig ("1.234" som 1 eller 1234). Ingen lokation har så mange flasker, og Excel gemmer tal uden tusindtalsseparator, så reglen rammer kun tekstceller og CSV.
 
-**En ugyldig celle ændrer aldrig lageret:**
+**En ugyldig celle skrives aldrig som lager:**
 
 - **Lokationscelle:** Lokationen ændres ikke, og varen får en bemærkning.
 - **"Lagerantal i alt" i tilstand Lokationer:** Totalen bruges ikke som kontroltal, så der er ingen kontrol og ingen afvigelse. Lokationerne skrives som normalt. Bemærkningen er "Ugyldig værdi „…“ for lagerantal i alt – bruges ikke som kontroltal."
