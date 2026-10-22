@@ -184,7 +184,7 @@ Pilene viser "i dag → efter rettelsen". "ugyldig" i de to total-kolonner betyd
 | "Fil:"-linjen i tilstand L (`supplier_upload_file_line`) | `Fil: Christiansfeld 41 · Michael 0 (tom) · Gert 12 · i alt „3 + 2“ (ugyldig)` |
 | "Fil:"-linjen i tilstand T (vises nu også, når der ingen lokationer er) | `Fil: lagerantal i alt „3 + 2“ (ugyldig)` |
 
-Bemærkningen "Lagerantal i alt (N) skrives på …" og advarslen om reservationer ved valget `none` vises ikke, når totalen er ugyldig, fordi der ikke er nogen lagerændring.
+I tilstand T vises bemærkningen "Lagerantal i alt (N) skrives på …" og advarslen om reservationer ved valget `none` ikke, når totalen er ugyldig, fordi der ikke er nogen lagerændring. I tilstand L vises reservationsadvarslen stadig for lokationerne, da de skrives som normalt.
 
 ---
 
@@ -285,8 +285,8 @@ Nummereringen fortsætter efter tillæg 2026-10-20 (39–59). Hjælperne `kim_ro
 
     Med Q=`"\u{00A0}"` er der hverken `stock_file_total` eller `stock_file_total_invalid`. Med Q=`'0.4999'` er `stock_file_total=0`.
 65. **Givet**
-    - HSG-produktet `hsg_product(['id'=>65,'sku'=>'65-1','name'=>'Kontrol Whisky','stock_loc_1'=>41,'stock_loc_2'=>2,'stock_loc_3'=>12])`,
-    - filrækken sku 65-1 og name 'Kontrol Whisky' med R=41, S='', T=12 og Q=`'3 + 2'` (`kim_map()`, `merge_opts()`),
+    - HSG-produktet `hsg_product(['id'=>65,'sku'=>'65-1','name'=>'Kontrol Whisky','distillery'=>'Testdestilleri','stock_loc_1'=>41,'stock_loc_2'=>2,'stock_loc_3'=>12])`,
+    - filrækken sku 65-1, name 'Kontrol Whisky' og dist 'Testdestilleri' med R=41, S='', T=12 og Q=`'3 + 2'` (`kim_map()`, `merge_opts()`). Destilleriet er med, fordi navneparseren ellers udleder destilleriet "Kontrol Whisky" af navnet og giver en ekstra ændring (rettet efter testen).
 
     **når** rækkerne flettes, **så**
     - er `changes` præcis `['stock_loc_2'=>['old'=>2,'new'=>0,'file'=>0]]`,
