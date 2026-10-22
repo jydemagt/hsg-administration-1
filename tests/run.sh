@@ -121,6 +121,9 @@ else
     # Nyhedsbrev trin 1: funktionel test af acceptkriterierne (import, afmelding, GDPR, adgang)
     source "$ROOT/tests/newsletter_funktionel.sh"
 
+    # Nyhedsbrev, opfølgning (testerens supplement): felter sendt som lister, id[]-angreb og oprydning af forhåndsvisningen
+    source "$ROOT/tests/newsletter_post_input.sh"
+
     grep -iE 'Fatal|Uncaught' /tmp/hsg-php-server.log && bad "PHP-fejl i serverlog"
   fi
 fi

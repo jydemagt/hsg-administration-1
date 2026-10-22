@@ -12,6 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = hsg_newsletter_input($_POST, 'action');
     $id = hsg_newsletter_input_id($_POST, 'id');
     $back = $id > 0 ? 'newsletter_recipients.php?id='.$id : 'newsletter_recipients.php';
+    if (hsg_newsletter_has_list($_POST)) { flash('error', 'Formularen er ugyldig. Genindlæs siden, og prøv igen.'); redirect($back); }
     try {
         if ($action === 'create') {
             $email = hsg_newsletter_input($_POST, 'email');

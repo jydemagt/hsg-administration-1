@@ -254,7 +254,7 @@ nfchk "K26 CSV: BOM, semikolon, '=CMD() som tekst, Content-Disposition attachmen
 # ---------- Opfølgning: felter sendt som lister (fx mode[]=x) giver ingen PHP-advarsel og rammer ikke modtager 1 ----------
 nfwarn() { grep -c "Array to string\|must be of type string" /tmp/hsg-php-server.log 2>/dev/null || true; }
 W0=$(nfwarn); codes=""
-nfarr() { local c; c=$(curl -g -s -L -b "$JAR" -c "$JAR" -o "$NF/arr.html" -w '%{http_code}' "$@"); codes="$codes $c"; ! grep -qiE "Warning:|Fatal error|Uncaught|Deprecated:" "$NF/arr.html"; }
+nfarr() { local c; c=$(curl -g -s -L -b "$JAR" -c "$JAR" -o "$NF/arr.html" -w '%{http_code}' "$@"); codes="$codes $c"; ! grep -qiE "<b>(Warning|Notice|Deprecated|Fatal error)</b>|(Warning|Notice|Deprecated|Fatal error): |Uncaught|Array to string" "$NF/arr.html"; }  # begge formater (html_errors 0 og 1)
 P=$(nfanalyse udloeb.csv customer); T=$(token "$BASE/newsletter_import.php")
 arrok=1
 nfarr "$BASE/newsletter_import.php" -d "csrf=$T" -d action=remap -d "preview_token=$P" -d "sheet[]=x" -d "mode[]=x" -d "col_email[]=0" -d "col_name[]=1" || arrok=0
@@ -263,13 +263,13 @@ nfarr "$BASE/newsletter_import.php?preview[]=$P" || arrok=0
 nfcancel "$P"
 T=$(token "$BASE/newsletter_recipients.php")
 nfarr "$BASE/newsletter_recipients.php" -d "csrf=$T" -d action=create -d "email[]=arr@x.dk" -d "name[]=A" -d "company[]=B" -d "segment[]=dealer" || arrok=0
-nfchk "Opfølgning: create med email[] opretter ingen modtager og siger ugyldig" 'grep -q "ugyldig" "$NF/arr.html" && [ "$(nfsql "SELECT COUNT(*) FROM hsg_newsletter_recipients WHERE email='"'"'arr@x.dk'"'"'")" = "0" ]'
+nfchk "Opfølgning: create med email[] afvises (\"Formularen er ugyldig\") og opretter ingen modtager" 'grep -q "Formularen er ugyldig. Genindlæs siden, og prøv igen." "$NF/arr.html" && [ "$(nfsql "SELECT COUNT(*) FROM hsg_newsletter_recipients WHERE email='"'"'arr@x.dk'"'"'")" = "0" ]'
 nfarr "$BASE/newsletter_recipients.php?filter[]=x" || arrok=0
 nfarr "$BASE/newsletter_recipients.php?id[]=1" || arrok=0
 FIRST1=$(nfsql "SELECT status FROM hsg_newsletter_recipients WHERE id=1"); XID2=$(nfid kim@firma.dk); XST=$(nfstatus kim@firma.dk)
 T=$(token "$BASE/newsletter_recipients.php")
 nfarr "$BASE/newsletter_recipients.php" -d "csrf=$T" -d action=delete -d "id[]=$XID2" || arrok=0
-nfchk "Opfølgning: delete med id[] sletter hverken den valgte modtager eller modtager 1 (id[] blev før til 1)" 'grep -q "Modtageren findes ikke eller er allerede slettet." "$NF/arr.html" && [ "$(nfsql "SELECT status FROM hsg_newsletter_recipients WHERE id=1")" = "$FIRST1" ] && [ "$(nfstatus kim@firma.dk)" = "$XST" ]'
+nfchk "Opfølgning: delete med id[] afvises og sletter hverken den valgte modtager eller modtager 1 (id[] blev før til 1)" 'grep -q "Formularen er ugyldig. Genindlæs siden, og prøv igen." "$NF/arr.html" && [ "$(nfsql "SELECT status FROM hsg_newsletter_recipients WHERE id=1")" = "$FIRST1" ] && [ "$(nfstatus kim@firma.dk)" = "$XST" ]'
 nfchk "Opfølgning: felter sendt som lister giver hverken HTTP 500 eller PHP-advarsler (side og serverlog; koder:$codes)" '[ "$arrok" = "1" ] && ! echo "$codes" | grep -q " 5[0-9][0-9]" && [ "$(nfwarn)" = "$W0" ]'
 
 # ---------- Kriterie 27: ingen mailadresser i href/src/action, søgefelt uden for formular ----------

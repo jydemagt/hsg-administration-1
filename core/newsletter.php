@@ -32,6 +32,17 @@ function hsg_newsletter_input(array $source, string $key, string $default = ''):
     return is_string($v) ? $v : $default;
 }
 
+/**
+ * Sand, hvis et felt er sendt som liste (fx name[]=x). Nyhedsbrevets formularer bruger aldrig lister, så sådan en
+ * formular afvises hellere end at gemme standardværdier (fx et tomt navn) i stedet for det, der blev sendt.
+ */
+function hsg_newsletter_has_list(array $source): bool {
+    foreach ($source as $v) {
+        if (is_array($v)) return true;
+    }
+    return false;
+}
+
 /** Et id fra $_POST eller $_GET: kun cifre, ellers 0 (også for en liste som id[]=5, der ellers ville blive til 1). */
 function hsg_newsletter_input_id(array $source, string $key): int {
     $v = hsg_newsletter_input($source, $key);

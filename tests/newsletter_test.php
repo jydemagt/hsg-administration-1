@@ -184,6 +184,8 @@ eq('id: cifre', 42, hsg_newsletter_input_id(['id' => '42'], 'id'));
 eq('id: liste (id[]=5) giver 0 og ikke 1', 0, hsg_newsletter_input_id(['id' => ['5']], 'id'));
 eq('id: tekst og negative tal giver 0', [0, 0, 0], [hsg_newsletter_input_id(['id' => 'abc'], 'id'), hsg_newsletter_input_id(['id' => '-3'], 'id'), hsg_newsletter_input_id(['id' => '12abc'], 'id')]);
 eq('id: mangler', 0, hsg_newsletter_input_id([], 'id'));
+t('liste i formularen opdages', hsg_newsletter_has_list(['action' => 'update', 'name' => ['x']]) && hsg_newsletter_has_list(['id' => ['a' => ['b' => '1']]]));
+t('almindelig formular har ingen liste', !hsg_newsletter_has_list(['action' => 'update', 'name' => 'Kim', 'self_requested' => '1']) && !hsg_newsletter_has_list([]));
 
 // Grænser i importen (reviewet af trin 1, BØR 1 og 2)
 function nl_throws(callable $fn): string {

@@ -11,6 +11,7 @@ require_once __DIR__.'/core/newsletter.php';
 $expiredMessage = 'Forhåndsvisningen er udløbet – upload filen igen.';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (hsg_newsletter_has_list($_POST)) { flash('error', 'Formularen er ugyldig. Genindlæs siden, og prøv igen.'); redirect('newsletter_import.php'); }
     $action = hsg_newsletter_input($_POST, 'action');
 
     if ($action === 'analyse') {
