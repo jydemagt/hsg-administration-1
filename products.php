@@ -165,7 +165,7 @@ page_header('Produkter');
     <a class="button <?=$subFilter==='negative_stock'?'danger':'secondary'?>" href="products.php?status=<?=h($showStatus)?>&filter=negative_stock">Negativt lager (<?=$negativeStockCount?>)</a>
   </div>
   <?php if($subFilter==='cask_no_digit'):?>
-  <p class="muted">Fadnumre uden ciffer (fx STRENGTH, FINISH eller N/A) er ikke rigtige fadnumre og bruges ikke ved match. De fleste er læst forkert ud fra produktnavnet. Åbn produktet, ret eller tøm feltet Fadnummer, og gem. Listen ændrer ikke noget selv.</p>
+  <p class="muted">Fadnumre uden ciffer (fx STRENGTH, FINISH eller N/A) er ikke rigtige fadnumre. De bruges ikke ved produktmatch i Kims uploadfil, men vises stadig i kataloget og bruges i billedtjekket, indtil de er rettet. De fleste er læst forkert ud fra produktnavnet. Åbn produktet, ret eller tøm feltet Fadnummer, og gem. Listen ændrer ikke noget selv.</p>
   <?php endif;?>
 </div>
 
@@ -221,7 +221,7 @@ page_header('Produkter');
       <div class="mobile-stock-line"><span>Disponibelt</span><strong class="available"><?=$avail?> stk.</strong></div>
       <div class="mobile-stock-line"><span>Fysisk / Reserveret</span><span><?=$phys?> / <?=$resQty?></span></div>
       <div class="mobile-stock-line"><span>Pris (Engros/Udsalg)</span><span><?=money_dkk($p['wholesale_price'])?> / <?=money_dkk($p['retail_price'])?></span></div>
-      <?php if($subFilter==='cask_no_digit'):?><div class="mobile-stock-line"><span>Fadnr.</span><span>#<?=h($p['cask_number'])?></span></div><?php endif;?>
+      <?php if($subFilter==='cask_no_digit'):?><div class="mobile-stock-line"><span>Fadnr.</span><span style="overflow-wrap:anywhere;min-width:0;text-align:right">#<?=h($p['cask_number'])?></span></div><?php endif;?>
       <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
         <span class="badge <?=$p['status']==='active'?'green':($p['status']==='inactive'?'blue':'')?>"><?=h(product_status_label($p['status']))?></span>
         <?php if($p['is_new']):?><span class="badge red">NYHED</span><?php endif;?>
