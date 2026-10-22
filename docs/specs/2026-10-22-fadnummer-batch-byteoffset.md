@@ -73,8 +73,9 @@ Lad k være antallet af ekstra bytes før `#`. æ, ø, å og é giver +1 hver, o
 - **Ny intern funktion** `hsg_cask_number_scan(string $text, bool $legacy): array` i `core/product_enrichment.php`. Den indeholder den fælles løkke: de to mønstre, rækkefølgen, årstalsfilteret, trim og store bogstaver. `$legacy` har ingen standardværdi, så hver kalder skal vælge eksplicit.
   - **`$legacy = true`:** Linje `:27-30` flyttes **ordret**, også `function_exists('mb_substr')`-grenen.
   - **`$legacy = false`:**
-    - `$before = substr($text,0,$offset)`. Resultatet er gyldig UTF-8, fordi PCRE med `/u` kun giver offsets på tegngrænser, og matchet starter med `#`, som er ASCII.
-    - `$tail` er de sidste **højst 18 tegn** af `$before`. Den beregnes uden `mb_*`, fx med `preg_match('/.{0,18}\z/su',$before,$t)`. `substr($before,-18)` må ikke bruges (række k).
+    - `$tail` er de sidste **højst 18 tegn** før offsettet. Den beregnes ved en **baglæns bytegang over højst 18 tegn uden `mb_*`**: Fra offsettet går den én byte tilbage ad gangen og tæller tegnenes første byte (alle bytes undtagen `10xxxxxx`), til der er talt 18 tegn, eller teksten begynder. Derefter er `$tail = substr($text,$i,$offset-$i)`.
+    - Det er gyldig UTF-8, fordi `preg_match_all` med `/u` har tjekket `$text`, og PCRE med `/u` kun giver offsets på tegngrænser.
+    - Regex'en `preg_match('/.{0,18}\z/su',…)` og `substr($text,0,$offset)` bruges **ikke**. De gennemløber hele teksten før matchet for hvert match (afsnit 10). `substr($before,-18)` må heller ikke bruges (række k).
     - Samme filter-regex på `$tail` som i dag (`:30`), og kun for #-mønstret.
 - `hsg_cask_number_candidates(string $text): array` returnerer `hsg_cask_number_scan($text, true)`. Signatur og adfærd er uændret.
 - `hsg_extract_cask_number(string $text): ?string` returnerer den første værdi med ciffer fra `hsg_cask_number_scan($text, false)`. Signaturen er uændret.
@@ -87,7 +88,7 @@ Lad k være antallet af ekstra bytes før `#`. æ, ø, å og é giver +1 hver, o
 - En intern funktion er bedre end en valgfri parameter på `candidates`. Den offentlige signatur forbliver præcis den samme, og ingen kommer til at bruge den gamle udledning uden at vide det.
 
 **Docblocks** (`:11-16` og `:38`), indhold:
-- **`hsg_cask_number_candidates`:** "Den GAMLE udledning. Den bruges kun som bevis i oprydningen (`hsg_cask_number_cleanup`). [Mønstre, rækkefølge, trim og årstal som i dag.] Batch/bottle/flaske-filteret er bevidst det gamle, også med fejlen: Med mbstring bruges byte-offsettet som tegn-offset, så filteret ser for langt frem, når der står æ, ø, å eller – før #. Uden mbstring er det byte-baseret. Ret det ikke, for så passer beviset ikke længere med de værdier, som den gamle kode har gemt. Det første element er præcis det, udledningen gav før cifferreglen. Den nye udledning er `hsg_extract_cask_number`." Sætningen "Samme batch/bottle/flaske- og årstalsfilter som altid" udgår.
+- **`hsg_cask_number_candidates`:** "Den GAMLE udledning. Den bruges kun som bevis i oprydningen (`hsg_cask_number_cleanup`). [Mønstre, rækkefølge, trim og årstal som i dag.] Batch/bottle/flaske-filteret er bevidst det gamle, også med fejlen: Med mbstring bruges byte-offsettet som tegn-offset, så filteret ser for langt frem, når der står æ, ø, å eller – før #. Uden mbstring er halen 18 bytes og kan skære et tegn over, så filteret svigter (fx 'Kløver Whisky Batch #12'). Ret det ikke, for så passer beviset ikke længere med de værdier, som den gamle kode har gemt. Det første element er præcis det, udledningen gav før cifferreglen. Den nye udledning er `hsg_extract_cask_number`." Sætningen "Samme batch/bottle/flaske- og årstalsfilter som altid" udgår.
 - **`hsg_extract_cask_number`:** "Den første kandidat med mindst ét ciffer. Batch/bottle/flaske-filteret ser på de sidste 18 tegn lige før # (rigtigt byte-offset, samme resultat med og uden mbstring). Ord som STRENGTH, FINISH og CRAFT er ikke et fadnummer."
 - **`hsg_cask_number_scan`:** "Intern. Brug `hsg_cask_number_candidates` (den gamle udledning) eller `hsg_extract_cask_number` (den nye)."
 
@@ -138,7 +139,7 @@ Lad k være antallet af ekstra bytes før `#`. æ, ø, å og é giver +1 hver, o
 
 - Ingen nye tabeller, kolonner, indstillinger eller migrationer. Modulversionerne er uændrede (D4).
 - Dataeffekten sker kun gennem udledningen: fremtidige udledninger og `new` i oprydningen 1.5.1 (D3).
-- **Release-note:** Ny linje i `README.txt` under "Fadnummer kræver mindst ét ciffer (Produkter 1.5.1)" (`:321-322`): "- Numre efter Batch, Bottle og Flaske (fx "Blåbær Batch #12") læses heller ikke som fadnummer, når der står æ, ø, å eller en tankestreg tidligere i navnet."
+- **Release-note:** Ny linje i `README.txt` under "Fadnummer kræver mindst ét ciffer (Produkter 1.5.1)" (`:321-322`): "- Numre efter Batch, Bottle og Flaske (fx "Blåbær Batch #12") læses heller ikke som fadnummer, når der står fx æ, ø, å, ’ eller en tankestreg tidligere i navnet. Et rigtigt fadnummer før "Batch #…" bliver nu fundet." (ordlyden er rettet efter review, afsnit 10).
 
 ## 6. Rettigheder
 
@@ -181,6 +182,10 @@ Forventningerne er regnet i hånden tegn for tegn og byte for byte. **Udvikleren
 | j | `Cask Strength, Blåbær Batch #12` | `['STRENGTH','12']` | `'12'` | `null` | som produkt J i kriterie 107 |
 | k | `Kløver Whisky Batch #12` | `['12']` | `'12'` | `null` | Halen skal være 18 tegn, ikke 18 bytes. `substr(…,-18)` skærer ø over, og så svigter filteret. Den gamle udledning giver `['12']` også uden mbstring |
 | l | `Teaninich, 10 års, #707145, Single Malt (Oloroso Sherry Hogshead), 56,8%` | `['707145']` | `'707145'` | `'707145'` | æ, ø eller å før `#` uden batch: uændret (startlager) |
+| m | `Batch` + 13 mellemrum + `#12` | `[]` | `null` | `null` | vinduet: præcis 18 tegn før `#` (afsnit 10) |
+| n | `Batch` + 14 mellemrum + `#12` | `['12']` | `'12'` | `'12'` | 19 tegn: "Batch" er uden for vinduet (afsnit 10) |
+| o | `🥃🥃🥃 Batch` + 13 mellemrum + `#12` (🥃 er U+1F943, 4 bytes) | `['12']` | `'12'` | `null` | tegn, ikke bytes (afsnit 10) |
+| p | `Ærø Batch Cask 12` | `['12']` | `'12'` | `'12'` | filteret gælder kun #-mønstret (afsnit 10) |
 
 101. **Givet** `hsg_extract_cask_number(X)` for hver X i tabel T, **når** testen køres med eller uden mbstring, **så** er resultatet som i kolonnen "Efter".
 102. **Givet** at `mb_substr` findes, **når** `hsg_cask_number_candidates(X)` kaldes for hver X i tabel T, **så** er resultatet præcis som i kolonnen "Gammel".
@@ -237,3 +242,18 @@ Forventningerne er regnet i hånden tegn for tegn og byte for byte. **Udvikleren
 - **mbstring som krav** i `required_extensions` eller i tjekket i `admin.php`. Det er observeret, at hurtigsøgningen (`core/bootstrap.php:15`, `:22`) kræver mbstring uden fallback. Det bør undersøges separat.
 - **Øvrige kendte svagheder i udledningen** fra Q2-spec'ens afsnit 9 er uændrede, fx "Release #12", "Barrel 1st Fill" og "Fadnummer 12".
 - **Preview-formatet** i Kims uploadfil er uændret (Q3 i Q2-spec'en).
+
+---
+
+## 10. Rettelser efter review (2026-10-22)
+
+Testeren meldte KLAR, og revieweren godkendte uden SKAL-punkter. BØR-punkterne og nogle billige KAN-punkter er rettet før merge:
+
+1. **Halen kostede O(n) pr. #-match (BØR 1):** `substr($text,0,$offset)` og regex'en `.{0,18}\z` gennemløb hele teksten før matchet for hvert match. Revieweren målte en Excel-celle på 32.767 tegn med `#12 ` gentaget (8.192 match): 326 ms før branchen, 2,3 s på branchen med JIT og 11,3 s med `pcre.jit=0`. Det er en driftsrisiko, fordi `product_enrich.php` tager POST-tekst uden længdegrænse, og webhotellet har 30 s `max_execution_time`. Halen beregnes nu ved en baglæns bytegang over højst 18 tegn uden `mb_*` (D1). Den giver samme hale som regex'en på startlageret, tabel T og tilfældige tekster med æ, ø, å, –, ’ og 4-byte-tegn. Med `pcre.jit=0` tager samme celle nu ca. 15 ms i stedet for ca. 10,6 s (udviklerens måling). Den gamle gren er uændret. Kriterie 101 og 103.
+2. **Vinduet ved 18 tegn (BØR 2):** Tabel T har fået rækkerne m, n og o. Står "Batch" + 13 mellemrum lige før `#`, filtreres nummeret fra, men med 14 mellemrum gør det ikke. Med 4-byte-tegn foran tæller vinduet tegn og ikke bytes. Kriterie 101 og 102.
+3. **Filteret gælder kun #-mønstret (KAN 3):** Række p, `Ærø Batch Cask 12`, giver `12`. Kriterie 101 og 102.
+4. **Kodekommentaren (KAN 5):** Kommentaren i den nye gren sagde, at matchet starter med `#`. Det passer ikke for cask-mønstret. Nu står der, at teksten er gyldig UTF-8, og at `/u` giver offsets på tegngrænser.
+5. **Docblocken for `hsg_cask_number_candidates` (KAN 6):** "Uden mbstring er det byte-baseret" er præciseret. Nu står der, at halen uden mbstring er 18 bytes og kan skære et tegn over, så filteret svigter (fx 'Kløver Whisky Batch #12'). D1 er opdateret. Docblocken for `hsg_extract_cask_number` passer stadig og er uændret. Kriterie 106.
+6. **Release-linjen (KAN 7):** Linjen i `README.txt` nævner nu også ’ og, at et rigtigt fadnummer før "Batch #…" bliver fundet (retning b). Afsnit 5 er opdateret. Kriterie 109.
+
+Rækkerne m–p i tabel T hører under kriterie 101 og 102. Der er ingen nye kriterier og ingen nye filer i forhold til afsnit 7.
