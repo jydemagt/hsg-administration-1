@@ -301,7 +301,7 @@ Se afsnit 2.2. Listen er "liste først"-delen af Q1:
 
 ## 8. Acceptkriterier
 
-Nummereringen fortsætter efter Q1-spec'en [`2026-10-22-kims-upload-lagertal-q1.md`](2026-10-22-kims-upload-lagertal-q1.md) (63–77), som selv fortsætter efter tillæg 2026-10-20 (39–62). Kriterierne hed 60–80, da spec'en blev godkendt, og er flyttet 18 op, fordi tillæg 2026-10-20 fik kriterie 60–62 efter sin retest, og Q1-spec'en bruger 63–77. Henvisninger til de andre specs' kriterier (fx 44–46 for R2) er uændrede. "I dag" betyder HEAD `df886b4`.
+Nummereringen fortsætter efter Q1-spec'en `2026-10-22-kims-upload-lagertal-q1.md` (63–77; den ligger på branchen `feature/kims-upload-lagertal-q1`, PR #176, og er ikke merget ind her), som selv fortsætter efter tillæg 2026-10-20 (39–62). Kriterierne hed 60–80, da spec'en blev godkendt, og er flyttet 18 op, fordi tillæg 2026-10-20 fik kriterie 60–62 efter sin retest, og Q1-spec'en bruger 63–77. Henvisninger til de andre specs' kriterier (fx 44–46 for R2) er uændrede. "I dag" betyder HEAD `df886b4`.
 
 ### F1 – udledningen (enhedstest, `tests/product_enrichment_test.php`)
 
