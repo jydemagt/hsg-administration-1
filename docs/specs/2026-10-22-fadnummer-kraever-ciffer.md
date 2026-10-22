@@ -409,7 +409,7 @@ Seed-kortet til kørsel 2 og 3 er `['TSTCASK-3' => ['Royal Brackla, 11yo, 2013 -
 
 93. **Når** `bash tests/run.sh` køres, **så** er alle trin grønne, inklusive de nye tests og de eksisterende enheds-, database- og flowtests af Kims uploadfil.
 94. **Givet** modulmanifesterne, **så** er `products` `1.5.1`, og `supplier_upload` er uændret `1.1.1`. **Givet** dokumentationen, **så** beskriver `docs/SUPPLIER-UPLOAD.md`, `docs/PRODUCT-DATA-ASSISTANT.md` og `README.txt` reglen og oprydningen som angivet i afsnit 7.
-95. **Givet** `git diff df886b4 -- core/supplier_import.php supplier_upload.php migrations.php import.php install.php`, **så** er der ingen ændringer (R2 og backfillen er uændrede, F4).
+95. **Givet** `git diff origin/feature/kims-upload-review-rettelser...HEAD -- core/supplier_import.php supplier_upload.php migrations.php import.php install.php` (altså kun denne branchs egne ændringer i forhold til basen), **så** er der ingen ændringer (R2 og backfillen er uændrede, F4). Branchen har merget basen frem til `3cb8b6f`, så `git diff df886b4` viser basens egen rettelse i `core/supplier_import.php` (`7b68a6f`, preview-token); den tæller ikke.
 96. **Givet** den rigtige fil "lager 19-10-2026.xlsx" (manuel test; filen må ikke lægges i repoet), **når** previewet laves på `feature/kims-upload-review-rettelser` og på denne branch med samme kolonnevalg og reservationsvalg, **så**
     - er kolonnevalg, match og forvalg identiske,
     - har rækkerne 21, 22, 27, 28, 115, 159, 185 og 205 (fra testrapporten) ikke længere CRAFT eller FINISH i `source.cask_number`. De har intet eller et rigtigt nummer,
