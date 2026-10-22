@@ -1280,6 +1280,7 @@ Indeks: **UNIQUE `uniq_nl_cat (campaign_id, price)`**.
 | `core/permissions.php` | Ændret | `hsg_admin_can_view_module()`: manglende række eller tabel giver manifestets `admin_default_access` (standard `true`). Ingen ændring for eksisterende moduler. |
 | `modules/newsletter/migrations.php` | Ny | '1.0.0' |
 | `modules/newsletter/hooks.php` | Ny | Sletter en udløbet importforhåndsvisning fra sessionen på alle sider. (Tilføjet efter reviewet af trin 1.) |
+| `core/newsletter_import_preview.php` | Ny | Forhåndsvisningen i sessionen (`HSG_NEWSLETTER_PREVIEW_TTL`, opret, indlæs, gem, slet, udløb), så `hooks.php` ikke indlæser hele `core/newsletter.php`. (Tilføjet efter reviewet af trin 1.) |
 | `core/newsletter.php` | Ny | Normalisering og validering af mail, maskering, token (via `core/access_links.php`), analyse og gennemførelse af import (bruger `core/supplier_import.php`), afmelding, sletning (ret til sletning), CSV-eksport, faner, danske etiketter |
 | `newsletter.php` | Ny | Trin 1: viderestiller til `newsletter_recipients.php` |
 | `newsletter_recipients.php` | Ny | S1 (liste, tilføj, rediger, afmeld/stop/genaktivér, eksport, slet) |

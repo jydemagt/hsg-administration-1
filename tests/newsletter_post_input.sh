@@ -166,13 +166,13 @@ fi
 pichk "Tester: en direkte linkbruger får 403 på nyhedsbrevssiderne med listefelter og kan ikke slette (modtager 1 er uændret)${fails:+ – FEJL:$fails}" '[ -z "$fails" ] && [ "$(pisql "SELECT status FROM hsg_newsletter_recipients WHERE id=1")" = "active" ]'
 pichk "Tester: uden login giver listefelter 401" '[ "$(curl -g -s -o /dev/null -w "%{http_code}" "$BASE/newsletter_recipients.php?id[]=1")" = "401" ] && [ "$(curl -g -s -o /dev/null -w "%{http_code}" "$BASE/newsletter_recipients.php" -d action=delete -d "id[]=1")" = "401" ]'
 
-# ---------- 4. core/newsletter.php indlæses kun, når der ligger en forhåndsvisning; hooks følger modulet ----------
+# ---------- 4. hooks.php indlæser aldrig hele core/newsletter.php (kun core/newsletter_import_preview.php); hooks følger modulet ----------
 piput drop "$JAR"; r1=$(piprobe "$JAR")
 piput put "$JAR" 10; r2=$(piprobe "$JAR")
 piput put "$JAR" 7300; r3=$(piprobe "$JAR")
 pichk "Tester: uden forhåndsvisning indlæses core/newsletter.php ikke ($r1)" '[ "$r1" = "PROBE nl=nej preview=nej" ]'
-pichk "Tester: med en frisk forhåndsvisning indlæses den, og forhåndsvisningen bevares ($r2)" '[ "$r2" = "PROBE nl=ja preview=ja" ]'
-pichk "Tester: med en udløbet forhåndsvisning slettes den ($r3)" '[ "$r3" = "PROBE nl=ja preview=nej" ]'
+pichk "Tester: med en frisk forhåndsvisning indlæses core/newsletter.php heller ikke, og forhåndsvisningen bevares ($r2)" '[ "$r2" = "PROBE nl=nej preview=ja" ]'
+pichk "Tester: med en udløbet forhåndsvisning slettes den uden at indlæse core/newsletter.php ($r3)" '[ "$r3" = "PROBE nl=nej preview=nej" ]'
 pitoggle 0
 piput put "$JAR" 7300; r4=$(piprobe "$JAR")
 c1=$(curl -s -b "$JAR" -c "$JAR" -o "$PI/p.html" -w '%{http_code}' "$BASE/products.php"); bp=0; pibadhtml_p() { grep -qiE "$PIERR" "$PI/p.html"; }; pibadhtml_p && bp=1

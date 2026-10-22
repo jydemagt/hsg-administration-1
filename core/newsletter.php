@@ -10,9 +10,10 @@ declare(strict_types=1);
 
 require_once __DIR__.'/supplier_import.php';
 require_once __DIR__.'/access_links.php';
+require_once __DIR__.'/newsletter_import_preview.php'; // forhåndsvisningen i sessionen og HSG_NEWSLETTER_PREVIEW_TTL
 
 const HSG_NEWSLETTER_MAX_ROWS = 5000;
-const HSG_NEWSLETTER_PREVIEW_TTL = 7200;
+const HSG_NEWSLETTER_INVALID_FORM = 'Formularen er ugyldig. Genindlæs siden, og prøv igen.';
 // Grænser for importen, så en stor fil eller en zip-bombe giver en fejltekst og ikke HTTP 500.
 const HSG_NEWSLETTER_MAX_UPLOAD = 5 * 1024 * 1024;       // uploadet fil
 const HSG_NEWSLETTER_MAX_XLSX_XML = 30 * 1024 * 1024;    // ark og delte strenge i en xlsx, udpakket
@@ -46,7 +47,7 @@ function hsg_newsletter_has_list(array $source): bool {
 /** Et id fra $_POST eller $_GET: kun cifre, ellers 0 (også for en liste som id[]=5, der ellers ville blive til 1). */
 function hsg_newsletter_input_id(array $source, string $key): int {
     $v = hsg_newsletter_input($source, $key);
-    return ctype_digit($v) ? (int)$v : 0;
+    return preg_match('/^[0-9]+$/D', $v) ? (int)$v : 0;
 }
 
 function hsg_newsletter_lower(string $s): string {
@@ -1024,37 +1025,4 @@ function hsg_newsletter_import_apply(PDO $pdo, array $rows, array $cols, string 
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $e;
     }
-}
-
-/*
- * Forhåndsvisningen ligger kun i sessionen og aldrig i databasen (Kims fil kan indeholde andre persondata).
- * Den slettes, når importen er gennemført eller annulleret, og når den er udløbet.
- */
-
-function hsg_newsletter_preview_create(array $data): string {
-    $token = bin2hex(random_bytes(16));
-    $_SESSION['newsletter_import'] = ['token' => $token, 'created' => time()] + $data;
-    return $token;
-}
-
-/** Sletter en udløbet forhåndsvisning uanset token, så filens indhold ikke bliver liggende i sessionen. */
-function hsg_newsletter_preview_expire(): void {
-    if (!array_key_exists('newsletter_import', $_SESSION ?? [])) return;
-    $p = $_SESSION['newsletter_import'];
-    if (!is_array($p) || time() - (int)($p['created'] ?? 0) > HSG_NEWSLETTER_PREVIEW_TTL) unset($_SESSION['newsletter_import']);
-}
-
-function hsg_newsletter_preview_load(string $token): ?array {
-    hsg_newsletter_preview_expire();
-    $p = $_SESSION['newsletter_import'] ?? null;
-    if (!is_array($p) || $token === '' || !hash_equals((string)($p['token'] ?? ''), $token)) return null;
-    return $p;
-}
-
-function hsg_newsletter_preview_save(array $preview): void {
-    $_SESSION['newsletter_import'] = $preview;
-}
-
-function hsg_newsletter_preview_clear(): void {
-    unset($_SESSION['newsletter_import']);
 }

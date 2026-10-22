@@ -252,7 +252,7 @@ curl -s -b "$JAR" -c "$JAR" -D "$NF/exp_h.txt" -o "$NF/exp.csv" "$BASE/newslette
 nfchk "K26 CSV: BOM, semikolon, '=CMD() som tekst, Content-Disposition attachment, audit logget" '[ "$(head -c3 "$NF/exp.csv" | od -An -tx1 | tr -d " \n")" = "efbbbf" ] && grep -q "Mail;Navn;Firma;Type;Status;Kilde;Oprettet" "$NF/exp.csv" && grep -q "csv@x.dk;'"'"'=CMD()" "$NF/exp.csv" && grep -qi "content-disposition: attachment" "$NF/exp_h.txt" && [ "$(nfsql "SELECT COUNT(*) FROM hsg_audit_log WHERE action='"'"'newsletter.recipient.export'"'"' AND entity_id='"'"'$CID'"'"'")" = "1" ]'
 
 # ---------- Opfølgning: felter sendt som lister (fx mode[]=x) giver ingen PHP-advarsel og rammer ikke modtager 1 ----------
-nfwarn() { grep -c "Array to string\|must be of type string" /tmp/hsg-php-server.log 2>/dev/null || true; }
+nfwarn() { grep -c "Array to string\|must be of type string" "${HSG_PHP_LOG:-/tmp/hsg-php-server.log}" 2>/dev/null || true; }
 W0=$(nfwarn); codes=""
 nfarr() { local c; c=$(curl -g -s -L -b "$JAR" -c "$JAR" -o "$NF/arr.html" -w '%{http_code}' "$@"); codes="$codes $c"; ! grep -qiE "<b>(Warning|Notice|Deprecated|Fatal error)</b>|(Warning|Notice|Deprecated|Fatal error): |Uncaught|Array to string" "$NF/arr.html"; }  # begge formater (html_errors 0 og 1)
 P=$(nfanalyse udloeb.csv customer); T=$(token "$BASE/newsletter_import.php")

@@ -16,6 +16,13 @@ if (!is_file($jar) || !preg_match('/PHPSESSID\s+([A-Za-z0-9,-]+)/', (string)file
     fwrite(STDERR, "Brug: php tests/newsletter_probe.php <cookie-fil med PHPSESSID>\n");
     exit(2);
 }
+// Værn som i tests/newsletter_sql.php: auth.php kører migrationer, så kun mod testdatabasen fra tests/run.sh.
+$c = is_file(dirname(__DIR__).'/config.php') ? require dirname(__DIR__).'/config.php' : [];
+$testDb = (string)getenv('HSG_TEST_DB_NAME');
+if ($testDb === '' || (string)($c['db_name'] ?? '') !== $testDb) {
+    fwrite(STDERR, "Afvist: config.php peger ikke på testdatabasen i HSG_TEST_DB_NAME.\n");
+    exit(3);
+}
 chdir(dirname(__DIR__));
 $_COOKIE['PHPSESSID'] = $m[1];
 $_SERVER['REQUEST_METHOD'] = 'GET';
@@ -24,7 +31,9 @@ $_SERVER['REQUEST_URI'] = '/probe.php';
 
 // Shutdown-funktioner kører, før sessionen skrives, så $_SESSION kan aflæses her, også hvis auth.php kalder exit.
 register_shutdown_function(static function (): void {
-    echo "\nPROBE nl=", function_exists('hsg_newsletter_preview_expire') ? 'ja' : 'nej',
+    // nl = om hele core/newsletter.php blev indlæst (hooks.php må kun indlæse den lille core/newsletter_import_preview.php)
+    $nl = in_array(realpath(dirname(__DIR__).'/core/newsletter.php'), array_map('realpath', get_included_files()), true);
+    echo "\nPROBE nl=", $nl ? 'ja' : 'nej',
         ' preview=', isset($_SESSION['newsletter_import']) ? 'ja' : 'nej', "\n";
 });
 require dirname(__DIR__).'/auth.php';
