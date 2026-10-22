@@ -1,19 +1,111 @@
 # Testrapport: Fadnummer kræver et ciffer – udledning og oprydning (modul `products` 1.5.1)
 
 - **Spec:** `docs/specs/2026-10-22-fadnummer-kraever-ciffer.md` (acceptkriterie 78–98). Brugerens svar: Q1 = A, Q2 = ja, Q3 = nej.
-- **Branch:** `feature/kims-upload-fadnummer-ciffer`, testet på commit `594a365` (udviklerens commits `411613d`, `a938f83`, `cfc9349`, `594a365` oven på basen `df886b4` = HEAD af `feature/kims-upload-review-rettelser`).
+- **Branch:** `feature/kims-upload-fadnummer-ciffer`, testet på commit `594a365` og retestet efter review på `1093c91` (udviklerens commits `411613d`, `a938f83`, `cfc9349`, `594a365` oven på basen `df886b4` = HEAD af `feature/kims-upload-review-rettelser`).
 - **Testet:** 22-10-2026, af uafhængig tester. Udviklerens rapport er ikke brugt som bevis; alt nedenfor er kørt af testeren.
-- **Omnummereret efter review:** Kriterierne hed 60–80, da testen blev kørt, og hedder nu 78–98 (+18), fordi tillæg 2026-10-20 fik 60–62, og Q1-spec'en om lagertal bruger 63–77. Numre og tjeknavne ("Case …") i rapporten er rettet tilsvarende; resultaterne er uændrede. Scriptnavne som `diff60.php` er de oprindelige filnavne. Rettelserne efter review (kriterie 99–100, spec'en afsnit 11) er ikke testet i denne rapport.
+- **Omnummereret efter review:** Kriterierne hed 60–80, da testen blev kørt, og hedder nu 78–98 (+18), fordi tillæg 2026-10-20 fik 60–62, og Q1-spec'en om lagertal bruger 63–77. Numre og tjeknavne ("Case …") i rapporten er rettet tilsvarende; resultaterne er uændrede. Scriptnavne som `diff60.php` er de oprindelige filnavne. Rettelserne efter review (kriterie 99–100, spec'en afsnit 11) er testet i afsnittet "Retest efter review (HEAD 1093c91)" lige herunder. Resten af rapporten (fra "Konklusion fra første test") er den oprindelige test på `594a365`; steder, hvor tal eller kommandoer blev forældede af merget af basen, er rettet og mærket.
 
-## Konklusion
+## Retest efter review (HEAD 1093c91)
+
+**Samlet konklusion for hele branchen: KLAR.** Ingen fejl fundet. Kriterie 99 (XSS) og 100 (mobiloverløb) er bestået og er sammenlignet mod den gamle kode (`fb33b79`), så det er vist, at målingerne kan fange fejlen. De tre forbehold fra første test står uændret (kriterie 96 på `lager 19-10-2026.xlsx`, rigtig opgradering via update.php, PHP 8.1).
+
+- **Testet kode:** `0a4cea4`. `1093c91` (HEAD) ændrer kun én linje i spec'en (`git diff 0a4cea4 HEAD --stat`: kun `docs/specs/2026-10-22-fadnummer-kraever-ciffer.md`), så resultaterne gælder også på HEAD. Commits siden første test: `55d3664` (merge af basen `3cb8b6f`), `0407262` (XSS), `7a165c8` (mobil og hjælpetekst), `a8cce2d` (tests), `516fbe0`, `0a4cea4` og `1093c91` (spec).
+- **Miljø:** som før (PHP 8.5.8, MariaDB 10.4.22 på 127.0.0.1:3317). Kun `hsg_test_q2*` er brugt. `max_execution_time = 900` via `phpini_dev`. HTTP-tests på `php -S 127.0.0.1:8788` (HEAD, database `hsg_test_q2b`, startlager) og, som sammenligning, 8789 med `fb33b79` fra `git archive` (database `hsg_test_q2c`, samme testdata indsat i begge). Serverne er stoppet, `hsg_test_q2b` og `hsg_test_q2c` er droppet, `hsg_test_q2` står som frisk installation. **`config.php` i worktree-roden blev ikke slettet** (se punkt 6).
+
+### 1. `bash tests/run.sh` på en frisk database: GRØN
+
+Frisk `hsg_test_q2` (droppet og oprettet), `bash tests/run.sh`, exit 0, 33 sekunder. Alle fire trin grønne, og installationen fejlede ikke på 30-sekundersgrænsen denne gang.
+
+| Trin | Resultat |
+|---|---|
+| 1 PHP-syntaks | OK |
+| 2 Release-negativtest | OK |
+| 3 Enhedstest | Kims uploadfil **275 tjek**, 0 fejlede (var 248; basen har fået egne tests). Fadnummer-udledning **99 tjek**, 0 fejlede (var 84; rækkerne q–t er kommet til). |
+| 4 Installation, røgtest | Installation og admin-login OK. Alle 19 sider (inkl. `products.php?status=all&filter=cask_no_digit`) HTTP 200. Uden login 401, POST uden CSRF 419. **Nyt tjek:** `products.php med manipuleret status er escapet (HTTP 200)`. `reservation_mode` og `reguess` 419 og 401. |
+| 4 Databasetests og flow | Kims uploadfil (database) **56**, fadnummer-oprydning (database) **113** (var 110; produkt I er kommet til), flowtest Kims uploadfil **66**. Slutlinje: ALLE TESTS BESTÅET. |
+
+### 2. Kriterie 99 (XSS i `status`): BESTÅET
+
+Som admin over HTTP mod HEAD (8788), sammenlignet med `fb33b79` (8789). `curl -g`, svar gemt og sammenlignet efter fjernelse af CSRF-tokens.
+
+| Forespørgsel `products.php?…` | `fb33b79` (gammel) | HEAD (ny) |
+|---|---|---|
+| `status=%22%3E%3Cscript%3Ealert(1)%3C/script%3E` (run.sh-varianten) | `"><script>alert(1)` står uescapet i href på "Mangler fadnr." og "Negativt lager" (2 steder) | HTTP 200, ingen `<script>alert(1)` i svaret, siden er byte-for-byte som `status=active` |
+| `status='onmouseover=alert(1)` | `onmouseover=alert(1)` står uescapet i begge href'er | 0 steder, byte-for-byte som `status=active` |
+| `status=active%22%20onmouseover%3Dalert(1)%20x%3D%22` (bryder ud af attributten) | injiceret attribut `onmouseover=alert(1)` på begge knapper | 0 steder, som `status=active` |
+| `status='><svg/onload=alert(1)>` og `status=<script>` med `filter=missing_cask` / `negative_stock` | rå `'><svg/onload=…` og `<script>` i href | 0 steder, som `status=active` |
+| `status=all%22%3E`, `status=` (tom), `status=ALL`, `status=bogus` | værdien vises i href og skjult felt (tom: alle produkter) | HTTP 200 og **byte-for-byte som `status=active`** (0 diff-linjer, målt direkte mod `status=active` for de fire her, XSS-varianten og `'onmouseover=…`) |
+| `status=0`, `status[]=all` | `status=Array` og `status=0` skrives i href | skjult felt og alle href'er har `active` |
+| `q=%22%3E%3Cscript%3E…&status=all` og `filter=%22%3E%3Cscript%3E…` | escapet | escapet (uændret) |
+
+- **Gyldige statusser som før:** 18 forespørgsler (ingen parameter, `status=active|inactive|discontinued|all`, `status=%20all%20`, kombineret med `filter=missing_cask|negative_stock|cask_no_digit` og `q=`) er sammenlignet mellem `fb33b79` og HEAD efter fjernelse af CSRF-tokens. 17 har **0 forskelle i HTML**. Den 18. (`filter=cask_no_digit`) har kun de tilsigtede forskelle: den nye hjælpetekst og `style` på værdi-spanen.
+- **Knapperne bevarer gyldig status:** for ingen `status`, `active`, `inactive`, `discontinued`, `all` og `%20inactive%20` er hrefs på "Mangler fadnr." og "Negativt lager" `products.php?status=<samme gyldige status>&filter=…`, det skjulte felt har samme værdi, og den valgte knap er markeret (`class="button "`). "Nulstil filtre" peger på `products.php?status=inactive` ved `status=inactive`.
+- **Koden:** `products.php:108` whitelister (`in_array(…, ['active','inactive','discontinued','all'], true)`), og `h()` står på `:137`, `:140`, `:163` og `:165` (alle steder, hvor `$showStatus` skrives i HTML).
+- **Regressionstjekket i run.sh kan fange fejlen:** den samme `curl`+`grep -qF '"><script>alert(1)'` som i `tests/run.sh:96-102` giver FEJL mod `fb33b79` (port 8789) og OK mod HEAD (port 8788).
+- **POST uden CSRF** til `products.php` (også med manipuleret `status`): 419. Uden login: 401 (også `filter=cask_no_digit`).
+- **Bemærk (tilsigtet, spec'en afsnit 11 punkt 1):** `status=` (tom) og andre ukendte værdier viser nu aktive produkter. Før viste en tom værdi alle produkter (i målingen 394 kort mod 388 nu). Ingen side i systemet linker med tom status.
+
+### 3. Kriterie 100 (mobiloverløb): BESTÅET
+
+Chrome headless (155), siden i en `<iframe width=390>` (layoutbredde 390 px), `scrollWidth` og `clientWidth` målt på dokumentet efter `load`. Hvert produkt er isoleret med `&q=<navn>`, så målingen ikke domineres af et andet kort. `fb33b79` er kontrol (kendt fejl).
+
+| Fadnummer (filter `cask_no_digit`) | `fb33b79` scrollWidth | HEAD scrollWidth | clientWidth | Resultat |
+|---|---|---|---|---|
+| 31 × `X` | 390 | 390 | 390 | ingen overløb (begge) |
+| **40 × `X`** | 444 (overløb) | **390** | 390 | BESTÅET |
+| **80 × `Y`** (kravet i kriterie 100) | 712 (overløb) | **390** | 390 | BESTÅET |
+| 80 × `W` (bredeste bogstav) | 1109 (overløb) | **390** | 390 | BESTÅET |
+| 80 tegn `AB/-.` (bindestreg, skråstreg, punktum) | 600 (overløb) | **390** | 390 | BESTÅET |
+| 80 tegn `ÆØÅ` | 914 (overløb) | **390** | 390 | BESTÅET |
+| `Ål'ø"æå&amp;` (specialtegn) | 390 | 390 | 390 | ingen overløb, vist escapet (`&#039;`, `&quot;`, `&amp;amp;`) |
+| `<script>alert()</script><img src=x onerror=alert()>` | – | 390 | 390 | vist som `#&lt;script&gt;…`, ingen rå `<script>` eller `<img` i svaret |
+
+- **Hele listen (12 kort, alle ovenstående på én side):** HEAD `scrollWidth` = `clientWidth` = 375 ved 390 px og 305 ved 320 px (forskellen til bredden er den lodrette rullebjælke), ingen kort eller værdi-span løber over (`OVERFLOW_CARDS` tom). `fb33b79` samme side: `scrollWidth` 1109, seks kort løber over.
+- Værdi-spanen har i svaret præcis `style="overflow-wrap:anywhere;min-width:0;text-align:right"`. Hjælpeteksten er den nye ("De bruges ikke ved produktmatch i Kims uploadfil, men vises stadig i kataloget og bruges i billedtjekket, indtil de er rettet.").
+- Det er Chrome headless i en iframe og ikke en rigtig telefon (som i første test).
+
+### 4. Kriterie 95 og omnummereringen: BESTÅET
+
+- **Kriterie 95 med den nye reference:** `git diff origin/feature/kims-upload-review-rettelser...HEAD -- core/supplier_import.php supplier_upload.php migrations.php import.php install.php` giver **0 linjer**. `origin/feature/kims-upload-review-rettelser` er `3cb8b6f`, som er forfader til HEAD (merge-base = `3cb8b6f`). Til kontrol viser `git diff df886b4 HEAD` på de samme filer én ændret linje i `core/supplier_import.php:834` (`{40}$` → `{40}\z` i `hsg_supplier_preview_token_valid`), og den stammer fra basen (`git log df886b4..HEAD -- core/supplier_import.php` giver kun `7b68a6f`). Den tæller ikke, som spec'en nu skriver.
+- **Tests og specs, som branchen ikke ejer, er urørte:** `git diff origin/feature/kims-upload-review-rettelser...HEAD -- tests/supplier_import_test.php tests/supplier_import_db_test.php tests/supplier_upload_flow_test.php docs/specs/2026-10-20-kims-upload-review-rettelser.md docs/specs/2026-10-19-kims-upload-lagerfejl.md` er tom. Basens egne kriterier (44–46 for R2, 60–62 i 2026-10-20-spec'en og dens testrapport, "Case 60/61") står uændret.
+- **Spec:** kriterierne står som `78.` til `100.` i ubrudt rækkefølge. Alle øvrige tal i 60–80-området i spec'en er enten forklaringen af omnummereringen (linje 9, 304, 468), basens egne numre (44–46, 60–62, 63–77) eller ikke kriterienumre. Afsnit 7 (`kriterie 78–82 og 88`, `83–87`), afsnit 8 og afsnit 11 bruger de nye numre. Ingen "Case"-henvisninger i spec'en. Mappingen er +18 for hvert kriterie (60→78 … 80→98).
+- **Tests:** tjeknavnene er `78`, `79`, `80`, `80n`, `81`, `88` i `tests/product_enrichment_test.php` og `87`, `83/84` (to gange), `85`, `86` i `tests/cask_number_cleanup_db_test.php`. Filhovederne siger `kriterie 78-82 og 88; hed 60-64 og 70 før omnummereringen` og `kriterie 83-87; hed 65-69 …`. Ingen rester af 60–77 som vores kriterienumre i `tests/`, `README.txt`, `docs/`, `modules/`, `core/` eller `*.php` i roden (`grep`).
+- **Testrapporten:** 78–98 stemmer med mappingen i alle rækker, "Case"-navne og mutanttabellen. `diff60.php` er et filnavn i scratchpad og er bevaret med vilje. De tre forældede steder (kriterie 82, kriterie 95 og forslaget `'Barrel 0'`) er rettet i denne commit.
+
+### 5. Testhuller fra første test: tre af seks er lukket
+
+De 22 mutanter fra første test (`qa/mutate.php`) er kørt igen mod HEAD-testene (kopi af koden i scratchpad; databasen gendannet fra dump mellem hver). Første kørsel blev kasseret, fordi min kopi manglede `config.php`, så databasetesten stoppede med exit 2 og alle mutanter fejlagtigt så "opdaget". Anden kørsel (med `config.php` til `hsg_test_q2`) er den gyldige. Uden mutation: 99 og 113 tjek grønne.
+
+| Mutant | Før (594a365-testene) | Nu (HEAD-testene) |
+|---|---|---|
+| M4 `trim` fjernet ved bevis | overlevede | **opdaget** (case 83, 85: produkt I, `' STRENGTH '`) |
+| M13 `[1-9]` i stedet for `\d` | overlevede | **opdaget** (case 78: række t, `#00`) |
+| M22 årstalsfilteret fjernet | overlevede | **opdaget** (case 78, 79: række q–s) |
+| M1, M2, M3, M5, M6, M8, M9, M12, M14, M16, M17, M19, M21 | opdaget | opdaget (uændret) |
+| M7 ingen audit-post, når intet er ryddet, og M18 migrationen kalder ikke oprydningen | opdaget kun i fuld installation (case 87) | overlever i dette program (databasen er allerede installeret), som før. **Ikke kørt igen i fuld installation denne gang;** case 87 er uændret i logikken. |
+| M10 startlagerets navn prøves før produktets eget | overlevede | overlever (ikke et krav fra review) |
+| M11 `cleared` uden `rowCount`-tjek | overlevede | overlever (kræver samtidighed; dækket manuelt af kapløbstesten i første test) |
+| M15 `value` i `kept` trimmet | overlevede | overlever (ikke et krav fra review) |
+
+M20 (normalisering) kunne ikke lægges ind (som før). Overlevende M10, M11 og M15 er testhuller uden produktionsfejl og blokerer ikke.
+
+Rækkerne q–t er desuden kørt direkte mod `hsg_extract_cask_number` og `hsg_cask_number_candidates` (`qa2/q.php`): `Cask 2012` → `null`, `#2015 Cask Strength` → `null` (kandidater `["STRENGTH"]`), `Cask 2012, #43` → `43`, `#00` → `00`. Ekstra: `Barrel 0` → `null` (kandidater `[]`), så et fadnummer på ét tegn kan ikke komme ud af mønstrene (se rettelsen af testforslaget i "Testhuller og anbefalede tests").
+
+### 6. Hvad der ikke er kørt i retesten, og oprydning
+
+- **Ikke kørt:** kriterie 96 på `lager 19-10-2026.xlsx`; rigtig opgradering via update.php; PHP 8.1; rigtig telefon; M7 og M18 i fuld installation. Ingen af dem er ændret af rettelsesrunden, og de tre første står som forbehold i den oprindelige konklusion.
+- **Oprydning:** Serverne på 8788 og 8789 er stoppet (porte lukkede). `hsg_test_q2b` og `hsg_test_q2c` er droppet. **`config.php` i worktree-roden (gitignoreret, peger på den droppede `hsg_test_q2b`) kunne ikke slettes af testeren:** `rm config.php` blev afvist af en deny-regel i sandboxen, og reglen er ikke omgået. `git status` er ren (`git status --ignored` viser `config.php`, `storage/data/` og `uploads/`). **Slet den med `rm config.php`, før `bash tests/run.sh` køres igen**, ellers stopper røgtesten med "config.php findes allerede".
+- **Ændrede filer:** kun denne testrapport. Ingen produktionskode, ingen spec, ingen tests. Scripts og rå output ligger i scratchpad under `qa2/` (`setup.sh`, `seed.php`, `measure.sh`, `q.php`, `mut_result2.txt`).
+
+## Konklusion fra første test (594a365)
 
 **KLAR** – med tre forbehold, som ikke er fejl i koden, men ting der ikke kunne køres her (se "Hvad er IKKE kørt"): (1) kriterie 96 er kun kørt på den ældre fil `lager 18-10-2026.xlsx`, fordi `lager 19-10-2026.xlsx` ikke findes på maskinen. Den skal køres manuelt af brugeren. (2) Selve opgraderingen via update.php (rigtig ZIP) og FTP-varianten med fuld `ensure_schema_updates` er ikke kørt. (3) PHP 8.1 er ikke prøvet (kun 8.5.8).
 
 - **Ingen fejl fundet i produktionskoden.** Alle kriterier 78–95 og 97–98 er bestået. Kriterie 96 er delvist bestået (stand-in-fil).
-- `bash tests/run.sh` er **grøn** (enhedstest 248 + 84 tjek, databasetest af Kims uploadfil 56, databasetest af oprydningen 110, flowtest 66; alle sider i røgtesten uden 500, inklusive den nye `products.php?status=all&filter=cask_no_digit`).
+- `bash tests/run.sh` er **grøn** (enhedstest 248 + 84 tjek, databasetest af Kims uploadfil 56, databasetest af oprydningen 110, flowtest 66; alle sider i røgtesten uden 500, inklusive den nye `products.php?status=all&filter=cask_no_digit`). Tallene er fra `594a365`; efter merget af basen og rettelserne er de 275 + 99, 56, 113 og 66 (se retesten).
 - Opgraderingen på skrømt (products 1.5.0 → 1.5.1) giver præcis det forventede: 7 ryddet, 3 bevaret, én audit-post, ingen ny post ved efterfølgende forespørgsler.
 - Udviklerens syv afvigelser og de to tvivlspunkter er vurderet hver for sig (se afsnittet "Udviklerens afvigelser"). **Alle er i overensstemmelse med spec'en eller strengere end den.**
-- **5 bemærkninger** (ingen blokerer) og **6 overlevende mutanter** (testhuller; se "Testhuller"). Den mest synlige bemærkning er layout: en uafbrudt fadnummerværdi på 40 tegn eller mere gør produktlisten bredere end skærmen på 390 px (kun i det nye filter, kun ved urealistiske værdier).
+- **5 bemærkninger** (ingen blokerer) og **6 overlevende mutanter** (testhuller; se "Testhuller"). Den mest synlige bemærkning er layout: en uafbrudt fadnummerværdi på 40 tegn eller mere gør produktlisten bredere end skærmen på 390 px (kun i det nye filter, kun ved urealistiske værdier). **Rettet i `7a165c8` og bekræftet i retesten (kriterie 100).**
 
 ## Miljø og metode
 
@@ -29,22 +121,22 @@
 
 | Kørsel | Resultat |
 |---|---|
-| `bash tests/run.sh` (frisk tom DB, kørsel 1) | Trin 1 (php -l alle filer), 2 (release-negativtest A–G), 3 (Kims uploadfil **248 tjek**, fadnummer-udledning **84 tjek**) og 4 (installation, login, alle sider, uden login 401, POST uden CSRF 419, `reservation_mode`/`reguess` 419 og 401, `supplier_import_db_test.php` **56 tjek**, `cask_number_cleanup_db_test.php` **110 tjek**, `supplier_upload_flow_test.php` **66 tjek**) er grønne. Slutlinje: ALLE TESTS BESTÅET. |
+| `bash tests/run.sh` (frisk tom DB, kørsel 1) | Trin 1 (php -l alle filer), 2 (release-negativtest A–G), 3 (Kims uploadfil **248 tjek** (efter merge 275), fadnummer-udledning **84 tjek** (nu 99)) og 4 (installation, login, alle sider, uden login 401, POST uden CSRF 419, `reservation_mode`/`reguess` 419 og 401, `supplier_import_db_test.php` **56 tjek**, `cask_number_cleanup_db_test.php` **110 tjek** (nu 113), `supplier_upload_flow_test.php` **66 tjek**) er grønne. Slutlinje: ALLE TESTS BESTÅET. |
 | Samme, kørsel 2 og 3 (frisk tom DB hver gang) | **Installation fejlede** (PHP-grænse på 30 s ramt i `install.php:20` / `core/catalog_image_seed.php:23` på grund af langsom disk; se "Miljø og metode"). Trin 1–3 var grønne. Ikke en fejl i branchen. |
 | Samme, kørsel 4 (frisk tom DB, `max_execution_time = 900`) | Identisk resultat som kørsel 1: ALLE TESTS BESTÅET (47 s i alt). |
 | `tests/cask_number_cleanup_db_test.php` kørt igen oven på en DB, hvor den allerede har kørt | Grøn (110 tjek): testen rydder selv op og kan køres igen. |
-| `git diff df886b4 -- core/supplier_import.php supplier_upload.php migrations.php import.php install.php tests/supplier_import_test.php` | Tom (ingen ændringer). |
+| `git diff df886b4 -- core/supplier_import.php supplier_upload.php migrations.php import.php install.php tests/supplier_import_test.php` (på `594a365`) | Tom (ingen ændringer). **Efter merget af basen (`55d3664`) er den ikke længere tom:** basens egen rettelse `7b68a6f` ændrer én linje i `core/supplier_import.php`, og basens egne tests har ændret `tests/supplier_import_test.php` (37 linjer). Mod den nye reference (`git diff origin/feature/kims-upload-review-rettelser...HEAD -- …`) er diffen tom, se kriterie 95 og retesten. |
 | Egne scripts (se afsnittene herunder) | `diff60.php`, `robust.php`, `upg_setup.php` + `upg_check.php`, `race.php`, `trimcmp.php`, `kim_dump.php` + `kim_cmp.php`, `mutate.php`, HTTP-kald med `curl` |
 
 ## Acceptkriterier
 
 | Nr. | Kriterie (kort) | Resultat | Bevis |
 |---|---|---|---|
-| 78 | `hsg_extract_cask_number` for tabellen a–p | BESTÅET | Case 78 grøn. Eget script `diff60.php` med tabellen skrevet fra spec'en: alle 16 rækker som i kolonnen "Efter" (a `null`, b `null`, c `null`, d `231584`, e `200`, f `null`, g `R10/123`, h `R10/123`, i `null`, j `null`, k `null`, l `231584`, m `43`, n `null`, o `1ST`, p `null`). Differentialtest på 30.181 tekster: ny funktion = første kandidat med mindst ét ciffer i alle tilfælde, og ingen tekst, hvor den gamle gav en værdi med ciffer, har fået et andet resultat. Ny funktion returnerer aldrig en værdi uden ciffer. |
+| 78 | `hsg_extract_cask_number` for tabellen a–p (efter review a–t, se retesten) | BESTÅET | Case 78 grøn. Eget script `diff60.php` med tabellen skrevet fra spec'en: alle 16 rækker som i kolonnen "Efter" (a `null`, b `null`, c `null`, d `231584`, e `200`, f `null`, g `R10/123`, h `R10/123`, i `null`, j `null`, k `null`, l `231584`, m `43`, n `null`, o `1ST`, p `null`). Differentialtest på 30.181 tekster: ny funktion = første kandidat med mindst ét ciffer i alle tilfælde, og ingen tekst, hvor den gamle gav en værdi med ciffer, har fået et andet resultat. Ny funktion returnerer aldrig en værdi uden ciffer. |
 | 79 | `hsg_cask_number_candidates` gengiver den gamle udledning | BESTÅET | Case 79 grøn. `diff60.php`: `[0] ?? null` = kolonnen "I dag" for a–p og **= den gamle funktion fra `df886b4` på alle 30.181 tekster** (0 afvigelser). Alle elementer med store bogstaver (0 afvigelser). `m` giver `["FINISH","43"]`, `l` `["STRENGTH","231584"]`, `j` og `p` `[]`. |
 | 80 | `hsg_product_parse_text` | BESTÅET | Case 80 grøn: "Cask Strength" uden `cask_number` i `fields` og `confidence` og uden "fadnummer" i `reason`; "Cask Craft" uden; "Cask No. 231584" giver `'231584'`, konfidens 99 og begrundelsen "fadnummer aflæst direkte efter #/Cask No."; Knockdhu giver `'43'`. Case 80n tester normaliseringen (– og — bliver -, mellemrum samles) separat. |
 | 81 | `hsg_supplier_source_fields` | BESTÅET | Case 81 grøn: "Glenfarclas 15 Cask Strength" uden `cask_number`, "Glen Test Sherry Cask #100" giver `'100'`. Testens egne hjælpere `pe_kim_row`/`pe_kim_map` er sammenlignet med `kim_row`/`kim_map(false)` i `supplier_import_test.php`: samme kolonner (4, 5, 7 og lokationer 17–19), så kaldet er identisk med spec'ens. Se udviklerens afvigelse 7. |
-| 82 | Eksisterende tests uændret grønne | BESTÅET | `tests/supplier_import_test.php` er **uændret** (tom `git diff`) og giver 248 tjek bestået, 0 fejlede. |
+| 82 | Eksisterende tests uændret grønne | BESTÅET | `tests/supplier_import_test.php` er **ikke ændret af denne branch** (`git diff origin/feature/kims-upload-review-rettelser...HEAD -- tests/supplier_import_test.php` er tom) og giver **275 tjek** bestået, 0 fejlede (efter merget af basen `3cb8b6f`). På `594a365` var tallet 248 og `git diff df886b4` tom; forskellen er basens egne nye tests (37 linjer, kom med `55d3664`), ikke denne branchs. |
 | 83 | Oprydning, kørsel 1 og 2 | BESTÅET | Case 83/84 (kørsel 1 og 2) grønne: A `NULL`, B `'43'`, C–G og H uændrede, `cleared` og `kept` som spec'en. Kørsel 2 med seed-kortet giver C `'143'` (`initial_stock`), A og B uændrede. Dækket yderligere af opgraderingen på skrømt (se nedenfor) og af mutationstesten: 10 af de 21 mutanter (M1, M2, M3, M5, M6, M8, M9, M12, M14 og M19) rammes af case 83 og/eller 85. |
 | 84 | Præcis én audit-post pr. kørsel med de rigtige kolonner | BESTÅET | Case 83/84 og 86 tjekker `action`, `actor_type='system'`, `actor_id IS NULL`, `actor_name='System (opdatering)'`, `entity_type='product'`, `entity_id IS NULL`, `ip_hash IS NULL`, `cleared`/`kept` = returværdien, `cleared_count`/`kept_count`. Manuelt: audit-posterne vises under System → Auditlog → filter "Produkter" (`system.php?tab=audit&entity=product`) med "System (opdatering)" og detaljer. |
 | 85 | Idempotens (kørsel 3) | BESTÅET | Case 85 grøn. Manuelt: to efterfølgende forespørgsler (login-side, admin-side) efter migrationen skriver ingen ny post, og `hsg_module_versions.products` er `1.5.1`. |
@@ -57,10 +149,12 @@
 | 92 | Røgtesten indeholder filter-URL'en | BESTÅET | `tests/run.sh` har `products.php?status=all&filter=cask_no_digit` i `PAGES`. Output i begge fulde kørsler: `[OK] products.php?status=all&filter=cask_no_digit → HTTP 200`. Se udviklerens afvigelse 6. |
 | 93 | `bash tests/run.sh` helt grøn | BESTÅET | Se "Samlede kørsler". To kørsler grønne (kørsel 1 og 4); to fejlede i installationen på grund af miljøet (langsom disk, 30 s-grænse), ikke på grund af branchen. |
 | 94 | Manifester og dokumentation | BESTÅET | `modules/products/module.php`: `'version' => '1.5.1'`. `modules/supplier_upload/module.php`: `1.1.1`. `docs/SUPPLIER-UPLOAD.md` (afsnittet om udledning, `:24`, og "Produktmatch", `:79`) beskriver reglen og R2 som ekstra værn, som spec'en afsnit 7 kræver. `docs/PRODUCT-DATA-ASSISTANT.md` har punkt 1 og den nye sektion "Fadnumre uden ciffer" (engangsoprydning, audit-log, listen, Datakvalitet). `README.txt` har tilføjelsen på linjen om fadnummer og release-noten, som er ordret den fra spec'ens afsnit 5. `docs/ARCHITECTURE.md` har KAN-2. |
-| 95 | R2 og backfill uændrede | BESTÅET | `git diff df886b4 -- core/supplier_import.php supplier_upload.php migrations.php import.php install.php` er tom. |
+| 95 | R2 og backfill uændrede (kun branchens egne ændringer) | BESTÅET | `git diff origin/feature/kims-upload-review-rettelser...HEAD -- core/supplier_import.php supplier_upload.php migrations.php import.php install.php` er tom (0 linjer; kørt igen på HEAD i retesten). Mod `df886b4` er `core/supplier_import.php` ændret med én linje (`\z` i `hsg_supplier_preview_token_valid`), men den kommer fra basen (`7b68a6f`, med merget `55d3664`), ikke fra denne branch, og tæller ikke, som spec'en nu skriver. På `594a365` (før merget) var `git diff df886b4 -- …` tom. |
 | 96 | Kims rigtige fil, før/efter | **DELVIST – IKKE KØRT PÅ 19-10-FILEN** | `lager 19-10-2026.xlsx` findes ikke på maskinen. Kørt på `lager 18-10-2026.xlsx` (samme fil som den forrige testrapport brugte, og som rækkenumrene 21, 22, 27, 28, 115, 159, 185, 205 stammer fra). Se afsnittet "Kriterie 96". |
 | 97 | KAN-1: hjælpetekst under Fadnummer | BESTÅET | `product_edit.php?id=55` indeholder præcis `Nummeret efter # / Cask No. bruges som stærkt match ved leverandørupload og billedtjek. Det skal indeholde mindst ét ciffer – ord som "Strength" eller "Finish" er ikke et fadnummer.` |
 | 98 | KAN-2: note i ARCHITECTURE.md | BESTÅET | Afsnittet "Migrations" i `docs/ARCHITECTURE.md` har et nyt stykke: engangsrettelser af data lægges som modulmigration, fordi `ensure_schema_updates` kører med den gamle kode i opgraderingsforespørgslen (`core/updater.php`) og returnerer tidligt bagefter. Passer med `core/updater.php:320-323`. |
+| 99 | XSS i `status` i Produkter (rettelse efter review) | BESTÅET | Se retesten, punkt 2: `status` whitelistes (`products.php:108`) og skrives med `h()`; alle ugyldige værdier giver siden som `status=active`; gyldige statusser er uændrede; run.sh-tjekket fanger den gamle fejl. |
+| 100 | Mobiloverløb på Fadnr.-linjen (rettelse efter review) | BESTÅET | Se retesten, punkt 3: 40 og 80 tegn uden mellemrum giver `scrollWidth` = `clientWidth` ved 390 px (og 320 px); den gamle kode gav 444–1109. |
 
 ## Opgraderingen på skrømt (products 1.5.0 → 1.5.1)
 
@@ -131,7 +225,7 @@ Rækkerne 21, 22, 27, 28, 115, 159, 185 og 205 fra spec'en har alle fået intet 
 
 ## Bemærkninger (blokerer ikke)
 
-1. **Mobil: lange fadnumre uden mellemrum gør siden bredere end skærmen.** `<span>#<værdi></span>` i den nye `mobile-stock-line` kan ikke ombrydes uden mellemrum. Målt i en rigtig 390 px-visning (`qa/` iframe-test, `scrollWidth` vs. `clientWidth` = 375): 31 store bogstaver i træk: **ingen** overløb. 40 store bogstaver: `scrollWidth` 444. 80 store bogstaver (kolonnen er `VARCHAR(80)`): `scrollWidth` 751, kortet løber ud over skærmen, og hele siden kan scrolles sidelæns. 78 tegn **med** mellemrum: ingen overløb. De rigtige værdier (`STRENGTH`, `N/A`, `FINISH`, `Ukendt`) og alt, hvad den gamle udledning kunne gemme (højst 31 tegn), er uden problem, så det rammer kun urealistiske manuelle værdier, og kun i det nye filter. Reproduktion: sæt `cask_number` til 40 gange `X` på et produkt, åbn `products.php?status=all&filter=cask_no_digit` på 390 px. Forslag: `overflow-wrap:anywhere` på værdi-spanen (CSS er uden for tester-området).
+1. **Mobil: lange fadnumre uden mellemrum gør siden bredere end skærmen.** `<span>#<værdi></span>` i den nye `mobile-stock-line` kan ikke ombrydes uden mellemrum. Målt i en rigtig 390 px-visning (`qa/` iframe-test, `scrollWidth` vs. `clientWidth` = 375): 31 store bogstaver i træk: **ingen** overløb. 40 store bogstaver: `scrollWidth` 444. 80 store bogstaver (kolonnen er `VARCHAR(80)`): `scrollWidth` 751, kortet løber ud over skærmen, og hele siden kan scrolles sidelæns. 78 tegn **med** mellemrum: ingen overløb. De rigtige værdier (`STRENGTH`, `N/A`, `FINISH`, `Ukendt`) og alt, hvad den gamle udledning kunne gemme (højst 31 tegn), er uden problem, så det rammer kun urealistiske manuelle værdier, og kun i det nye filter. Reproduktion: sæt `cask_number` til 40 gange `X` på et produkt, åbn `products.php?status=all&filter=cask_no_digit` på 390 px. Forslag: `overflow-wrap:anywhere` på værdi-spanen (CSS er uden for tester-området). **Rettet i `7a165c8`; bekræftet i retesten (kriterie 100): 40 og 80 tegn giver nu `scrollWidth` = `clientWidth`.**
 2. **SQL `TRIM` og PHP `trim` er ikke identiske, men uskadeligt.** Et fadnummer, der kun består af tabulator eller linjeskift, tælles og vises i listen (SQL `TRIM` fjerner kun mellemrum), men oprydningen springer det over uden at lægge det i hverken `cleared` eller `kept` (PHP `trim` fjerner det). Et fadnummer med kun mellemrum eller kun hårdt mellemrum (U+00A0) tælles som tomt af begge (kollationen `utf8mb4_unicode_ci` ligestiller U+00A0 med mellemrum). Konsekvensen er højst en værdi, som står på listen, men ikke i audit-posten. Målt i `qa/trimcmp.php`: på listen `TRIM-tab, TRIM-nl, TRIM-ord`; i `kept` kun `TRIM-ord`.
 3. **Tom liste har ingen "ingen produkter"-tekst.** Ved N = 0 og valgt filter vises hjælpeteksten og ingen kort eller rækker, men ingen sætning om, at listen er tom. Det er som spec'en (og som de andre filtre i dag), men en admin, der åbner et gammelt link, ser en tom side med en forklaring af noget, der ikke findes. Forslag, ikke krav.
 4. **To samtidige første forespørgsler giver to audit-poster** (den anden med `cleared=0`). Hvert kald skriver præcis én post, som spec'en siger, men der kan altså være to poster efter én opgradering på en travl installation. Data er korrekte (se kapløbstesten).
@@ -139,7 +233,7 @@ Rækkerne 21, 22, 27, 28, 115, 159, 185 og 205 fra spec'en har alle fået intet 
 
 ## Testhuller og anbefalede tests
 
-21 mutanter af produktionskoden (`qa/mutate.php`, database gendannet fra dump mellem hver). **15 blev opdaget, 6 overlevede.** M7 og M18 tæller som opdaget, fordi de blev fanget af case 87 i en fuld installation (`run.sh` i en kopi; i mutationsprogrammet er databasen allerede installeret).
+21 mutanter af produktionskoden (`qa/mutate.php`, database gendannet fra dump mellem hver). **15 blev opdaget, 6 overlevede** (første test; i retesten er M4, M13 og M22 lukket, se retesten punkt 5). M7 og M18 tæller som opdaget, fordi de blev fanget af case 87 i en fuld installation (`run.sh` i en kopi; i mutationsprogrammet er databasen allerede installeret).
 
 | Mutant | Resultat | Opdaget af |
 |---|---|---|
@@ -167,12 +261,12 @@ Rækkerne 21, 22, 27, 28, 115, 159, 185 og 205 fra spec'en har alle fået intet 
 
 (M20, en test af normaliseringen, kunne ikke lægges ind med den benyttede erstatningsstreng og er sprunget over. Normaliseringen dækkes direkte af case 80n.)
 
-Foreslåede tests (ingen er lagt ind i `tests/`, fordi opgaven var at committe kun rapporten):
+Foreslåede tests (fra første test). M4, M13 og M22 er lagt ind af udvikleren i `a8cce2d` og bekræftet i retesten; M10, M11 og M15 er ikke lagt ind:
 
-- **M4 og M15:** et `TSTCASK`-produkt med `cask_number` `' STRENGTH '` og et navn, der giver `STRENGTH`, skal blive ryddet med `old:" STRENGTH "`. Et andet med `' N/A '` skal stå i `kept` med `value:" N/A "`.
+- **M4 (lagt ind som produkt I, TSTCASK-10) og M15 (ikke lagt ind):** et `TSTCASK`-produkt med `cask_number` `' STRENGTH '` og et navn, der giver `STRENGTH`, skal blive ryddet med `old:" STRENGTH "`. Et andet med `' N/A '` skal stå i `kept` med `value:" N/A "`.
 - **M10:** et produkt, hvor både produktets navn ("X Cask Finish") og startlagerets navn ("… #143 … Cask Finish") beviser værdien `FINISH`. Forventet `source:"name"` og `new:null`, ikke `143`.
-- **M13:** `hsg_extract_cask_number('Barrel 0')` og `'#00'` skal give `'0'` og `'00'` (har ciffer).
-- **M22:** `hsg_extract_cask_number('Cask 2012')`, `'#2012'` og `'Cask 2012, #43'` skal give `null`, `null` og `'43'`. Årstalsfilteret er gammel kode, men det er nu den eneste forsvarslinje mod, at et årstal bliver et fadnummer.
+- **M13 (lagt ind som række t):** `hsg_extract_cask_number('#00')` skal give `'00'` (har ciffer). Det oprindelige forslag `'Barrel 0'` → `'0'` var forkert og er fjernet: mønstrene kræver mindst to tegn efter cask/fad/barrel eller `#` (`[A-Z0-9][A-Z0-9.\-\/]{1,30}`), så `'Barrel 0'` giver `null` (målt i retesten).
+- **M22 (lagt ind som række q–s):** `hsg_extract_cask_number('Cask 2012')`, `'#2012'` og `'Cask 2012, #43'` skal give `null`, `null` og `'43'`. Årstalsfilteret er gammel kode, men det er nu den eneste forsvarslinje mod, at et årstal bliver et fadnummer.
 - **M11:** kan kun prøves med to forbindelser (ændr værdien mellem `SELECT` og `UPDATE`). Dækket af kapløbstesten ovenfor, men ikke af en automatisk test.
 
 Scripts og rå output ligger i scratchpad under `qa/` (bl.a. `diff60.php`, `upg_setup.php`/`upg_check.php`, `race.php`/`race_check.php`, `robust.php`, `trimcmp.php`, `kim_dump.php`/`kim_cmp.php`, `mutate.php`, `mut_result.txt`).
@@ -193,5 +287,5 @@ Scripts og rå output ligger i scratchpad under `qa/` (bl.a. `diff60.php`, `upg_
 - Opdater `app_version.php` (nu `11.1.4`), README og `hsg-package.json` via `php tools/build-release.php <version>` (release-tjeklisten i `CLAUDE.md`). Det er ikke gjort på branchen, som spec'en afsnit 5 beskriver ("ved release").
 - Kør kriterie 96 på `lager 19-10-2026.xlsx`.
 - Efter opgraderingen: kig i System → Auditlog (filter "Produkter") efter `product.cask_number_cleanup`, og åbn Produkter → "Fadnr. uden ciffer" for at rette det, der er bevaret.
-- Overvej at lægge de fem foreslåede tests ind (især M4/M15, M10 og M22).
+- Overvej at lægge de resterende foreslåede tests ind (M15, M10 og eventuelt M11). M4, M13 og M22 er lagt ind i `a8cce2d`.
 - I testmiljøet: `uploads/products/` (75 filer fra katalogbilledimporten ved installation), `storage/data/access-link.key`, `storage/import-previews/` og `storage/tmp/` er gitignorerede kørselsfiler, som testinstallationerne har lavet i worktree. De er ikke committet.
