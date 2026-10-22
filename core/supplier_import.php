@@ -866,7 +866,7 @@ function hsg_supplier_recalculate_preview(PDO $pdo, array $preview, array $custo
 
 function hsg_supplier_preview_dir(): string {$d=__DIR__.'/../storage/import-previews';if(!is_dir($d)&&!@mkdir($d,0770,true)&&!is_dir($d))throw new RuntimeException('Kunne ikke oprette preview-mappe.');return $d;}
 /** Et preview-token er 40 små hex-tegn (bin2hex(random_bytes(20))). Alt andet afvises, før der bygges en filsti. */
-function hsg_supplier_preview_token_valid(string $token): bool {return preg_match('/^[a-f0-9]{40}$/',$token)===1;}
+function hsg_supplier_preview_token_valid(string $token): bool {return preg_match('/^[a-f0-9]{40}\z/',$token)===1;}
 function hsg_supplier_preview_save(array $preview, ?string $existingToken = null): string {
     $token = ($existingToken !== null && hsg_supplier_preview_token_valid($existingToken)) ? $existingToken : bin2hex(random_bytes(20));
     $path = hsg_supplier_preview_dir().'/'.$token.'.json';

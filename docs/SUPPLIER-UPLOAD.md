@@ -61,7 +61,7 @@ Et varenummer med ét bogstav direkte efter et tal (fx `17-1028a`) er en variant
 - Ved fletning lægges lagerantallet (også pr. lokation) sammen og skrives på `17-1028`. Øvrige oplysninger tages fra rækken uden bogstav. Previewet viser begrundelsen, fx "(samme navn)".
 - Er det **ikke** samme vare, står varianten alene med sit eget varenummer, en bemærkning med begrundelsen og er ikke valgt på forhånd. Dens automatiske match peger aldrig på HSG-produktet med basens varenummer – heller ikke via en gammel alias-kobling, fadnummer eller navn.
 - **Basens ejer** i HSG er produktet, som en gemt alias-kobling for `17-1028` peger på, ellers produktet med SKU `17-1028`. Ejeren findes **uden** brand-filteret og bruges kun til at udelukke: Er varianten ikke samme vare som ejeren, kan dens match hverken pege på ejeren eller på produktet med basens SKU – også når ejeren hører til et andet brand end det valgte, eller kun er koblet via alias (fx et HSG-produkt med SKU `HSG-55`).
-- **Brand-filteret respekteres ved fletning.** Er uploaden begrænset til ét brand, flettes varianten kun ind i basen, når basen findes med brand-filteret (eller via en gemt alias-kobling for basen). Ligger basen uden for brandet, står varianten som en almindelig række.
+- **Brand-filteret respekteres ved fletning.** Er uploaden begrænset til ét brand, flettes varianten kun ind i basen, når basen findes med brand-filteret (eller via en gemt alias-kobling for basen). Ligger basen uden for brandet, og er det samme vare, flettes varianten ikke og står som en almindelig række. Er det en anden vare, får varianten bemærkningen "ikke flettet" og er ikke valgt på forhånd – også når basen ligger uden for brandet.
 - Varianten gemmes som alias (`hsg_supplier_sku_aliases`) for produktet, når ændringerne anvendes. Oprettes en række som nyt produkt, gemmes rækkens eget varenummer også som alias for det nye produkt, og ældre koblinger fra samme varenummer slettes.
 - Findes kun `17-1028a`, og findes `17-1028` heller ikke i HSG, behandles `17-1028a` som sit eget varenummer, ligesom før. Der oprettes ikke noget `17-1028`.
 - Findes `17-1028a` allerede som et selvstændigt produkt i HSG, ændres det ikke. Previewet viser en advarsel, så det kan sættes som udgået, og lageret ikke tælles dobbelt.
@@ -98,7 +98,7 @@ Hvordan lageret skrives, afgøres af kolonnevalget:
 
 **Tomme lokationsceller:** Har en række et tal i mindst én lokationskolonne, tæller tomme lokationsceller i samme række som 0 (som i Kims egen formel). En celle med kun mellemrum, også hårde mellemrum, er tom. Er alle lokationsceller tomme, ændres lageret ikke for rækken. Tekst, der ikke er ét tal (fx "?"), ændrer aldrig lokationen og giver en bemærkning.
 
-**Hvad er et tal i en lagercelle?** Reglen gælder både lokationscellerne og "Lagerantal i alt". Cellen skal være præcis ét tal: valgfrit minus, cifre og højst ét decimaltegn (`.` eller `,`) med cifre efter.
+**Hvad er et tal i en lagercelle?** Reglen gælder både lokationscellerne og "Lagerantal i alt". Cellen skal være præcis ét tal: valgfrit minus (`-`), cifre og højst ét decimaltegn (`.` eller `,`) med cifre efter. Et komma er altid decimaltegnet.
 
 - Mellemrum (også hårde mellemrum) før og efter tallet ignoreres. En celle med kun mellemrum er tom.
 - Der må højst være **5 cifre før decimaltegnet** (så højst 100.000 efter afrunding), og foranstillede nuller tæller med. Så bliver EAN-numre, lange varenumre og meget store tal ugyldige. Decimaldelen må være så lang, den vil.
@@ -110,17 +110,17 @@ Hvordan lageret skrives, afgøres af kolonnevalget:
 | `41`, `0`, `41.0` | 41, 0, 41 |
 | `2,4`, `2.6`, `-2` | 2, 3, 0 |
 | `0.4999`, `2,4999` | 0, 2 |
-| `0.5`, `2,5` | 1, 3 |
+| `0.5`, `0,5`, `2,5`, `2,5000` | 1, 1, 3, 3 |
 | `99999` | 99999 |
 | `40.999999999999993` (formelresultat) | 41 |
 | `5` efterfulgt af et hårdt mellemrum | 5 |
 | Kun hårde mellemrum (evt. blandet med almindelige mellemrum) | Tom |
-| `3 + 2`, `53 stk.`, `2 (1 i bil)`, `1/2`, `ca. 5`, `se note 2`, `3 2`, `?`, `-` | Ugyldig |
-| `1.234`, `1,234`, `1 234` | Ugyldig |
+| `3 + 2`, `53 stk.`, `2 (1 i bil)`, `1/2`, `ca. 5`, `se note 2`, `3 2`, `?`, `-`, `−2` (typografisk minus) | Ugyldig |
+| `1.234`, `1,234`, `1 234`, `1.875` | Ugyldig |
 | `100000`, `000041`, `5010494560018` (EAN), `9223372036854775808` | Ugyldig (mere end 5 cifre) |
 | Ugyldig tekst på over 40 tegn | Ugyldig, vises med de første 40 tegn + "…" |
 
-**Tusindtalsformater er ugyldige:** præcis tre cifre efter `.` eller `,`, mellemrum inde i tallet eller både `.` og `,`. Læsningen ville ellers være tvetydig ("1.234" som 1 eller 1234). Ingen lokation har så mange flasker, og Excel gemmer tal uden tusindtalsseparator, så reglen rammer kun tekstceller og CSV.
+**Tusindtalsformater er ugyldige:** præcis tre cifre efter `.` eller `,`, mellemrum inde i tallet eller både `.` og `,`. Læsningen ville ellers være tvetydig ("1.234" som 1 eller 1234). Ingen lokation har så mange flasker. Reglen rammer tekstceller og CSV, men også en Excel-talcelle med præcis tre decimaler (fx 1,875, typisk et formelresultat): Den er ugyldig.
 
 **En ugyldig celle skrives aldrig som lager:**
 

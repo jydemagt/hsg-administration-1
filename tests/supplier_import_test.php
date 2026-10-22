@@ -514,6 +514,34 @@ t_case('42 Gemt alias for basen: varianten flettes ind som i dag, også med bran
     t_eq(['17-1030a'], $items[0]['merged_skus'], 'merged_skus');
 });
 
+t_case('60 F2-udelukkelse: basen kun i HSG og kun koblet via alias (HSG-55)', function () {
+    // Uden match-/ejer-id i F2's exclude ville aliaset 12-1123a → 55 føre varianten ind på HSG-55.
+    $product = hsg_product(['id' => 55, 'sku' => 'HSG-55', 'name' => 'St. Bridget Kirk, John Barleycorn Edition', 'distillery' => 'N/A', 'brand_id' => 9, 'stock_loc_1' => 24]);
+    foreach ([9, 5, null] as $brandId) {
+        $label = 'brand '.var_export($brandId, true).': ';
+        $pdo = new FakeAliasPdo(['12-1123' => 55, '12-1123a' => 55]);
+        $items = hsg_supplier_merge_raw_items([clynelish_rows()[1]], kim_map(false), [$product], $brandId, 1, $pdo, merge_opts());
+        t_eq(1, count($items), $label.'én vare');
+        if (count($items) !== 1) continue;
+        t_true(in_array('variant_split', $items[0]['flags'], true), $label.'flag variant_split');
+        t_true((int)$items[0]['match']['id'] !== 55, $label.'match.id ≠ 55');
+        t_true(!$items[0]['selected'], $label.'ikke forvalgt');
+    }
+});
+
+t_case('61 Scenarie E: basen ligger kun i HSG i et andet brand, ingen alias', function () {
+    $product = hsg_product(['id' => 21, 'sku' => '12-1123', 'name' => 'St. Bridget Kirk, John Barleycorn Edition', 'distillery' => 'N/A', 'brand_id' => 9, 'stock_loc_1' => 15]);
+    foreach (['uden PDO' => null, 'fake-PDO uden aliaser' => new FakeAliasPdo([])] as $label => $pdo) {
+        $items = hsg_supplier_merge_raw_items([clynelish_rows()[1]], kim_map(false), [$product], 5, 1, $pdo, merge_opts());
+        t_eq(1, count($items), $label.': én vare');
+        if (count($items) !== 1) continue;
+        t_eq('12-1123a', $items[0]['source']['sku'] ?? null, $label.': source.sku');
+        t_true(in_array('variant_split', $items[0]['flags'], true), $label.': flag variant_split');
+        t_has_note($items[0], '12-1123a er ikke flettet med 12-1123', $label.': bemærkning');
+        t_true(!$items[0]['selected'], $label.': ikke forvalgt (før: "Nyt produkt" forvalgt)');
+    }
+});
+
 // R2 – fadnummer uden ciffer
 
 t_case('44 Fadnummer uden ciffer tæller som tomt (variant_compatible)', function () {
@@ -547,6 +575,14 @@ t_case('47 En lokationscelle skal være ét tal', function () {
         '40,999999999999993' => 41];
     foreach ($numbers as $x => $n) {
         t_eq(['values' => ['stock_loc_1' => $n], 'blank' => [], 'invalid' => []], hsg_supplier_location_cells(kim_row(['R' => (string)$x]), $map), 'tal: '.json_encode((string)$x, JSON_UNESCAPED_UNICODE));
+    }
+    // Kriterie 62: komma er decimaltegn, og ,5 afrundes væk fra 0 (PHP round): 2,5000 → 3 og 0,5 → 1.
+    foreach (['2,5000' => 3, '0,5' => 1] as $x => $n) {
+        t_eq(['values' => ['stock_loc_1' => $n], 'blank' => [], 'invalid' => []], hsg_supplier_location_cells(kim_row(['R' => $x]), $map), '62 tal: '.$x);
+    }
+    // Præcis tre decimaler (også en Excel-talcelle som 1.875) og Unicode-minus (U+2212) er ugyldige.
+    foreach (['1.875', "\u{2212}2"] as $x) {
+        t_eq(['values' => [], 'blank' => [], 'invalid' => ['stock_loc_1' => $x]], hsg_supplier_location_cells(kim_row(['R' => $x]), $map), '62 ugyldig: '.$x);
     }
 });
 
@@ -630,6 +666,7 @@ t_case('59 KAN-4: preview-token valideres ét sted', function () {
     t_true(!hsg_supplier_preview_token_valid(''), "'' er ugyldigt");
     t_true(!hsg_supplier_preview_token_valid('../x'), "'../x' er ugyldigt");
     t_true(!hsg_supplier_preview_token_valid(str_repeat('ABCDEF0123', 4)), '40 store hex-tegn er ugyldigt');
+    t_true(!hsg_supplier_preview_token_valid(str_repeat('a', 40)."\n"), '40 små hex-tegn med linjeskift til sidst er ugyldigt');
     $message = '';
     try { hsg_supplier_preview_load('../x'); } catch (RuntimeException $e) { $message = $e->getMessage(); }
     t_eq('Ugyldigt preview-token.', $message, 'preview_load afviser ../x, før der bygges en filsti');

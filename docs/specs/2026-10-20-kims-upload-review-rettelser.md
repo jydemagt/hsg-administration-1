@@ -1,7 +1,7 @@
 # Tillæg: Kims uploadfil – rettelser efter review af PR #172
 
 - **Dato:** 2026-10-20
-- **Status:** Godkendt af brugeren 2026-10-20. Q1 og Q2 tages som separate opfølgninger og er ikke en del af dette tillæg. KAN-1–KAN-4 laves.
+- **Status:** Godkendt af brugeren 2026-10-20. Q1 og Q2 tages som separate opfølgninger og er ikke en del af dette tillæg. KAN-1–KAN-4 laves. Opdateret 2026-10-22 efter test og review (BØR 1–4): kriterie 60–62, tekstrettelser i afsnit 1, R3, R4 og KAN-4 samt regexen `\z` for preview-tokens.
 - **Hovedspec:** [`docs/specs/2026-10-19-kims-upload-lagerfejl.md`](2026-10-19-kims-upload-lagerfejl.md). Tillægget ændrer kun det, der står her: afsnit 4.1 (K1 punkt 3), 4.3 (cellen "Tekst"), 4.4 (F1–F3) og bemærkningstabellen i 3.4. Alt andet gælder uændret.
 - **Branch:** `feature/kims-upload-review-rettelser`. Den bygger på `feature/kims-upload-lagerfejl` (PR #172), som ikke er merget endnu.
 - **Modul:** `supplier_upload` ("Kims uploadfil"), capability `imports.manage`
@@ -27,9 +27,12 @@ Revieweren godkendte PR #172 med fire ikke-blokerende BØR-fund. De rettes her, 
 
 **Lagermedarbejdere og linkbrugere** bliver berørt indirekte, fordi forkerte lagertal ikke længere når frem til Lagerstatus.
 
-**Bagudkompatibelt:** Kims rigtige fil skal give samme kolonnevalg og samme resultat som efter PR #172. Der må kun være forskelle i to tilfælde:
-- rækker med fritekst i en lokationscelle (R3)
-- rækker, hvor et fadnummer uden ciffer i dag giver et falsk split, en falsk konflikt eller et falsk match (R2). Den forskel er tilsigtet.
+**Bagudkompatibelt:** Kims rigtige fil skal give samme kolonnevalg og samme resultat som efter PR #172. Der må kun være disse forskelle, og de er alle tilsigtede:
+- **R1:** Med brand-filter får en variant, der er en anden vare end basen, flaget `variant_split` og er ikke valgt på forhånd, også når basen kun ligger i HSG i et andet brand eller kun er koblet via alias. Før var den en almindelig række, fx "Nyt produkt" forvalgt.
+- **R2:** rækker, hvor et fadnummer uden ciffer i dag giver et falsk split, en falsk konflikt eller et falsk match.
+- **R3:** rækker med fritekst eller et tusindtalsformat i en lokationscelle.
+- **R4:** kolonnegættet for filer med delvise overskrifter som "Price", "Name" + "…Description" og "Barcode" (se R4, "Kendte sideeffekter"). Kims fil får samme kolonnevalg, og et husket valg vinder altid.
+- **KAN-1:** bemærkningen ved tomme lokationsceller starter med "Bemærk:" og vises i amber.
 
 ## 2. Brugerflow og skærme
 
@@ -100,7 +103,7 @@ En gemt alias-kobling for basen giver fortsat ejeren, også med brand-filter, fo
    - Den passer på `^-?\d+(?:[.,]\d+)?$`, dvs. valgfrit minus, cifre og højst én decimal-separator efterfulgt af cifre.
    - Der står **ikke præcis tre cifre** efter separatoren.
 
-   Værdien læses derefter som i dag med `hsg_supplier_parse_decimal` og afrundes. Negative tal bliver 0.
+   Et komma erstattes derefter med punktum, og værdien læses med `hsg_supplier_parse_decimal` og afrundes med PHP's `round` (,5 rundes væk fra 0, så `0,5` → 1 og `2,5000` → 3). Negative tal bliver 0. Begrundelse (afvigelse fra den oprindelige tekst "læses som i dag"): `hsg_supplier_parse_decimal` læser et komma med mere end to decimaler som tusindtalsseparator, så `"40,999999999999993"` ville give 40999999999999992 og `"2,5000"` 25000. Da cellen højst har én separator, er den altid decimaltegnet.
 3. **Ellers ugyldig:** Den trimmede rå tekst lægges i `invalid`, og den eksisterende bemærkning vises.
 
 **Afvigelse fra reviewerens forslag:** Mellemrum **inde i** værdien fjernes ikke. Ellers ville "3 2" blive til 32, hvilket er samme fejlklasse.
@@ -109,7 +112,7 @@ En gemt alias-kobling for basen giver fortsat ejeren, også med brand-filter, fo
 - `hsg_supplier_parse_decimal("1.234")` giver 1,23, fordi punktum alene læses som decimaltegn. Det bliver til **1** flaske.
 - `"1,234"` giver **1234**, og `"1 234"` giver 1234.
 
-Læsningen er altså tvetydig og inkonsekvent. **Beslutning:** Tusindtalsformater er **ugyldige** i lokationsceller: præcis tre cifre efter `.` eller `,`, mellemrum inde i tallet, eller både `.` og `,`. Begrundelse: Ingen af Kims lokationer har 1000 flasker eller mere. XLSX gemmer tal uden tusindtalsseparator, så reglen rammer kun tekstceller og CSV. "Ugyldig" er den sikre tolkning fra 4.3: lokationen ændres ikke, og der vises en bemærkning. `hsg_supplier_parse_decimal` ændres ikke, fordi den bruges til priser.
+Læsningen er altså tvetydig og inkonsekvent. **Beslutning:** Tusindtalsformater er **ugyldige** i lokationsceller: præcis tre cifre efter `.` eller `,`, mellemrum inde i tallet, eller både `.` og `,`. Begrundelse: Ingen af Kims lokationer har 1000 flasker eller mere. XLSX gemmer tal uden tusindtalsseparator, men reglen rammer ikke kun tekstceller og CSV: Læseren læser også talceller som tekst, så en Excel-talcelle med præcis tre decimaler (fx 1,875, gemt som `1.875`, typisk et formelresultat) er også ugyldig, og lokationen ændres ikke. Brøkdele af flasker er ikke realistiske. "Ugyldig" er den sikre tolkning fra 4.3: lokationen ændres ikke, og der vises en bemærkning. `hsg_supplier_parse_decimal` ændres ikke, fordi den bruges til priser.
 
 | Celle | I dag | Efter |
 |---|---|---|
@@ -125,6 +128,9 @@ Læsningen er altså tvetydig og inkonsekvent. **Beslutning:** Tusindtalsformate
 | `2,4` / `2.6` / `-2` | 2 / 3 / 0 | 2 / 3 / 0 |
 | `5` + NBSP / U+202F + `7` | 5 / 7 | 5 / 7 |
 | `40.999999999999993` (formelresultat) | 41 | 41 |
+| `2,5000` / `0,5` | 25000 / 1 | 3 / 1 |
+| `1.875` (også en Excel-talcelle) | 2 | ugyldig |
+| `−2` (Unicode-minus U+2212) | 2 | ugyldig |
 
 ### R4 – Delvist kolonnegæt i to trin (ændrer hovedspec 4.1, K1 punkt 3)
 
@@ -151,6 +157,12 @@ Bemærk ved brugerens eksempel: "Stock" bliver gættet som **SKU** både i dag o
 
 **Kims fil** (`kim_headers()`) giver **præcis** samme kolonnevalg som i dag. Begrundelse: Kun Z og AA bliver matchet i gennemløb 2, og de matcher begge i 2a (`engros` og `salgspris`). De øvrige kolonner er i dag tomme, selvom de bliver undersøgt i begge retninger med flere ledige felter. Det giver forventet E=sku, F=name, G=age_text, H=distillery, J=brand_name, K=abv, Q=stock_quantity, Z=wholesale_price og AA=retail_price. Alle andre er `''`.
 
+**Kendte sideeffekter (accepteret ved review 2026-10-22).** Reglen "overskriften indeholder et alias før aliaset indeholder overskriften" gælder alle felter, ikke kun priser:
+- Står både "Name" og en "…Description" (Short/Long/Product/Item Description) i filen, tager "…Description" nu produktnavnet (2a på `description`). "Name" matcher kun i 2b og bliver ignoreret.
+- "Barcode" får SKU (2a på `code`), i stedet for at "Stock", "Item" eller "Product" får SKU via 2b. Derfor bliver "Stock" lagerantal.
+- Revieweren målte 403 ændrede kolonnevalg af 20.000 tilfældige overskriftssæt: 237 med Name/Description, 161 med Barcode og 14 med Price.
+- Kims fil er upåvirket, og et husket valg vinder altid over gættet. Skal "Name" have forrang for "…Description", er det en opfølgning.
+
 ---
 
 ## 4. Valgfrie KAN-punkter (laves, hvis de er billige)
@@ -159,7 +171,7 @@ Bemærk ved brugerens eksempel: "Stock" bliver gættet som **SKU** både i dag o
 - **KAN-2 – Hjælpetekst ved reservationsvalget** (`supplier_upload.php:267`): `<small>` får teksten "Et nyt valg bruges først, når du har trykket 'Genberegn preview'. Tallene beregnes igen med de aktuelle reservationer, når du trykker 'Anvend'."
 - **KAN-3 – CSV:** `hsg_supplier_read_csv` (`:51`) kalder `fgetcsv` med eksplicit enclosure `'"'` og escape `'\\'`. Det giver præcis samme opførsel som i dag, men uden deprecation i PHP 8.4+.
 - **KAN-4 – Preview-token valideres ét sted:**
-  - Ny ren funktion `hsg_supplier_preview_token_valid(string $token): bool`, der bruger den eksisterende regex `/^[a-f0-9]{40}$/`.
+  - Ny ren funktion `hsg_supplier_preview_token_valid(string $token): bool` med regexen `/^[a-f0-9]{40}\z/`. Den erstatter den tidligere `/^[a-f0-9]{40}$/`, fordi `$` også godtager et linjeskift til sidst.
   - Den bruges i `hsg_supplier_preview_save`, `hsg_supplier_preview_load` og `hsg_supplier_preview_delete` (`:799-806`), der i dag har hver sin kopi af regexen.
   - Den bruges også i `supplier_upload.php` lige efter `:45`: et ugyldigt token sættes til `''`.
   - Konsekvens:
@@ -277,7 +289,7 @@ Nummereringen fortsætter efter hovedspec'ens 1–38. Testdata og hjælpere (`ki
 ### Generelt
 
 53. **Når** `bash tests/run.sh` køres, **så** er alle trin grønne, inklusive enhedstesten, databasetesten og flowtesten af Kims uploadfil.
-54. **Givet** den rigtige fil "lager 19-10-2026.xlsx" (manuel test; filen må ikke lægges i repoet), **når** previewet laves på PR #172 og på denne branch med samme kolonnevalg og reservationsvalg, **så** er kolonnevalget identisk. Varer, match, ændringer og forvalg er også identiske. Eventuelle forskelle skal kunne forklares med R2 (fadnummer uden ciffer) eller R3 (fritekst i en lokationscelle), og testeren skriver dem i PR'en.
+54. **Givet** den rigtige fil "lager 19-10-2026.xlsx" (manuel test; filen må ikke lægges i repoet), **når** previewet laves på PR #172 og på denne branch med samme kolonnevalg og reservationsvalg, **så** er kolonnevalget identisk. Varer, match, ændringer og forvalg er også identiske. Eventuelle forskelle skal kunne forklares med R1 (variant_split ved brand-filter), R2 (fadnummer uden ciffer), R3 (fritekst i en lokationscelle) eller KAN-1 ("Bemærk:"-præfiks), jf. "Bagudkompatibelt" i afsnit 1, og testeren skriver dem i PR'en.
 55. **Givet** modulmanifestet, **så** er `version` lig `1.1.1`, og `docs/SUPPLIER-UPLOAD.md` beskriver R1–R4 som angivet i afsnit 7.
 
 ### Valgfrie KAN-punkter (kun hvis de laves)
@@ -286,8 +298,19 @@ Nummereringen fortsætter efter hovedspec'ens 1–38. Testdata og hjælpere (`ki
 57. **KAN-2:** **Givet** et preview, **så** står teksten "Et nyt valg bruges først, når du har trykket 'Genberegn preview'." under reservationsvalget.
 58. **KAN-3:** **Givet** en midlertidig CSV-fil med indholdet `SKU;Navn` / `12-1;"A;B"`, **når** `hsg_supplier_read_csv` læser den, **så** er resultatet `['CSV'=>[['SKU','Navn'],['12-1','A;B']]]`, og koden kalder `fgetcsv` med eksplicit escape-parameter.
 59. **KAN-4:**
-    - **Givet** `hsg_supplier_preview_token_valid`, **så** er den sand for 40 små hex-tegn og falsk for `''`, `'../x'` og 40 store hex-tegn.
+    - **Givet** `hsg_supplier_preview_token_valid`, **så** er den sand for 40 små hex-tegn og falsk for `''`, `'../x'`, 40 store hex-tegn og `str_repeat('a',40)."\n"`.
     - **Givet** en POST `action=apply` med gyldig CSRF og `preview_token=../x`, **så** vises en fejlbesked med "Ugyldigt preview-token.", omdirigeringen går til `supplier_upload.php` uden token, og der ændres ingen data.
+
+### Tilføjet efter test og review (2026-10-22)
+
+60. **R1 – udelukkelse i F2:** **Givet**
+    - HSG-produktet `hsg_product(['id'=>55,'sku'=>'HSG-55','name'=>'St. Bridget Kirk, John Barleycorn Edition','distillery'=>'N/A','brand_id'=>9,'stock_loc_1'=>24])`,
+    - en fake-PDO med aliaserne `12-1123 → 55` og `12-1123a → 55`,
+    - kun filrækken 12-1123a fra `clynelish_rows()`,
+
+    **når** rækkerne flettes med `$brandId` = 9, 5 og `null`, **så** har varianten i alle tre tilfælde flaget `variant_split`, `match.id ≠ 55`, og den er ikke forvalgt. Testen fejler, hvis match- og ejer-id fjernes fra `exclude` i F2.
+61. **R1 – scenarie E:** **Givet** HSG-produktet fra kriterie 39 (12-1123, brand 9), **ingen** aliaser (både `$pdo = null` og en fake-PDO uden aliaser), `$brandId = 5` og kun filrækken 12-1123a, **når** rækkerne flettes, **så** får varianten flaget `variant_split` og bemærkningen "12-1123a er ikke flettet med 12-1123", og den er ikke forvalgt. Før var den forvalgt som "Nyt produkt".
+62. **R3 – flere celler:** **Givet** `hsg_supplier_location_cells(kim_row(['R'=>X]), ['stock_loc_1'=>17])`, **så** giver `2,5000` 3 og `0,5` 1 (PHP's `round`), mens `1.875` og `−2` med Unicode-minus (U+2212) er ugyldige.
 
 ---
 

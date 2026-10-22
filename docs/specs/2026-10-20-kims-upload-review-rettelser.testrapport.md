@@ -232,3 +232,28 @@ Jeg har **ikke** lagt tests ind i `tests/`, fordi opgaven var at committe kun ra
 - Kør `bash tests/run.sh` med MySQL (`HSG_TEST_DB_*`), og få trin 4 grønt.
 - Opdater `app_version.php` (nu `11.1.4`), README og `hsg-package.json` via `php tools/build-release.php <version>`. Det er ikke gjort på branchen, og det er som spec'ens afsnit 5 beskriver ("ved release").
 - Der kommer ingen test- eller dev-filer med i en release: `tools/build-release.php` fjerner `tests`, `docs/specs` og `.claude`. Branchen tilføjer ingen nye filer uden for dem (kun `docs/specs/…`, ændrede filer og denne rapport).
+
+## Retest efter BØR 1–4 (HEAD 527c6d9)
+
+Retestet 22-10-2026 på `527c6d9` (commits `7b68a6f`, `260beb6` og `527c6d9` oven på `df886b4`). **KLAR.** Kernen er kun ændret i én linje (`core/supplier_import.php:834`: regex `$` → `\z`). Resten er tests og docs/spec. Samme forbehold som før: trin 4 i `tests/run.sh` (MySQL) er ikke kørt.
+
+| Punkt | Resultat |
+|---|---|
+| `bash tests/run.sh` (samme `PHPRC`) | Trin 1–3 grønne, enhedstest **275 tjek bestået, 0 fejlede** (som udvikleren melder). Trin 4 sprunget over. |
+| Case 60 (kriterie 60) | Passer med kriterie 60: HSG-55 (brand 9), aliaser `12-1123 → 55` og `12-1123a → 55`, kun 12-1123a, `$brandId` = 9, 5 og `null`. Tjekker `variant_split`, `match.id ≠ 55` og ikke forvalgt for hver. Er identisk med scenariet i `qa/r1gap.php`. |
+| Case 61 (kriterie 61) | Passer med kriterie 61: 12-1123 (brand 9), ingen aliaser, `$brandId` 5, med både `$pdo = null` og en fake-PDO uden aliaser. Tjekker `source.sku`, `variant_split`, bemærkningen og ikke forvalgt. Mutant M12 (ejer slås op med brand-filter) fanges nu også af case 61 (før kun af 39). |
+| Kriterie 62 (ekstra værdier i case 47) | `2,5000` → 3, `0,5` → 1, `1.875` og `−2` (U+2212) ugyldige. Stemmer med mine målinger (`qa/r3.php`, `qa/readxlsx.php`). |
+| KAN-4 `\z` | Case 59 tester nu `<40 hex>\n` som ugyldigt. Mit eget tjek (`<40 hex>\n`) var sandt før og er falsk nu. Bemærkning 2 er lukket. |
+
+**Mutanter mod `HEAD` (`qa/mutate4.php`, `qa/mut_run5`):**
+- **M13 (begge id'er fjernet fra `exclude` i F2): fanges nu** af case 60. Hullet fra "Testhuller" er lukket.
+- **M17 (kun `$matchPid`) og M18 (kun `$ownerPid`) overlever stadig.** Udviklerens påstand (b) om, at de er ækvivalente, **holder**:
+  - Alias-opslaget ignorerer brand-filteret og bruger samme `$products` og samme nøgle. Findes der et alias, er `$matchPid` derfor lig `$ownerPid`.
+  - Uden alias er begge et score-match. Det er et produkt med `strcasecmp(trim($src['sku']), $p['sku']) === 0`, og det ligger altid i `$bySku[$base]`, som er nøglet på `strtoupper(trim($p['sku']))`. Normaliseringerne afviger kun i retning af, at `$bySku` er en overmængde: den trimmer produktets SKU, og `match_score` gør det ikke. Et produkt med SKU `"12-1123 "` er altså i `$bySku`, men ikke et score-match, og det er harmløst.
+  - Eksperimentelt: 6000 tilfældige scenarier (`qa/fz_r1.php`) med små og store bogstaver, SKU med mellemrum før og efter, SKU'er kun koblet via alias (`HSG-n`), dublet-SKU'er, alias med forskellig kasus, tre brand-filtre og `$pdo = null`. **M17 og M18 giver 0 afvigelser fra `HEAD`.** Kontrol: kernen fra `040aa79` afviger i 493 af de samme 6000, så fuzzen kan se forskel.
+
+**Docs mod koden (`git diff df886b4..HEAD`):**
+- `docs/SUPPLIER-UPLOAD.md` stemmer. Basen uden for brandet og samme vare → ikke flettet, almindelig række (case 41). Anden vare → "ikke flettet" og ikke valgt (case 61). `0,5` → 1, `2,5000` → 3, `−2` og `1.875` ugyldige, komma altid decimaltegn. Beskrivelsen af Excel-talceller er rettet til virkeligheden (bemærkning 3).
+- Spec-tillægget stemmer. R3-afvigelsen med komma, `,5` rundes væk fra 0, kriterie 54 med R1/R2/R3/KAN-1, "Bagudkompatibelt" (bemærkning 5), regex `\z` og kriterie 60–62. "Kendte sideeffekter" for R4 er kontrolleret: "Name" + "…Description" giver nu `["", "name"]` (før `["name", ""]`), og `Stock, Barcode, Product` giver nu `[stock_quantity, sku, name]` (før `[sku, '', name]`). Reviewerens tal (237/161/14 af 20.000) er ikke genberegnet.
+- Hovedspec, kriterie 10, citerer nu noten med "Bemærk:" (den ene halvdel af bemærkning 8 er lukket).
+- Åbne punkter: bemærkning 4 (R4-sideeffekt) er dokumenteret som accepteret. Bemærkning 6 (U+00A0, lang tekst, advarsel ved 20 cifre) og 7 (stille GET) er uændrede og uden for scope. Den anden halvdel af bemærkning 8 (release-negativtest B og C kræver `pdo_mysql`) er uændret.
