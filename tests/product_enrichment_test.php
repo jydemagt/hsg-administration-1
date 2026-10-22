@@ -61,6 +61,11 @@ $table = [
     'n' => ['Fadstyrke', 'STYRKE', null],
     'o' => ['Barrel 1st Fill', '1ST', '1ST'],
     'p' => ['', null, null],
+    // Efter review: årstalsfilteret er nu eneste værn mod et årstal som fadnummer, og "0" er et ciffer.
+    'q' => ['Cask 2012', null, null],
+    'r' => ['#2015 Cask Strength', 'STRENGTH', null],
+    's' => ['Cask 2012, #43', '43', '43'],
+    't' => ['#00', '00', '00'],
 ];
 
 t_case('60 hsg_extract_cask_number kræver et ciffer (filter i løkken)', function () use ($table) {

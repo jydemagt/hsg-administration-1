@@ -65,6 +65,8 @@ function cn_cask(PDO $pdo, string $sku): ?string {
     $v = $st->fetchColumn();
     return $v === false || $v === null ? null : (string)$v;
 }
+/** Liste nøglet på varenummer i samme rækkefølge som cn_tst (til forventede værdier). */
+function cn_sorted(array $a): array { ksort($a); return $a; }
 /** Kun testens egne rækker fra en cleared/kept-liste, nøglet på varenummer. */
 function cn_tst(array $list): array {
     $out = [];
@@ -149,6 +151,8 @@ try {
         'TSTCASK-7' => ['TSTCASK Benriach Cask Strength', 'strength', 'active'],
         'TSTCASK-8' => ['TSTCASK Cask Strength Tom', null, 'active'],
         'TSTCASK-9' => ['TSTCASK Cask Strength Tom', '', 'active'],
+        // I (efter review): mellemrum omkring værdien. Beviset bruger trim, audit den gemte værdi.
+        'TSTCASK-10' => ['TSTCASK Highland Park Cask Strength', ' STRENGTH ', 'active'],
     ];
     $id = [];
     foreach ($data as $sku => [$name, $cask, $status]) { $ins->execute([$sku, $name, $cask, $status]); $id[$sku] = (int)$pdo->lastInsertId(); }
@@ -169,13 +173,15 @@ try {
         $r = hsg_cask_number_cleanup($pdo, []);
         t_eq(null, cn_cask($pdo, 'TSTCASK-1'), 'A er NULL');
         t_eq('43', cn_cask($pdo, 'TSTCASK-2'), 'B er 43');
+        t_eq(null, cn_cask($pdo, 'TSTCASK-10'), 'I (" STRENGTH ") er NULL');
         foreach (['TSTCASK-3' => 'FINISH', 'TSTCASK-4' => 'STRENGTH', 'TSTCASK-5' => 'N/A', 'TSTCASK-6' => '231584', 'TSTCASK-7' => 'strength', 'TSTCASK-8' => null, 'TSTCASK-9' => ''] as $sku => $want) {
             t_eq($want, cn_cask($pdo, $sku), $sku.' uændret');
         }
-        t_eq([
+        t_eq(cn_sorted([
             'TSTCASK-1' => ['id' => $id['TSTCASK-1'], 'sku' => 'TSTCASK-1', 'old' => 'STRENGTH', 'new' => null, 'source' => 'name'],
             'TSTCASK-2' => ['id' => $id['TSTCASK-2'], 'sku' => 'TSTCASK-2', 'old' => 'FINISH', 'new' => '43', 'source' => 'name'],
-        ], cn_tst($r['cleared']), 'cleared: A og B');
+            'TSTCASK-10' => ['id' => $id['TSTCASK-10'], 'sku' => 'TSTCASK-10', 'old' => ' STRENGTH ', 'new' => null, 'source' => 'name'],
+        ]), cn_tst($r['cleared']), 'cleared: A, B og I (I med old " STRENGTH " utrimmet)');
         t_eq(['TSTCASK-3' => ['id' => $id['TSTCASK-3'], 'sku' => 'TSTCASK-3', 'value' => 'FINISH']] + $keptDEG, cn_tst($r['kept']), 'kept: C, D, E og G');
         $notListed($r, 'kørsel 1');
         cn_check_audit($pdo, $before, $r, 'kørsel 1');
@@ -189,6 +195,7 @@ try {
         t_eq($keptDEG, cn_tst($r['kept']), 'kept: D, E og G');
         t_eq(null, cn_cask($pdo, 'TSTCASK-1'), 'A uændret siden kørsel 1');
         t_eq('43', cn_cask($pdo, 'TSTCASK-2'), 'B uændret siden kørsel 1');
+        t_eq(null, cn_cask($pdo, 'TSTCASK-10'), 'I uændret siden kørsel 1');
         $notListed($r, 'kørsel 2');
         cn_check_audit($pdo, $before, $r, 'kørsel 2');
     });
@@ -196,7 +203,7 @@ try {
     t_case('67 Kørsel 3: idempotent', function () use ($pdo, $seed, $keptDEG, $notListed) {
         $before = cn_max_audit_id($pdo);
         $r = hsg_cask_number_cleanup($pdo, $seed);
-        foreach (['TSTCASK-1' => null, 'TSTCASK-2' => '43', 'TSTCASK-3' => '143', 'TSTCASK-4' => 'STRENGTH', 'TSTCASK-5' => 'N/A', 'TSTCASK-6' => '231584', 'TSTCASK-7' => 'strength', 'TSTCASK-8' => null, 'TSTCASK-9' => ''] as $sku => $want) {
+        foreach (['TSTCASK-1' => null, 'TSTCASK-2' => '43', 'TSTCASK-3' => '143', 'TSTCASK-4' => 'STRENGTH', 'TSTCASK-5' => 'N/A', 'TSTCASK-6' => '231584', 'TSTCASK-7' => 'strength', 'TSTCASK-8' => null, 'TSTCASK-9' => '', 'TSTCASK-10' => null] as $sku => $want) {
             t_eq($want, cn_cask($pdo, $sku), $sku.' uændret');
         }
         t_eq([], cn_tst($r['cleared']), 'cleared har ingen TSTCASK-række');
