@@ -6,6 +6,7 @@
 - **Branch:** `feature/kims-upload-fadnummer-ciffer`. Den bygger på `feature/kims-upload-review-rettelser`, hvor R2 er implementeret. Ingen af dem er merget til `main`.
 - **Modul:** `products` ("Produkter", kernemodul, capability `products.manage`) hæves fra `1.5.0` til `1.5.1` og får sin første `migrations.php`. `supplier_upload` er uændret (`1.1.1`).
 - **Kode:** `core/product_enrichment.php`, `modules/products/` og `products.php`. Linjenumrene passer på HEAD af branchen (`df886b4`).
+- **Rettet efter review:** 2026-10-22. XSS i Produkter, mobiloverløb, flere tests, præcis hjælpetekst og omnummerering af kriterierne fra 60–80 til 78–98 (afsnit 11).
 
 ---
 
@@ -59,9 +60,11 @@ Der kommer ingen ny side, ingen ny POST-handling og ingen ny CSS-klasse. Filtere
 Produktoversigt                                         [＋ Opret nyt produkt]
 [Aktive] [Inaktive] [Udgåede] [Alle m. status] |
 [Mangler fadnr. (41)] [Fadnr. uden ciffer (4)] [Negativt lager (0)]
-Fadnumre uden ciffer (fx STRENGTH, FINISH eller N/A) er ikke rigtige fadnumre og
-bruges ikke ved match. De fleste er læst forkert ud fra produktnavnet. Åbn
-produktet, ret eller tøm feltet Fadnummer, og gem. Listen ændrer ikke noget selv.
+Fadnumre uden ciffer (fx STRENGTH, FINISH eller N/A) er ikke rigtige fadnumre. De
+bruges ikke ved produktmatch i Kims uploadfil, men vises stadig i kataloget og
+bruges i billedtjekket, indtil de er rettet. De fleste er læst forkert ud fra
+produktnavnet. Åbn produktet, ret eller tøm feltet Fadnummer, og gem. Listen
+ændrer ikke noget selv.
 
 Mobil (kort pr. produkt):           Desktop (tabel, uændret):
 ┌─────────────────────────────┐     Glen Test – 12 år – 55 %
@@ -81,9 +84,10 @@ Mobil (kort pr. produkt):           Desktop (tabel, uændret):
 | N | Antal produkter i **alle** statusser, hvor `cask_number` ikke er tom efter `TRIM` og ikke indeholder et ciffer. Linket bruger `status=all`, så listen passer med tallet. |
 | Filterbetingelse | `p.cask_number IS NOT NULL AND TRIM(p.cask_number)<>'' AND p.cask_number NOT REGEXP '[0-9]'`. Forespørgslen indeholder ingen brugerinput, og `filter` sammenlignes med en fast streng som de andre filtre. |
 | Hjælpetekst | Teksten i skitsen står som `<p class="muted">` under knaprækken, kun når filteret er valgt. |
-| Mobil | I kortet (`products.php:200-228`) kommer en ekstra `mobile-stock-line` efter prislinjen (`:214`) med `Fadnr.` og `#<værdi>`, kun når filteret er valgt. Værdien escapes med `h()`. |
+| Mobil | I kortet (`products.php:200-228`) kommer en ekstra `mobile-stock-line` efter prislinjen (`:214`) med `Fadnr.` og `#<værdi>`, kun når filteret er valgt. Værdien escapes med `h()`. Værdi-spanen har `overflow-wrap:anywhere;min-width:0;text-align:right` (inline), så en lang værdi uden mellemrum ombrydes i stedet for at gøre siden bredere end skærmen (rettelse efter review). |
 | Desktop | Ingen ændring. Linjen med produktdata viser allerede "Fad #STRENGTH" (`:246`). |
 | "Nulstil filtre" | Uændret (`:134-136`). |
+| `status` fra URL'en | Rettelse efter review (XSS): Værdien whitelistes til `active`, `inactive`, `discontinued` eller `all`. Alt andet, også en tom værdi, giver `active`, som når parameteren mangler. Den skrives med `h()` alle steder på siden. |
 
 ---
 
@@ -271,6 +275,7 @@ Se afsnit 2.2. Listen er "liste først"-delen af Q1:
 - **Listen i Produkter** bruger den eksisterende `require_capability('products.manage')` (`products.php:3`). Den er kun GET, og der kommer ingen ny POST-handling. "Rediger" vises som i dag kun for admin (`:219-223`).
 - **Direkte brugerlinks** har ingen adgang til Produkter (uændret). I Lagerstatus ser de kun de rensede data. Der er ingen nye rettigheder.
 - CSRF, prepared statements og `h()` gælder som altid. Filterets SQL har ingen brugerinput, og migrationens SQL bruger prepared statements.
+- Efter review: `status` fra URL'en whitelistes og escapes i Produkter (XSS, afsnit 11).
 
 ## 7. Påvirkede filer
 
@@ -279,11 +284,11 @@ Se afsnit 2.2. Listen er "liste først"-delen af Q1:
 | `core/product_enrichment.php` | Ny `hsg_cask_number_candidates`. `hsg_extract_cask_number` (`:10-28`) bruger cifferreglen i løkken. Ny `hsg_cask_number_cleanup` (F2). Eventuelt en lille hjælper til tekstnormaliseringen fra `:31`, så den ikke kopieres. |
 | `modules/products/migrations.php` | **Ny.** `'1.5.1'` kalder `hsg_cask_number_cleanup($pdo)`. |
 | `modules/products/module.php` | `version` → `1.5.1` |
-| `products.php` | Filteret `cask_no_digit`, tælleren, knappen (kun når N > 0), hjælpeteksten og mobillinjen (afsnit 2.2) |
+| `products.php` | Filteret `cask_no_digit`, tælleren, knappen (kun når N > 0), hjælpeteksten og mobillinjen (afsnit 2.2). Efter review: whitelist og `h()` for `status` (XSS) og ombrydning af mobillinjen |
 | `product_edit.php` | KAN-1 (`:137`), valgfri |
-| `tests/product_enrichment_test.php` | **Ny** enhedstest uden database (kriterie 60–64 og 70) |
-| `tests/cask_number_cleanup_db_test.php` | **Ny** databasetest med samme sikkerhedsvagt som `tests/supplier_import_db_test.php:21-26`. Varenumrene har præfikset `TSTCASK-` og ryddes op bagefter (kriterie 65–69) |
-| `tests/run.sh` | Trin 3 kører også `tests/product_enrichment_test.php`. Trin 4 kører `tests/cask_number_cleanup_db_test.php` efter databasetesten af Kims uploadfil. Røgtesten får `products.php?status=all&filter=cask_no_digit` med på sidelisten (`:72-74`) |
+| `tests/product_enrichment_test.php` | **Ny** enhedstest uden database (kriterie 78–82 og 88) |
+| `tests/cask_number_cleanup_db_test.php` | **Ny** databasetest med samme sikkerhedsvagt som `tests/supplier_import_db_test.php:21-26`. Varenumrene har præfikset `TSTCASK-` og ryddes op bagefter (kriterie 83–87) |
+| `tests/run.sh` | Trin 3 kører også `tests/product_enrichment_test.php`. Trin 4 kører `tests/cask_number_cleanup_db_test.php` efter databasetesten af Kims uploadfil. Røgtesten får `products.php?status=all&filter=cask_no_digit` med på sidelisten (`:72-74`). Efter review: regressionstjek for XSS via `status` |
 | `docs/SUPPLIER-UPLOAD.md` | `:24`: fadnummer udledes kun, hvis det har et ciffer. "Produktmatch" (`:79`): ordene udledes ikke længere, og R2 er et ekstra værn mod manuelle værdier og værdier fra filen |
 | `docs/PRODUCT-DATA-ASSISTANT.md` | Punkt 1: fadnummer efter `#`, Cask No. og Fad nr. aflæses kun med mindst ét ciffer. Ny sektion "Fadnumre uden ciffer" om engangsoprydningen og listen i Produkter |
 | `README.txt` | `:254` får tilføjet "et fadnummer skal indeholde mindst ét ciffer" samt release-noten (afsnit 5) |
@@ -296,11 +301,11 @@ Se afsnit 2.2. Listen er "liste først"-delen af Q1:
 
 ## 8. Acceptkriterier
 
-Nummereringen fortsætter efter 1–59 fra Kims uploadfil (hovedspec'en og tillægget). "I dag" betyder HEAD `df886b4`.
+Nummereringen fortsætter efter Q1-spec'en [`2026-10-22-kims-upload-lagertal-q1.md`](2026-10-22-kims-upload-lagertal-q1.md) (63–77), som selv fortsætter efter tillæg 2026-10-20 (39–62). Kriterierne hed 60–80, da spec'en blev godkendt, og er flyttet 18 op, fordi tillæg 2026-10-20 fik kriterie 60–62 efter sin retest, og Q1-spec'en bruger 63–77. Henvisninger til de andre specs' kriterier (fx 44–46 for R2) er uændrede. "I dag" betyder HEAD `df886b4`.
 
 ### F1 – udledningen (enhedstest, `tests/product_enrichment_test.php`)
 
-60. **Givet** `hsg_extract_cask_number(X)` for hver tekst X i tabellen, brugt præcis som den står og uden ekstra kontekst, **så** er resultatet som i kolonnen "Efter".
+78. **Givet** `hsg_extract_cask_number(X)` for hver tekst X i tabellen, brugt præcis som den står og uden ekstra kontekst, **så** er resultatet som i kolonnen "Efter".
 
     | | X | I dag | Efter | Bemærkning |
     |---|---|---|---|---|
@@ -320,19 +325,23 @@ Nummereringen fortsætter efter 1–59 fra Kims uploadfil (hovedspec'en og till�
     | n | `Fadstyrke` | `STYRKE` | `null` | dansk ord |
     | o | `Barrel 1st Fill` | `1ST` | `1ST` | kendt begrænsning (afsnit 9) |
     | p | `''` | `null` | `null` | |
-61. **Givet** `hsg_cask_number_candidates(X)` for hver X i tabellen i 60, **så**
+    | q | `Cask 2012` | `null` | `null` | årstalsfilteret (tilføjet efter review) |
+    | r | `#2015 Cask Strength` | `STRENGTH` | `null` | årstal og ord uden ciffer (tilføjet efter review) |
+    | s | `Cask 2012, #43` | `43` | `43` | årstallet springes over (tilføjet efter review) |
+    | t | `#00` | `00` | `00` | `0` er et ciffer (tilføjet efter review) |
+79. **Givet** `hsg_cask_number_candidates(X)` for hver X i tabellen i 78, **så**
     - er `[0] ?? null` lig kolonnen "I dag", så funktionen gengiver den gamle udledning præcist,
     - er alle elementer skrevet med store bogstaver,
     - er resultatet `['FINISH','43']` for m, `['STRENGTH','231584']` for l og `[]` for j og p.
-62. **Givet** `hsg_product_parse_text(T)`, **så** gælder:
+80. **Givet** `hsg_product_parse_text(T)`, **så** gælder:
     - `Glenfarclas 15 Cask Strength, 60%`: `fields` og `confidence` har ingen nøgle `cask_number`, og `reason` indeholder ikke "fadnummer".
     - `MMD - Auchroisk, Cask Craft, Koval/Bourbon, 44,5%`: ingen `cask_number`.
     - `Clynelish 2013, Cask No. 231584, 56,1%`: `fields['cask_number'] === '231584'`, `confidence['cask_number'] === 99`, og `reason` indeholder "fadnummer aflæst direkte efter #/Cask No.".
     - `Knockdhu, 10yo, 2012 - #43 - Virgin Oak Barrel Finish, 58,2%`: `fields['cask_number'] === '43'`.
 
     Kriteriet dækker også backfillen (`migrations.php:109-124`), Excel-importen og installationen, som alle bruger `hsg_product_parse_text` og ikke ændres. Backfillen køres ikke i databasetesten, fordi `ensure_schema_updates` også omdøber alle produkter og importerer katalogbilleder til `uploads/`.
-63. **Givet** `hsg_supplier_source_fields(kim_row(['sku'=>'20-300','name'=>'Glenfarclas 15 Cask Strength']), kim_map(false))`, **så** har resultatet ingen nøgle `cask_number`. **Givet** navnet `Glen Test Sherry Cask #100`, **så** er `cask_number === '100'` (uændret).
-64. **Givet** de eksisterende tests i `tests/supplier_import_test.php` (bl.a. 19, 20, 26 og 44–46), **så** er de uændret grønne.
+81. **Givet** `hsg_supplier_source_fields(kim_row(['sku'=>'20-300','name'=>'Glenfarclas 15 Cask Strength']), kim_map(false))`, **så** har resultatet ingen nøgle `cask_number`. **Givet** navnet `Glen Test Sherry Cask #100`, **så** er `cask_number === '100'` (uændret).
+82. **Givet** de eksisterende tests i `tests/supplier_import_test.php` (bl.a. 19, 20, 26 og 44–46), **så** er de uændret grønne.
 
 ### F2 – oprydningen (databasetest, `tests/cask_number_cleanup_db_test.php`)
 
@@ -348,59 +357,60 @@ Nummereringen fortsætter efter 1–59 fra Kims uploadfil (hovedspec'en og till�
 | F | TSTCASK-6 | `TSTCASK Clynelish 2013, Cask No. 231584` | `231584` |
 | G | TSTCASK-7 | `TSTCASK Benriach Cask Strength` | `strength` |
 | H | TSTCASK-8 / TSTCASK-9 | `TSTCASK Cask Strength Tom` | `NULL` / `''` |
+| I | TSTCASK-10 | `TSTCASK Highland Park Cask Strength` | `' STRENGTH '` (mellemrum omkring; tilføjet efter review) |
 
 Seed-kortet til kørsel 2 og 3 er `['TSTCASK-3' => ['Royal Brackla, 11yo, 2013 - #143 - Peated Whisky Cask Finish, 54,6%']]`.
 
-65. **Givet** testdataene, **når** `hsg_cask_number_cleanup($pdo, [])` kaldes (kørsel 1, intet startlager), **så**
-    - er A `NULL`, og B er `'43'`,
+83. **Givet** testdataene, **når** `hsg_cask_number_cleanup($pdo, [])` kaldes (kørsel 1, intet startlager), **så**
+    - er A og I `NULL`, og B er `'43'`,
     - er C, D, E, F, G og H uændrede,
-    - indeholder returværdien og audit-posten (kriterie 66) `cleared` for A `{old:'STRENGTH', new:null, source:'name'}` og for B `{old:'FINISH', new:'43', source:'name'}`,
+    - indeholder returværdien og audit-posten (kriterie 84) `cleared` for A `{old:'STRENGTH', new:null, source:'name'}` og for B `{old:'FINISH', new:'43', source:'name'}` og for I `{old:' STRENGTH ', new:null, source:'name'}` (den gemte værdi uden trim),
     - indeholder `kept` C `'FINISH'`, D `'STRENGTH'`, E `'N/A'` og G `'strength'`.
 
     **Når** funktionen derefter kaldes med seed-kortet (kørsel 2), **så**
     - er C `'143'`, og `cleared` indeholder præcis én TSTCASK-række: C `{old:'FINISH', new:'143', source:'initial_stock'}`,
     - indeholder `kept` D, E og G,
-    - er A og B uændrede siden kørsel 1.
-66. **Givet** hver kørsel i 65, **så** skrives præcis én ny række i `hsg_audit_log`. Testen ser kun på rækker med id over det højeste id ved teststart. Rækken har:
+    - er A, B og I uændrede siden kørsel 1.
+84. **Givet** hver kørsel i 83, **så** skrives præcis én ny række i `hsg_audit_log`. Testen ser kun på rækker med id over det højeste id ved teststart. Rækken har:
     - `action='product.cask_number_cleanup'`, `actor_type='system'`, `actor_id IS NULL`, `actor_name='System (opdatering)'`, `entity_type='product'`, `entity_id IS NULL` og `ip_hash IS NULL`,
     - `details_json` med samme `cleared` og `kept` som returværdien og `cleared_count`/`kept_count` lig længden af listerne. TSTCASK-rækkerne sammenlignes på `id`, `sku`, `old`, `new`, `source` og `value`.
     - F, TSTCASK-8 og TSTCASK-9 står ikke i nogen af listerne.
-67. **Givet** tilstanden efter kørsel 2, **når** funktionen kaldes igen med seed-kortet (kørsel 3), **så**
+85. **Givet** tilstanden efter kørsel 2, **når** funktionen kaldes igen med seed-kortet (kørsel 3), **så**
     - er alle TSTCASK-værdier uændrede,
     - indeholder `cleared` ingen TSTCASK-række,
     - indeholder `kept` stadig D, E og G,
     - er der skrevet én ny audit-post (idempotens).
-68. **Givet** startlagerets produkt **12-1016** i testdatabasen, som midlertidigt har `cask_number='FINISH'` og navnet `Knockdhu (2012) – 10 år – 58,2 %`, **når** `hsg_cask_number_cleanup($pdo)` kaldes **uden** seed-parameter, så den rigtige `initial-stock.json` læses, **så**
+86. **Givet** startlagerets produkt **12-1016** i testdatabasen, som midlertidigt har `cask_number='FINISH'` og navnet `Knockdhu (2012) – 10 år – 58,2 %`, **når** `hsg_cask_number_cleanup($pdo)` kaldes **uden** seed-parameter, så den rigtige `initial-stock.json` læses, **så**
     - er `cask_number` `'43'`,
     - indeholder audit-posten `{sku:'12-1016', old:'FINISH', new:'43', source:'initial_stock'}`.
 
     Testen sætter produktets oprindelige navn og fadnummer tilbage i `finally`. Testen forudsætter startlageret (`run.sh` installerer med `seed_stock=1`). Findes 12-1016 ikke, fejler testen med en tydelig besked.
-69. **Givet** den tomme testdatabase, som `run.sh` har installeret og røgtestet, før testen laver sine egne kald, **så**
+87. **Givet** den tomme testdatabase, som `run.sh` har installeret og røgtestet, før testen laver sine egne kald, **så**
     - er `hsg_module_versions.version` for `products` `'1.5.1'`,
     - findes **præcis én** audit-post `product.cask_number_cleanup` med `cleared_count` 0 og `kept_count` 0, fra første forespørgsel efter installationen. Røgtestens mange sidevisninger har altså ikke kørt den igen.
     - har ingen af startlagerets produkter et ikke-tomt `cask_number` uden ciffer,
     - har 12-1016, 12-1087, 12-1098 og 12-1104 `'43'`, `'143'`, `'71324'` og `'300223'`, mens 11-2010 og 18-1015 har et tomt `cask_number`.
-70. **Givet** `modules/products/migrations.php` (enhedstest), **så**
+88. **Givet** `modules/products/migrations.php` (enhedstest), **så**
     - returnerer filen et array med præcis nøglen `'1.5.1'`, og værdien er callable,
     - giver det ingen output og ingen nye funktioner at indlæse filen to gange,
     - er `version` i `modules/products/module.php` `'1.5.1'`.
 
 ### F3 – listen i Produkter (testerens HTTP- eller manuelle test)
 
-71. **Givet** tre aktive produkter med fadnumrene `STRENGTH`, `N/A` og `strength`, ét inaktivt produkt med `FINISH` og ét produkt med `231584`, og ingen andre produkter uden ciffer, **når** admin åbner `products.php`, **så**
+89. **Givet** tre aktive produkter med fadnumrene `STRENGTH`, `N/A` og `strength`, ét inaktivt produkt med `FINISH` og ét produkt med `231584`, og ingen andre produkter uden ciffer, **når** admin åbner `products.php`, **så**
     - står knappen "Fadnr. uden ciffer (4)" mellem "Mangler fadnr." og "Negativt lager" og linker til `products.php?status=all&filter=cask_no_digit`,
     - viser listen bag linket præcis de fire produkter, men ikke `231584`, med hjælpeteksten fra afsnit 2.2,
     - viser hvert mobilkort linjen "Fadnr." med `#<værdi>`. Uden filteret har kortene ikke den linje.
-72. **Givet** at intet produkt har et fadnummer uden ciffer, **så** vises knappen ikke, og `products.php?status=all&filter=cask_no_digit` svarer HTTP 200 med en tom liste.
-73. **Givet** `products.php`, **så** er der ingen ny POST-handling. **Givet** en linkbruger uden `products.manage`, **så** afvises `products.php?filter=cask_no_digit` som i dag.
-74. **Givet** `tests/run.sh`, **så** indeholder røgtestens sideliste `products.php?status=all&filter=cask_no_digit`, og siden svarer uden HTTP 500 og uden PHP-fejl.
+90. **Givet** at intet produkt har et fadnummer uden ciffer, **så** vises knappen ikke, og `products.php?status=all&filter=cask_no_digit` svarer HTTP 200 med en tom liste.
+91. **Givet** `products.php`, **så** er der ingen ny POST-handling. **Givet** en linkbruger uden `products.manage`, **så** afvises `products.php?filter=cask_no_digit` som i dag.
+92. **Givet** `tests/run.sh`, **så** indeholder røgtestens sideliste `products.php?status=all&filter=cask_no_digit`, og siden svarer uden HTTP 500 og uden PHP-fejl.
 
 ### Generelt
 
-75. **Når** `bash tests/run.sh` køres, **så** er alle trin grønne, inklusive de nye tests og de eksisterende enheds-, database- og flowtests af Kims uploadfil.
-76. **Givet** modulmanifesterne, **så** er `products` `1.5.1`, og `supplier_upload` er uændret `1.1.1`. **Givet** dokumentationen, **så** beskriver `docs/SUPPLIER-UPLOAD.md`, `docs/PRODUCT-DATA-ASSISTANT.md` og `README.txt` reglen og oprydningen som angivet i afsnit 7.
-77. **Givet** `git diff df886b4 -- core/supplier_import.php supplier_upload.php migrations.php import.php install.php`, **så** er der ingen ændringer (R2 og backfillen er uændrede, F4).
-78. **Givet** den rigtige fil "lager 19-10-2026.xlsx" (manuel test; filen må ikke lægges i repoet), **når** previewet laves på `feature/kims-upload-review-rettelser` og på denne branch med samme kolonnevalg og reservationsvalg, **så**
+93. **Når** `bash tests/run.sh` køres, **så** er alle trin grønne, inklusive de nye tests og de eksisterende enheds-, database- og flowtests af Kims uploadfil.
+94. **Givet** modulmanifesterne, **så** er `products` `1.5.1`, og `supplier_upload` er uændret `1.1.1`. **Givet** dokumentationen, **så** beskriver `docs/SUPPLIER-UPLOAD.md`, `docs/PRODUCT-DATA-ASSISTANT.md` og `README.txt` reglen og oprydningen som angivet i afsnit 7.
+95. **Givet** `git diff df886b4 -- core/supplier_import.php supplier_upload.php migrations.php import.php install.php`, **så** er der ingen ændringer (R2 og backfillen er uændrede, F4).
+96. **Givet** den rigtige fil "lager 19-10-2026.xlsx" (manuel test; filen må ikke lægges i repoet), **når** previewet laves på `feature/kims-upload-review-rettelser` og på denne branch med samme kolonnevalg og reservationsvalg, **så**
     - er kolonnevalg, match og forvalg identiske,
     - har rækkerne 21, 22, 27, 28, 115, 159, 185 og 205 (fra testrapporten) ikke længere CRAFT eller FINISH i `source.cask_number`. De har intet eller et rigtigt nummer,
     - findes eventuelle forskelle i `changes` kun for `cask_number` på de rækker.
@@ -409,8 +419,13 @@ Seed-kortet til kørsel 2 og 3 er `['TSTCASK-3' => ['Royal Brackla, 11yo, 2013 -
 
 ### Valgfrie KAN-punkter (kun hvis de laves)
 
-79. **KAN-1:** **Givet** Produkt-redigering, **så** står teksten fra afsnit 4 under feltet Fadnummer.
-80. **KAN-2:** **Givet** `docs/ARCHITECTURE.md`, **så** forklarer afsnittet "Migrations", hvorfor engangsrettelser af data lægges som modulmigration.
+97. **KAN-1:** **Givet** Produkt-redigering, **så** står teksten fra afsnit 4 under feltet Fadnummer.
+98. **KAN-2:** **Givet** `docs/ARCHITECTURE.md`, **så** forklarer afsnittet "Migrations", hvorfor engangsrettelser af data lægges som modulmigration.
+
+### Rettelser efter review
+
+99. **XSS:** **Givet** en admin, der åbner `products.php?status=%22%3E%3Cscript%3Ealert(1)%3C/script%3E`, **så** svarer siden HTTP 200 uden PHP-fejl, svaret indeholder ikke `"><script>alert(1)`, og listen viser aktive produkter som ved `status=active`. **Givet** `status` `active`, `inactive`, `discontinued` eller `all` eller ingen `status`, **så** er listen og knapperne som før. Alle steder, hvor `status` skrives i HTML på siden, bruger `h()`. Røgtesten i `tests/run.sh` har regressionstjekket.
+100. **Mobiloverløb:** **Givet** et produkt med et fadnummer uden ciffer på 80 tegn uden mellemrum (fx 80 × `X`), **når** `products.php?status=all&filter=cask_no_digit` vises i 390 px bredde, **så** ombrydes værdien i linjen Fadnr., og siden kan ikke scrolles sidelæns (`scrollWidth` = `clientWidth`). Værdi-spanen har `overflow-wrap:anywhere;min-width:0;text-align:right`. Testerens manuelle test.
 
 ---
 
@@ -439,3 +454,15 @@ Seed-kortet til kørsel 2 og 3 er `['TSTCASK-3' => ['Royal Brackla, 11yo, 2013 -
    B og C logger også alt i audit-posten, og update.php tager en FULL-backup først.
 2. **Q2 – Genudledning.** Skal migrationen skrive det rigtige fadnummer, når samme tekst har et (12-1016 → 43, 12-1087 → 143, 12-1098 → 71324, 12-1104 → 300223)? **Anbefaling: ja.** Det er præcis det, den rettede udledning ville have gemt. Alternativet er kun at tømme feltet, så produkterne står under "Mangler fadnr.".
 3. **Q3 – Gamle previews i Kims uploadfil.** Skal preview-formatet hæves fra 2 til 3, så et preview fra før opdateringen afvises? **Anbefaling: nej.** Previews er kortlivede, og det ville kræve ændringer og en ny version af `supplier_upload`. Release-noten beder om et nyt preview efter opdateringen, og værdier, der alligevel kommer tilbage, vises på listen.
+
+---
+
+## 11. Rettelser efter review (2026-10-22)
+
+Testeren meldte KLAR, og revieweren godkendte med tre BØR-punkter. Brugeren bad om, at alle BØR-punkter blev rettet i denne branch, også XSS. Ændringer:
+
+1. **XSS i Produkter (BØR 1, fandtes også på `main`):** `status` fra URL'en blev skrevet uescapet i href'en på "Mangler fadnr." og "Negativt lager". `$showStatus` whitelistes nu til `active`, `inactive`, `discontinued` eller `all` (alt andet giver `active`, som når parameteren mangler), og `h()` bruges alle steder, hvor værdien skrives. Gyldige værdier opfører sig som før. Kun ukendte eller tomme værdier viser nu aktive produkter i stedet for alle. Røgtesten har et regressionstjek. Kriterie 99.
+2. **Mobiloverløb (BØR 2):** Værdi-spanen i linjen Fadnr. har `overflow-wrap:anywhere;min-width:0;text-align:right` (inline, ingen ny CSS-klasse). Kriterie 100.
+3. **Testhuller (BØR 3 og testrapportens mutanter M4, M13 og M22):** Tabellen i kriterie 78 har fået rækkerne q–t (årstalsfilteret og `#00`). Testdataene i kriterie 83 har fået produkt I med `' STRENGTH '` (mellemrum omkring), som skal ryddes med den gemte værdi i `old`.
+4. **Hjælpetekst:** Teksten under filteret sagde, at fadnumre uden ciffer "bruges ikke ved match", men billedtjekket bruger dem stadig. Nu står der, at de ikke bruges ved produktmatch i Kims uploadfil, men stadig vises i kataloget og bruges i billedtjekket, indtil de er rettet (afsnit 2.2).
+5. **Omnummerering:** Kriterierne 60–80 hedder nu 78–98 (+18), fordi tillæg 2026-10-20 fik 60–62, og Q1-spec'en om lagertal bruger 63–77. Henvisninger til de andre specs' kriterier er uændrede. Testrapporten og tjeknavnene i testene er omnummereret tilsvarende.

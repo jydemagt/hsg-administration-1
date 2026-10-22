@@ -2,7 +2,7 @@
 declare(strict_types=1);
 /*
  * Databasetest af engangsoprydningen af fadnumre uden ciffer (hsg_cask_number_cleanup, modulmigration products 1.5.1)
- * (spec 2026-10-22-fadnummer-kraever-ciffer, kriterie 65-69).
+ * (spec 2026-10-22-fadnummer-kraever-ciffer, kriterie 83-87; hed 65-69 før omnummereringen).
  *
  * KØRES KUN mod testdatabasen, som tests/run.sh har installeret (config.php + HSG_TEST_DB_NAME):
  *     php tests/cask_number_cleanup_db_test.php
@@ -74,7 +74,7 @@ function cn_tst(array $list): array {
     ksort($out);
     return $out;
 }
-/** Præcis én ny audit-post efter $afterId, med faste kolonner og samme lister som returværdien (kriterie 66). */
+/** Præcis én ny audit-post efter $afterId, med faste kolonner og samme lister som returværdien (kriterie 84). */
 function cn_check_audit(PDO $pdo, int $afterId, array $result, string $run): ?array {
     $rows = cn_audit_rows($pdo, $afterId);
     t_eq(1, count($rows), $run.': præcis én ny audit-post');
@@ -111,7 +111,7 @@ $p1016 = null;
 
 cn_cleanup_products($pdo);
 try {
-    t_case('69 Frisk installation: migrationen products 1.5.1 er kørt præcis én gang', function () use ($pdo, $startAuditId, $seedSkus) {
+    t_case('87 Frisk installation: migrationen products 1.5.1 er kørt præcis én gang', function () use ($pdo, $startAuditId, $seedSkus) {
         $st = $pdo->prepare('SELECT version FROM hsg_module_versions WHERE module_id=?'); $st->execute(['products']);
         t_eq('1.5.1', $st->fetchColumn(), 'hsg_module_versions.products = 1.5.1');
         $st = $pdo->prepare('SELECT * FROM hsg_audit_log WHERE action=? AND id<=? ORDER BY id'); $st->execute([CN_ACTION, $startAuditId]);
@@ -139,7 +139,7 @@ try {
         }
     });
 
-    // Testdata (kriterie 65). A er udgået for at vise, at alle statusser gennemgås.
+    // Testdata (kriterie 83). A er udgået for at vise, at alle statusser gennemgås.
     $ins = $pdo->prepare('INSERT INTO lager_products(sku,name,cask_number,status) VALUES(?,?,?,?)');
     $data = [
         'TSTCASK-1' => ['TSTCASK Glenfarclas 15 Cask Strength, 60%', 'STRENGTH', 'discontinued'],
@@ -168,7 +168,7 @@ try {
         }
     };
 
-    t_case('65/66 Kørsel 1 uden startlager: kun det beviste ryddes', function () use ($pdo, $id, $keptDEG, $notListed) {
+    t_case('83/84 Kørsel 1 uden startlager: kun det beviste ryddes', function () use ($pdo, $id, $keptDEG, $notListed) {
         $before = cn_max_audit_id($pdo);
         $r = hsg_cask_number_cleanup($pdo, []);
         t_eq(null, cn_cask($pdo, 'TSTCASK-1'), 'A er NULL');
@@ -187,7 +187,7 @@ try {
         cn_check_audit($pdo, $before, $r, 'kørsel 1');
     });
 
-    t_case('65/66 Kørsel 2 med startlagerets navn: C får 143', function () use ($pdo, $id, $seed, $keptDEG, $notListed) {
+    t_case('83/84 Kørsel 2 med startlagerets navn: C får 143', function () use ($pdo, $id, $seed, $keptDEG, $notListed) {
         $before = cn_max_audit_id($pdo);
         $r = hsg_cask_number_cleanup($pdo, $seed);
         t_eq('143', cn_cask($pdo, 'TSTCASK-3'), 'C er 143');
@@ -200,7 +200,7 @@ try {
         cn_check_audit($pdo, $before, $r, 'kørsel 2');
     });
 
-    t_case('67 Kørsel 3: idempotent', function () use ($pdo, $seed, $keptDEG, $notListed) {
+    t_case('85 Kørsel 3: idempotent', function () use ($pdo, $seed, $keptDEG, $notListed) {
         $before = cn_max_audit_id($pdo);
         $r = hsg_cask_number_cleanup($pdo, $seed);
         foreach (['TSTCASK-1' => null, 'TSTCASK-2' => '43', 'TSTCASK-3' => '143', 'TSTCASK-4' => 'STRENGTH', 'TSTCASK-5' => 'N/A', 'TSTCASK-6' => '231584', 'TSTCASK-7' => 'strength', 'TSTCASK-8' => null, 'TSTCASK-9' => '', 'TSTCASK-10' => null] as $sku => $want) {
@@ -212,7 +212,7 @@ try {
         cn_check_audit($pdo, $before, $r, 'kørsel 3');
     });
 
-    t_case('68 Startlagerets 12-1016 med den rigtige initial-stock.json', function () use ($pdo, &$p1016) {
+    t_case('86 Startlagerets 12-1016 med den rigtige initial-stock.json', function () use ($pdo, &$p1016) {
         $st = $pdo->prepare('SELECT id,name,cask_number FROM lager_products WHERE sku=?'); $st->execute(['12-1016']);
         $p = $st->fetch();
         if (!$p) { t_true(false, '12-1016 findes ikke i testdatabasen – testen kræver startlageret (run.sh installerer med seed_stock=1)'); return; }

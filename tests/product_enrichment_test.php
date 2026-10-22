@@ -2,7 +2,7 @@
 declare(strict_types=1);
 /*
  * Enhedstest af fadnummer-udledningen (core/product_enrichment.php) og modulmigrationen products 1.5.1
- * (spec 2026-10-22-fadnummer-kraever-ciffer, kriterie 60-64 og 70).
+ * (spec 2026-10-22-fadnummer-kraever-ciffer, kriterie 78-82 og 88; hed 60-64 og 70 før omnummereringen).
  * Kun rene funktioner: ingen database og intet netværk.
  * Køres af tests/run.sh:  php tests/product_enrichment_test.php   (exit-kode ≠ 0 ved fejl)
  */
@@ -43,7 +43,7 @@ function pe_kim_row(array $v): array {
 /** Feltkort som kim_map(false) i tests/supplier_import_test.php: lokationskolonner R/S/T, ingen total. */
 function pe_kim_map(): array { return ['sku' => 4, 'name' => 5, 'distillery' => 7, 'stock_loc_1' => 17, 'stock_loc_2' => 18, 'stock_loc_3' => 19]; }
 
-/* Tekst => [i dag (gammel udledning), efter (ny regel)] – tabellen i kriterie 60. */
+/* Tekst => [i dag (gammel udledning), efter (ny regel)] – tabellen i kriterie 78. */
 $table = [
     'a' => ['Cask Strength', 'STRENGTH', null],
     'b' => ['Cask Finish', 'FINISH', null],
@@ -68,13 +68,13 @@ $table = [
     't' => ['#00', '00', '00'],
 ];
 
-t_case('60 hsg_extract_cask_number kræver et ciffer (filter i løkken)', function () use ($table) {
+t_case('78 hsg_extract_cask_number kræver et ciffer (filter i løkken)', function () use ($table) {
     foreach ($table as $k => [$text, , $after]) {
         t_eq($after, hsg_extract_cask_number($text), $k.') '.var_export($text, true));
     }
 });
 
-t_case('61 hsg_cask_number_candidates gengiver den gamle udledning', function () use ($table) {
+t_case('79 hsg_cask_number_candidates gengiver den gamle udledning', function () use ($table) {
     foreach ($table as $k => [$text, $today]) {
         $c = hsg_cask_number_candidates($text);
         t_eq($today, $c[0] ?? null, $k.') første kandidat = i dag');
@@ -87,7 +87,7 @@ t_case('61 hsg_cask_number_candidates gengiver den gamle udledning', function ()
     t_eq([], hsg_cask_number_candidates($table['p'][0]), 'p) []');
 });
 
-t_case('62 hsg_product_parse_text', function () {
+t_case('80 hsg_product_parse_text', function () {
     $r = hsg_product_parse_text('Glenfarclas 15 Cask Strength, 60%');
     t_true(!array_key_exists('cask_number', $r['fields']), 'Cask Strength: ingen cask_number i fields');
     t_true(!array_key_exists('cask_number', $r['confidence']), 'Cask Strength: ingen cask_number i confidence');
@@ -105,19 +105,19 @@ t_case('62 hsg_product_parse_text', function () {
     t_eq('43', $r['fields']['cask_number'] ?? null, 'Knockdhu: 43');
 });
 
-t_case('62n Normaliseringen er den samme som før (– og — bliver -, mellemrum samles)', function () {
+t_case('80n Normaliseringen er den samme som før (– og — bliver -, mellemrum samles)', function () {
     t_eq('Knockdhu (2012) - 10 år - 58,2 %', hsg_product_text_normalize("  Knockdhu (2012)  –  10 år — 58,2 %\t"), 'normaliseret tekst');
     t_eq('', hsg_product_text_normalize(" \n "), 'tom tekst');
 });
 
-t_case('63 hsg_supplier_source_fields', function () {
+t_case('81 hsg_supplier_source_fields', function () {
     $src = hsg_supplier_source_fields(pe_kim_row(['sku' => '20-300', 'name' => 'Glenfarclas 15 Cask Strength']), pe_kim_map());
     t_true(!array_key_exists('cask_number', $src), 'Cask Strength: ingen cask_number ('.json_encode($src, JSON_UNESCAPED_UNICODE).')');
     $src = hsg_supplier_source_fields(pe_kim_row(['sku' => '20-301', 'name' => 'Glen Test Sherry Cask #100']), pe_kim_map());
     t_eq('100', $src['cask_number'] ?? null, 'Sherry Cask #100: 100');
 });
 
-t_case('70 modules/products/migrations.php', function () use ($root) {
+t_case('88 modules/products/migrations.php', function () use ($root) {
     $file = $root.'/modules/products/migrations.php';
     $before = get_defined_functions()['user'];
     ob_start();
