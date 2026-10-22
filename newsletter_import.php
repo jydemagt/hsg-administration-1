@@ -6,17 +6,16 @@ require_capability('newsletter.send');
 require_once __DIR__.'/core/newsletter.php';
 
 // Forhåndsvisningen ligger kun i sessionen under et tilfældigt token – aldrig i storage/ eller i databasen,
-// fordi Kims fil kan indeholde andre persondata. Den slettes, når importen er gennemført eller annulleret,
-// og en udløbet forhåndsvisning slettes her, uanset om siden åbnes med dens token.
-hsg_newsletter_preview_expire();
+// fordi Kims fil kan indeholde andre persondata. Den slettes, når importen er gennemført eller annulleret.
+// En udløbet forhåndsvisning slettes på alle sider uanset token (modules/newsletter/hooks.php, indlæst af auth.php).
 $expiredMessage = 'Forhåndsvisningen er udløbet – upload filen igen.';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = (string)($_POST['action'] ?? '');
+    $action = hsg_newsletter_input($_POST, 'action');
 
     if ($action === 'analyse') {
         try {
-            $mode = hsg_newsletter_mode((string)($_POST['mode'] ?? 'customer'));
+            $mode = hsg_newsletter_mode(hsg_newsletter_input($_POST, 'mode', 'customer'));
             $file = is_array($_FILES['file'] ?? null) ? $_FILES['file'] : [];
             $data = hsg_newsletter_read_upload($file);
             $sheet = (string)array_key_first($data['sheets']);
@@ -36,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('newsletter_import.php');
     }
 
-    $p = hsg_newsletter_preview_load((string)($_POST['preview_token'] ?? ''));
+    $p = hsg_newsletter_preview_load(hsg_newsletter_input($_POST, 'preview_token'));
     if ($p === null) { flash('error', $expiredMessage); redirect('newsletter_import.php'); }
     $previewUrl = 'newsletter_import.php?preview='.$p['token'];
 
@@ -47,16 +46,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'remap') {
-        $sheet = (string)($_POST['sheet'] ?? $p['sheet']);
+        $sheet = hsg_newsletter_input($_POST, 'sheet', (string)$p['sheet']);
         if (!isset($p['sheets'][$sheet])) $sheet = (string)$p['sheet'];
         $rows = $p['sheets'][$sheet];
-        $mode = hsg_newsletter_mode((string)($_POST['mode'] ?? $p['mode']));
+        $mode = hsg_newsletter_mode(hsg_newsletter_input($_POST, 'mode', (string)$p['mode']));
         if ($sheet !== $p['sheet']) {
             $cols = hsg_newsletter_detect_columns($rows, hsg_newsletter_saved_columns($pdo));
         } else {
             $max = hsg_newsletter_column_count($rows);
             $pick = static function (string $key, bool $optional) use ($max): ?int {
-                $v = trim((string)($_POST[$key] ?? ''));
+                $v = trim(hsg_newsletter_input($_POST, $key));
                 if ($v !== '' && ctype_digit($v) && (int)$v < $max) return (int)$v;
                 return $optional ? null : 3;
             };
@@ -94,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $p = null;
-$previewToken = (string)($_GET['preview'] ?? '');
+$previewToken = hsg_newsletter_input($_GET, 'preview');
 if ($previewToken !== '') {
     $p = hsg_newsletter_preview_load($previewToken);
     if ($p === null) { flash('error', $expiredMessage); redirect('newsletter_import.php'); }

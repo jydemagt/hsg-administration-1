@@ -175,6 +175,16 @@ $rows = hsg_newsletter_export_rows(['email' => 'kim@firma.dk', 'name' => '=CMD()
 eq('eksport: kolonner', ['Mail', 'Navn', 'Firma', 'Type', 'Status', 'Kilde', 'Oprettet', 'Sidst set i import', 'Afmeldt', 'Afmeldt hvordan'], $rows[0]);
 t('eksport: navn som formel neutraliseres', str_contains(hsg_newsletter_csv($rows), "'=CMD()"));
 
+// Input fra $_POST/$_GET: felter sendt som liste (fx mode[]=x) giver standardværdien
+eq('input: tekst', 'dealer', hsg_newsletter_input(['mode' => 'dealer'], 'mode', 'customer'));
+eq('input: mangler', 'customer', hsg_newsletter_input([], 'mode', 'customer'));
+eq('input: liste giver standardværdien', 'customer', hsg_newsletter_input(['mode' => ['x']], 'mode', 'customer'));
+eq('input: tom tekst bevares', '', hsg_newsletter_input(['email' => ''], 'email', 'x'));
+eq('id: cifre', 42, hsg_newsletter_input_id(['id' => '42'], 'id'));
+eq('id: liste (id[]=5) giver 0 og ikke 1', 0, hsg_newsletter_input_id(['id' => ['5']], 'id'));
+eq('id: tekst og negative tal giver 0', [0, 0, 0], [hsg_newsletter_input_id(['id' => 'abc'], 'id'), hsg_newsletter_input_id(['id' => '-3'], 'id'), hsg_newsletter_input_id(['id' => '12abc'], 'id')]);
+eq('id: mangler', 0, hsg_newsletter_input_id([], 'id'));
+
 // Grænser i importen (reviewet af trin 1, BØR 1 og 2)
 function nl_throws(callable $fn): string {
     try { $fn(); return ''; } catch (Throwable $e) { return $e->getMessage(); }

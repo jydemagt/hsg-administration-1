@@ -26,6 +26,18 @@ const HSG_NEWSLETTER_XLSX_TOO_BIG = 'Excel-filen fylder for meget, når den pakk
  * Rene funktioner (ingen database, ingen globale variabler)
  * ------------------------------------------------------------------------- */
 
+/** Et tekstfelt fra $_POST eller $_GET. Et felt sendt som liste (fx mode[]=x) giver $default i stedet for en PHP-advarsel. */
+function hsg_newsletter_input(array $source, string $key, string $default = ''): string {
+    $v = $source[$key] ?? $default;
+    return is_string($v) ? $v : $default;
+}
+
+/** Et id fra $_POST eller $_GET: kun cifre, ellers 0 (også for en liste som id[]=5, der ellers ville blive til 1). */
+function hsg_newsletter_input_id(array $source, string $key): int {
+    $v = hsg_newsletter_input($source, $key);
+    return ctype_digit($v) ? (int)$v : 0;
+}
+
 function hsg_newsletter_lower(string $s): string {
     return function_exists('mb_strtolower') ? mb_strtolower($s, 'UTF-8') : strtolower($s);
 }

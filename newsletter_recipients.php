@@ -8,19 +8,16 @@ require_once __DIR__.'/core/newsletter.php';
 // Mailadresser må aldrig stå i URL'er: siderne bruger ?id=, søgning sker i browseren,
 // og eksport og sletning sker via POST.
 
-// En forladt import må ikke blive liggende i sessionen (se newsletter_import.php).
-hsg_newsletter_preview_expire();
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = (string)($_POST['action'] ?? '');
-    $id = (int)($_POST['id'] ?? 0);
+    $action = hsg_newsletter_input($_POST, 'action');
+    $id = hsg_newsletter_input_id($_POST, 'id');
     $back = $id > 0 ? 'newsletter_recipients.php?id='.$id : 'newsletter_recipients.php';
     try {
         if ($action === 'create') {
-            $email = (string)($_POST['email'] ?? '');
-            $name = (string)($_POST['name'] ?? '');
-            $company = (string)($_POST['company'] ?? '');
-            $segment = hsg_newsletter_segment((string)($_POST['segment'] ?? 'customer'));
+            $email = hsg_newsletter_input($_POST, 'email');
+            $name = hsg_newsletter_input($_POST, 'name');
+            $company = hsg_newsletter_input($_POST, 'company');
+            $segment = hsg_newsletter_segment(hsg_newsletter_input($_POST, 'segment', 'customer'));
             $r = hsg_newsletter_add($pdo, $email, $name, $company, $segment, !empty($_POST['self_requested']));
             if ($r['result'] === 'created') { flash('success', 'Modtageren er tilføjet.'); redirect('newsletter_recipients.php'); }
             if ($r['result'] === 'reactivated') { flash('success', 'Modtageren er tilmeldt igen.'); redirect('newsletter_recipients.php?id='.(int)$r['id']); }
@@ -40,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($action === 'update') {
-            $r = hsg_newsletter_update($pdo, $id, (string)($_POST['email'] ?? ''), (string)($_POST['name'] ?? ''), (string)($_POST['company'] ?? ''), (string)($_POST['segment'] ?? 'customer'));
+            $r = hsg_newsletter_update($pdo, $id, hsg_newsletter_input($_POST, 'email'), hsg_newsletter_input($_POST, 'name'), hsg_newsletter_input($_POST, 'company'), hsg_newsletter_input($_POST, 'segment', 'customer'));
             if (!$r['ok']) flash('error', (string)$r['error']);
             else flash('success', $r['fields'] ? 'Ændringerne er gemt.' : 'Der var ingen ændringer at gemme.');
             redirect($back);
@@ -99,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $segmentOptions = ['customer' => 'Kunde', 'dealer' => 'Forhandler'];
-$id = (int)($_GET['id'] ?? 0);
+$id = hsg_newsletter_input_id($_GET, 'id');
 
 /* ---------- Redigér én modtager ---------- */
 if ($id > 0) {
@@ -179,7 +176,7 @@ if ($id > 0) {
 
 /* ---------- Modtagerlisten ---------- */
 $filters = hsg_newsletter_filters();
-$filter = (string)($_GET['filter'] ?? 'active');
+$filter = hsg_newsletter_input($_GET, 'filter', 'active');
 if (!isset($filters[$filter])) $filter = 'active';
 $counts = hsg_newsletter_counts($pdo);
 $filterCounts = ['active' => $counts['active'] ?? 0, 'dealer' => $counts['dealers'] ?? 0, 'customer' => $counts['customers'] ?? 0, 'unsubscribed' => $counts['unsubscribed'] ?? 0, 'stopped' => $counts['stopped'] ?? 0];
