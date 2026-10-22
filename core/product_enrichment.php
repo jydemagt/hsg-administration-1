@@ -3,16 +3,24 @@ declare(strict_types=1);
 
 require_once __DIR__.'/groq.php';
 
-/**
+/*
  * Deterministic extraction from the product/vare text. This layer never calls AI
  * and only returns fields that can be read with reasonably high confidence.
  */
-function hsg_extract_cask_number(string $text): ?string {
-    $text=trim($text);if($text==='')return null;
+
+/**
+ * Alle værdier, som fadnummer-mønstrene finder i teksten, i den rækkefølge de prøves:
+ * først alle match efter cask/fad/barrel, derefter alle match efter #, hver i tekstens rækkefølge.
+ * Samme batch/bottle/flaske- og årstalsfilter som altid; værdierne er trimmet og med store bogstaver.
+ * Det første element er præcis det, udledningen gav før cifferreglen (bruges af oprydningen).
+ */
+function hsg_cask_number_candidates(string $text): array {
+    $text=trim($text);if($text==='')return [];
     $patterns=[
       '/\b(?:cask|fad|barrel)\s*(?:no\.?|nr\.?|number)?\s*#?\s*([A-Z0-9][A-Z0-9.\-\/]{1,30})\b/iu',
       '/#\s*([A-Z0-9][A-Z0-9.\-\/]{1,30})\b/iu'
     ];
+    $out=[];
     foreach($patterns as $pi=>$rx){
         if(!preg_match_all($rx,$text,$mm,PREG_SET_ORDER|PREG_OFFSET_CAPTURE))continue;
         foreach($mm as $m){
@@ -21,14 +29,99 @@ function hsg_extract_cask_number(string $text): ?string {
             $tail=function_exists('mb_substr')?mb_substr($before,max(0,mb_strlen($before,'UTF-8')-18),null,'UTF-8'):substr($before,-18);
             if($pi===1 && preg_match('/\b(?:batch|bottle|flaske)\s*$/iu',$tail))continue;
             if(preg_match('/^(?:19|20)\d{2}$/',$value))continue;
-            return strtoupper($value);
+            $out[]=strtoupper($value);
         }
+    }
+    return $out;
+}
+
+/** Fadnummer: den første kandidat med mindst ét ciffer. Ord som STRENGTH, FINISH og CRAFT er ikke et fadnummer. */
+function hsg_extract_cask_number(string $text): ?string {
+    foreach(hsg_cask_number_candidates($text) as $value){
+        if(preg_match('/\d/',$value))return $value;
     }
     return null;
 }
 
+/** Varetekst som reglerne læser den: – og — bliver til -, og mellemrum samles og trimmes. */
+function hsg_product_text_normalize(string $text): string {
+    return trim(preg_replace('/\s+/u',' ',str_replace(["\xE2\x80\x93","\xE2\x80\x94"],'-',$text))??$text);
+}
+
+/**
+ * Navne fra startlageret (initial-stock.json) pr. varenummer: [sku => [navn, …]].
+ * En manglende eller ugyldig fil giver [] (oprydningen må aldrig vælte en forespørgsel).
+ */
+function hsg_cask_number_seed_names(?string $file=null): array {
+    $file??=dirname(__DIR__).'/initial-stock.json';
+    if(!is_file($file)) return [];
+    $raw=@file_get_contents($file);
+    if(!is_string($raw) || $raw==='') return [];
+    $data=json_decode($raw,true);
+    if(!is_array($data) || !is_array($data['products']??null)) return [];
+    $out=[];
+    foreach($data['products'] as $p){
+        if(!is_array($p) || !is_scalar($p['sku']??null) || !is_scalar($p['name']??null)) continue;
+        $sku=trim((string)$p['sku']);
+        if($sku==='') continue;
+        $out[$sku][]=(string)$p['name'];
+    }
+    return $out;
+}
+
+/**
+ * Engangsoprydning af fadnumre uden ciffer (modulmigration products 1.5.1).
+ * Kun værdier, der beviseligt er udledt automatisk, ændres: den gamle udledning (første kandidat) af produktets
+ * nuværende navn eller af startlagerets navn for samme varenummer giver præcis den gemte værdi. Værdien
+ * genudledes da med den nye regel (et rigtigt nummer eller NULL). Resten står urørt og kommer på listen "kept".
+ * Skriver præcis én audit-post (aktør System). Åbner ikke selv en transaktion; modulmekanismen har gjort det.
+ * Kræver db_table_exists/db_column_exists fra migrations.php.
+ *
+ * @param array<string,array<int,string>>|null $seedNames [sku => [navn, …]]; null læser initial-stock.json
+ * @return array{cleared: array<int,array<string,mixed>>, kept: array<int,array<string,mixed>>}
+ */
+function hsg_cask_number_cleanup(PDO $pdo, ?array $seedNames=null): array {
+    $cleared=[];$kept=[];
+    if(!db_table_exists($pdo,'lager_products') || !db_column_exists($pdo,'lager_products','cask_number')) return ['cleared'=>$cleared,'kept'=>$kept];
+    $seedNames??=hsg_cask_number_seed_names();
+    $seed=[];
+    foreach($seedNames as $sku=>$names){
+        foreach((array)$names as $n){ if(is_scalar($n)) $seed[trim((string)$sku)][]=(string)$n; }
+    }
+
+    $rows=$pdo->query("SELECT id,sku,name,cask_number FROM lager_products WHERE cask_number IS NOT NULL AND cask_number<>'' ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
+    $update=$pdo->prepare('UPDATE lager_products SET cask_number=? WHERE id=? AND cask_number=?');
+    foreach($rows as $row){
+        $stored=(string)$row['cask_number'];
+        $value=trim($stored);
+        if($value==='' || preg_match('/\d/',$value)) continue;
+        $sources=[['name',(string)($row['name']??'')]];
+        foreach($seed[trim((string)($row['sku']??''))]??[] as $n) $sources[]=['initial_stock',$n];
+        $proof=null;
+        foreach($sources as [$source,$text]){
+            $text=hsg_product_text_normalize($text);
+            if((hsg_cask_number_candidates($text)[0]??null)===$value){$proof=[$source,$text];break;}
+        }
+        if($proof===null){
+            $kept[]=['id'=>(int)$row['id'],'sku'=>(string)$row['sku'],'value'=>$stored];
+            continue;
+        }
+        $new=hsg_extract_cask_number($proof[1]);
+        $update->execute([$new,(int)$row['id'],$stored]);
+        // 0 rækker: værdien er ændret af en anden forespørgsel imellem, og så er der intet ryddet her.
+        if($update->rowCount()>0) $cleared[]=['id'=>(int)$row['id'],'sku'=>(string)$row['sku'],'old'=>$stored,'new'=>$new,'source'=>$proof[0]];
+    }
+
+    if(db_table_exists($pdo,'hsg_audit_log')){
+        $details=['rule'=>'Fadnummer uden ciffer, udledt automatisk af navnet','cleared_count'=>count($cleared),'cleared'=>$cleared,'kept_count'=>count($kept),'kept'=>$kept];
+        $pdo->prepare('INSERT INTO hsg_audit_log(actor_type,actor_id,actor_name,action,entity_type,entity_id,details_json,ip_hash) VALUES(?,?,?,?,?,?,?,?)')
+            ->execute(['system',null,'System (opdatering)','product.cask_number_cleanup','product',null,json_encode($details,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE)?:null,null]);
+    }
+    return ['cleared'=>$cleared,'kept'=>$kept];
+}
+
 function hsg_product_parse_text(string $text, array $context=[]): array {
-    $text=trim(preg_replace('/\s+/u',' ',str_replace(["\xE2\x80\x93","\xE2\x80\x94"],'-',$text))??$text);
+    $text=hsg_product_text_normalize($text);
     $fields=[];$conf=[];$reasons=[];
     if($text==='') return ['fields'=>[],'confidence'=>[],'source'=>'rules','reason'=>'Ingen varetekst.'];
 
