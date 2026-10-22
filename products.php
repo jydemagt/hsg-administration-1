@@ -114,6 +114,7 @@ if(in_array($showStatus,['active','inactive','discontinued'],true)){
 }
 
 if($subFilter==='missing_cask') $conditions[]="(p.cask_number IS NULL OR p.cask_number='')";
+if($subFilter==='cask_no_digit') $conditions[]="(p.cask_number IS NOT NULL AND TRIM(p.cask_number)<>'' AND p.cask_number NOT REGEXP '[0-9]')";
 if($subFilter==='negative_stock') $conditions[]="(COALESCE(st.physical_total,0)<0 OR COALESCE(st.negative_locations,0)>0)";
 if($subFilter==='missing_data') $conditions[]="(p.distillery IS NULL OR p.distillery='' OR p.abv IS NULL OR p.age_text IS NULL OR p.age_text='')";
 if($subFilter==='missing_image') $conditions[]="(p.image_path IS NULL OR p.image_path='' OR p.image_approval_status<>'approved')";
@@ -123,6 +124,8 @@ $st=$pdo->prepare("SELECT p.*,b.name brand_name,COALESCE(st.physical_total,0) ph
 $missingIds=$pdo->query("SELECT id FROM lager_products WHERE status<>'discontinued' AND (distillery IS NULL OR distillery='' OR abv IS NULL OR age_text IS NULL OR age_text='' OR category IS NULL OR category='') ORDER BY id")->fetchAll(PDO::FETCH_COLUMN);
 
 $missingCaskCount=(int)$pdo->query("SELECT COUNT(*) FROM lager_products WHERE status<>'discontinued' AND (cask_number IS NULL OR cask_number='')")->fetchColumn();
+// Fadnumre uden ciffer (fx STRENGTH eller N/A) i alle statusser; listen bag knappen er read-only.
+$caskNoDigitCount=(int)$pdo->query("SELECT COUNT(*) FROM lager_products WHERE cask_number IS NOT NULL AND TRIM(cask_number)<>'' AND cask_number NOT REGEXP '[0-9]'")->fetchColumn();
 $negativeStockCount=(int)$pdo->query("SELECT COUNT(*) FROM lager_products p LEFT JOIN (SELECT product_id,SUM(quantity) physical_total,SUM(CASE WHEN quantity<0 THEN 1 ELSE 0 END) negative_locations FROM lager_stock GROUP BY product_id) st ON st.product_id=p.id WHERE COALESCE(st.physical_total,0)<0 OR COALESCE(st.negative_locations,0)>0")->fetchColumn();
 
 page_header('Produkter');
@@ -156,8 +159,12 @@ page_header('Produkter');
     <a class="button <?=$showStatus==='all'&&$subFilter===''?'':'secondary'?>" href="products.php?status=all">Alle m. status</a>
     <span style="border-right: 1px solid #d0d5dd; margin: 0 4px;"></span>
     <a class="button <?=$subFilter==='missing_cask'?'':'secondary'?>" href="products.php?status=<?=$showStatus?>&filter=missing_cask">Mangler fadnr. (<?=$missingCaskCount?>)</a>
+    <?php if($caskNoDigitCount>0):?><a class="button <?=$subFilter==='cask_no_digit'?'':'secondary'?>" href="products.php?status=all&filter=cask_no_digit">Fadnr. uden ciffer (<?=$caskNoDigitCount?>)</a><?php endif;?>
     <a class="button <?=$subFilter==='negative_stock'?'danger':'secondary'?>" href="products.php?status=<?=$showStatus?>&filter=negative_stock">Negativt lager (<?=$negativeStockCount?>)</a>
   </div>
+  <?php if($subFilter==='cask_no_digit'):?>
+  <p class="muted">Fadnumre uden ciffer (fx STRENGTH, FINISH eller N/A) er ikke rigtige fadnumre og bruges ikke ved match. De fleste er læst forkert ud fra produktnavnet. Åbn produktet, ret eller tøm feltet Fadnummer, og gem. Listen ændrer ikke noget selv.</p>
+  <?php endif;?>
 </div>
 
 <?php if(is_admin()):?>
@@ -212,6 +219,7 @@ page_header('Produkter');
       <div class="mobile-stock-line"><span>Disponibelt</span><strong class="available"><?=$avail?> stk.</strong></div>
       <div class="mobile-stock-line"><span>Fysisk / Reserveret</span><span><?=$phys?> / <?=$resQty?></span></div>
       <div class="mobile-stock-line"><span>Pris (Engros/Udsalg)</span><span><?=money_dkk($p['wholesale_price'])?> / <?=money_dkk($p['retail_price'])?></span></div>
+      <?php if($subFilter==='cask_no_digit'):?><div class="mobile-stock-line"><span>Fadnr.</span><span>#<?=h($p['cask_number'])?></span></div><?php endif;?>
       <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
         <span class="badge <?=$p['status']==='active'?'green':($p['status']==='inactive'?'blue':'')?>"><?=h(product_status_label($p['status']))?></span>
         <?php if($p['is_new']):?><span class="badge red">NYHED</span><?php endif;?>
