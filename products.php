@@ -104,6 +104,8 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 
 $q=trim((string)($_GET['q']??''));
 $showStatus=trim((string)($_GET['status']??'active'));
+// Kun kendte statusser; alt andet (også tom eller manipuleret værdi) viser aktive som standard.
+if(!in_array($showStatus,['active','inactive','discontinued','all'],true)) $showStatus='active';
 $subFilter=trim((string)($_GET['filter']??''));
 
 $params=[];$conditions=[];
@@ -158,9 +160,9 @@ page_header('Produkter');
     <a class="button <?=$showStatus==='discontinued'&&$subFilter===''?'':'secondary'?>" href="products.php?status=discontinued">Udgåede</a>
     <a class="button <?=$showStatus==='all'&&$subFilter===''?'':'secondary'?>" href="products.php?status=all">Alle m. status</a>
     <span style="border-right: 1px solid #d0d5dd; margin: 0 4px;"></span>
-    <a class="button <?=$subFilter==='missing_cask'?'':'secondary'?>" href="products.php?status=<?=$showStatus?>&filter=missing_cask">Mangler fadnr. (<?=$missingCaskCount?>)</a>
+    <a class="button <?=$subFilter==='missing_cask'?'':'secondary'?>" href="products.php?status=<?=h($showStatus)?>&filter=missing_cask">Mangler fadnr. (<?=$missingCaskCount?>)</a>
     <?php if($caskNoDigitCount>0):?><a class="button <?=$subFilter==='cask_no_digit'?'':'secondary'?>" href="products.php?status=all&filter=cask_no_digit">Fadnr. uden ciffer (<?=$caskNoDigitCount?>)</a><?php endif;?>
-    <a class="button <?=$subFilter==='negative_stock'?'danger':'secondary'?>" href="products.php?status=<?=$showStatus?>&filter=negative_stock">Negativt lager (<?=$negativeStockCount?>)</a>
+    <a class="button <?=$subFilter==='negative_stock'?'danger':'secondary'?>" href="products.php?status=<?=h($showStatus)?>&filter=negative_stock">Negativt lager (<?=$negativeStockCount?>)</a>
   </div>
   <?php if($subFilter==='cask_no_digit'):?>
   <p class="muted">Fadnumre uden ciffer (fx STRENGTH, FINISH eller N/A) er ikke rigtige fadnumre og bruges ikke ved match. De fleste er læst forkert ud fra produktnavnet. Åbn produktet, ret eller tøm feltet Fadnummer, og gem. Listen ændrer ikke noget selv.</p>

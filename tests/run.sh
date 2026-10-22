@@ -92,6 +92,13 @@ else
     # Sikkerhed: POST uden CSRF skal afvises
     code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' -d 'x=1' "$BASE/locations.php")
     [ "$code" = "419" ] || [ "$code" = "403" ] && ok "POST uden CSRF afvist (HTTP $code)" || bad "POST uden CSRF gav HTTP $code"
+    # Sikkerhed: status fra URL'en må ikke kunne bryde ud af href i Produkter (XSS-regression)
+    code=$(curl -s -g -b "$JAR" -o /tmp/hsg-page.html -w '%{http_code}' "$BASE/products.php?status=%22%3E%3Cscript%3Ealert(1)%3C/script%3E")
+    if [ "$code" != "200" ] || grep -qiE 'Fatal error|Parse error|Uncaught|Warning:' /tmp/hsg-page.html; then
+      bad "products.php med manipuleret status → HTTP $code / PHP-fejl i output"
+    elif grep -qF '"><script>alert(1)' /tmp/hsg-page.html; then
+      bad "products.php med manipuleret status skriver status uescapet (XSS)"
+    else ok "products.php med manipuleret status er escapet (HTTP $code)"; fi
 
     # Kims uploadfil: de nye POST-handlinger skal afvises uden CSRF (419) og uden login (401)
     for act in reservation_mode reguess; do
