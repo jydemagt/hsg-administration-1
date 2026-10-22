@@ -320,4 +320,4 @@ Version 1.6.1
 
 Fadnummer kræver mindst ét ciffer (Produkter 1.5.1)
 - Fadnummer kræver nu mindst ét ciffer. Ord som STRENGTH, FINISH og CRAFT, der før blev læst ud af navne som "Cask Strength", gemmes ikke længere som fadnummer. Opdateringen rydder sådanne værdier, når det kan ses, at de er læst automatisk, og retter dem til det rigtige fadnummer, hvis navnet har et. Resten vises under Produkter → "Fadnr. uden ciffer". Lav et nyt preview i Kims uploadfil efter opdateringen.
-- Numre efter Batch, Bottle og Flaske (fx "Blåbær Batch #12") læses heller ikke som fadnummer, når der står æ, ø, å eller en tankestreg tidligere i navnet.
+- Numre efter Batch, Bottle og Flaske (fx "Blåbær Batch #12") læses heller ikke som fadnummer, når der står fx æ, ø, å, ’ eller en tankestreg tidligere i navnet. Et rigtigt fadnummer før "Batch #…" bliver nu fundet.
