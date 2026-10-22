@@ -2,8 +2,12 @@
 declare(strict_types=1);
 /*
  * Enhedstest af fadnummer-udledningen (core/product_enrichment.php) og modulmigrationen products 1.5.1
- * (spec 2026-10-22-fadnummer-kraever-ciffer, kriterie 78-82 og 88; hed 60-64 og 70 før omnummereringen).
+ * (spec 2026-10-22-fadnummer-kraever-ciffer, kriterie 78-82 og 88; hed 60-64 og 70 før omnummereringen)
+ * og af batch-filteret med rigtigt byte-offset (spec 2026-10-22-fadnummer-batch-byteoffset, kriterie 101-106).
  * Kun rene funktioner: ingen database og intet netværk.
+ * Kræver mbstring: Den gamle udledning med æ, ø, å og – (kriterie 102) kan kun testes med mbstring, fordi det er
+ * produktionens gren. Uden mbstring registreres præcis én FEJL, resten kører, og exit-koden er ≠ 0.
+ * Lokalt: sæt PHPRC til en php.ini, der indlæser mbstring. I CI står mbstring i .github/workflows/tests.yml.
  * Køres af tests/run.sh:  php tests/product_enrichment_test.php   (exit-kode ≠ 0 ved fejl)
  */
 
@@ -133,6 +137,94 @@ t_case('88 modules/products/migrations.php', function () use ($root) {
     t_eq('1.5.1', $manifest['version'] ?? null, 'products-version 1.5.1');
     $supplier = require $root.'/modules/supplier_upload/module.php';
     t_eq('1.1.1', $supplier['version'] ?? null, 'supplier_upload er uændret 1.1.1');
+});
+
+/* Tabel T i spec 2026-10-22-fadnummer-batch-byteoffset: tekst => [gammel candidates med mbstring, ny extract].
+ * – er U+2013 og ’ er U+2019 (skrevet som \u{…}, så de ikke forveksles med - og '). */
+$tableT = [
+    'a' => ['Blåbær Batch #12', ['12'], null],
+    'b' => ['Blabaer Batch #12', [], null],
+    'c' => ["Glen Test \u{2013} Batch #12", ['12'], null],
+    'd' => ['Glen Test - Batch #12', [], null],
+    'e' => ["Kim\u{2019}s Batch #12", ['12'], null],
+    'f' => ['Ærø Whisky Bottle #25', ['25'], null],
+    'g' => ['Ærø Single Malt, flaske #12', ['12'], null],
+    'h' => ['ÆØÅ ÆØÅ ÆØÅ #12 Batch #XO', ['XO'], '12'],
+    'i' => ['ÆØÅ ÆØÅ ÆØÅ #12 Batch #34', ['34'], '12'],
+    'j' => ['Cask Strength, Blåbær Batch #12', ['STRENGTH', '12'], null],
+    'k' => ['Kløver Whisky Batch #12', ['12'], null],
+    'l' => ['Teaninich, 10 års, #707145, Single Malt (Oloroso Sherry Hogshead), 56,8%', ['707145'], '707145'],
+];
+
+t_case('101 hsg_extract_cask_number med rigtigt byte-offset (tabel T, med og uden mbstring)', function () use ($tableT) {
+    foreach ($tableT as $k => [$text, , $after]) {
+        t_eq($after, hsg_extract_cask_number($text), $k.') '.var_export($text, true));
+    }
+});
+
+t_case('102 hsg_cask_number_candidates er den gamle udledning, også med fejlen (tabel T)', function () use ($tableT, $root) {
+    if (!function_exists('mb_substr')) {
+        t_record(false, 'mbstring er ikke indlæst: den gamle udledning med æ, ø, å og – (kriterie 102) kan kun testes med mbstring. Kør med en php.ini, der indlæser mbstring (PHPRC).');
+    } else {
+        foreach ($tableT as $k => [$text, $old]) {
+            t_eq($old, hsg_cask_number_candidates($text), $k.') '.var_export($text, true));
+        }
+    }
+    $yml = (string)@file_get_contents($root.'/.github/workflows/tests.yml');
+    $ext = preg_match('/^\s*extensions:\s*(.+)$/m', $yml, $m) ? array_map('trim', explode(',', $m[1])) : [];
+    t_true(in_array('mbstring', $ext, true), '.github/workflows/tests.yml: extensions indeholder mbstring ('.implode(', ', $ext).')');
+});
+
+t_case('103 Startlageret: den nye udledning = første værdi med ciffer i den gamle', function () {
+    $seed = hsg_cask_number_seed_names();
+    t_true(count($seed) > 100, 'startlageret (initial-stock.json) kan læses');
+    $n = 0; $bad = [];
+    foreach ($seed as $sku => $names) {
+        foreach ($names as $name) {
+            foreach (['råt' => $name, 'normaliseret' => hsg_product_text_normalize($name)] as $form => $text) {
+                $n++;
+                $want = null;
+                foreach (hsg_cask_number_candidates($text) as $v) { if (preg_match('/\d/', $v)) { $want = $v; break; } }
+                $got = hsg_extract_cask_number($text);
+                if ($got !== $want) $bad[] = $sku.' '.$form.' '.json_encode($text, JSON_UNESCAPED_UNICODE).': gammel '.var_export($want, true).', ny '.var_export($got, true);
+            }
+        }
+    }
+    t_true($n > 200, 'mindst 200 navne er tjekket ('.$n.')');
+    t_eq([], $bad, 'den nye udledning giver det samme som den gamle for alle startlagerets navne');
+});
+
+t_case('104 hsg_product_parse_text med æ, ø og å før #', function () {
+    $r = hsg_product_parse_text('Blåbær Batch #12, 46%');
+    t_true(!array_key_exists('cask_number', $r['fields']), 'Blåbær Batch #12: ingen cask_number i fields');
+    t_true(!array_key_exists('cask_number', $r['confidence']), 'Blåbær Batch #12: ingen cask_number i confidence');
+    $r = hsg_product_parse_text('ÆØÅ ÆØÅ ÆØÅ #12 Batch #34');
+    t_eq('12', $r['fields']['cask_number'] ?? null, 'ÆØÅ ÆØÅ ÆØÅ #12 Batch #34: 12');
+    $r = hsg_product_parse_text('Teaninich, 10 års, #707145, Single Malt (Oloroso Sherry Hogshead), 56,8%');
+    t_eq('707145', $r['fields']['cask_number'] ?? null, 'Teaninich: 707145');
+});
+
+t_case('105 hsg_supplier_source_fields med rå tankestreg og æ, ø og å', function () {
+    $src = hsg_supplier_source_fields(pe_kim_row(['sku' => '20-310', 'name' => "Glen Test \u{2013} Batch #12"]), pe_kim_map());
+    t_true(!array_key_exists('cask_number', $src), 'Glen Test – Batch #12: ingen cask_number ('.json_encode($src, JSON_UNESCAPED_UNICODE).')');
+    $src = hsg_supplier_source_fields(pe_kim_row(['sku' => '20-311', 'name' => 'Blåbær Batch #12']), pe_kim_map());
+    t_true(!array_key_exists('cask_number', $src), 'Blåbær Batch #12: ingen cask_number ('.json_encode($src, JSON_UNESCAPED_UNICODE).')');
+    $src = hsg_supplier_source_fields(pe_kim_row(['sku' => '20-312', 'name' => "Glen Test \u{2013} #100"]), pe_kim_map());
+    t_eq('100', $src['cask_number'] ?? null, 'Glen Test – #100: 100');
+});
+
+t_case('106 Signaturerne er uændrede', function () {
+    foreach (['hsg_cask_number_candidates' => 'array', 'hsg_extract_cask_number' => '?string'] as $fn => $ret) {
+        $rf = new ReflectionFunction($fn);
+        t_eq(['string $text'], array_map(static fn(ReflectionParameter $p): string => $p->getType().' $'.$p->getName(), $rf->getParameters()), $fn.': præcis én parameter string $text');
+        t_eq(1, $rf->getNumberOfRequiredParameters(), $fn.': parameteren er påkrævet');
+        t_eq($ret, (string)$rf->getReturnType(), $fn.': returtypen er '.$ret);
+    }
+    // D1: hsg_cask_number_scan har ingen standardværdi for $legacy, så hver kalder vælger eksplicit.
+    $rf = new ReflectionFunction('hsg_cask_number_scan');
+    t_eq(['string $text', 'bool $legacy'], array_map(static fn(ReflectionParameter $p): string => $p->getType().' $'.$p->getName(), $rf->getParameters()), 'hsg_cask_number_scan: string $text, bool $legacy');
+    t_eq(2, $rf->getNumberOfRequiredParameters(), 'hsg_cask_number_scan: $legacy har ingen standardværdi');
+    t_eq('array', (string)$rf->getReturnType(), 'hsg_cask_number_scan: returtypen er array');
 });
 
 $fails = $GLOBALS['t_fail'];
