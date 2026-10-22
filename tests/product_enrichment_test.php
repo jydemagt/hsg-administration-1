@@ -154,6 +154,11 @@ $tableT = [
     'j' => ['Cask Strength, Blåbær Batch #12', ['STRENGTH', '12'], null],
     'k' => ['Kløver Whisky Batch #12', ['12'], null],
     'l' => ['Teaninich, 10 års, #707145, Single Malt (Oloroso Sherry Hogshead), 56,8%', ['707145'], '707145'],
+    // Vinduet er 18 tegn (rettelser efter review, afsnit 10): "Batch" + 13 mellemrum fylder præcis 18 tegn, + 14 er for meget.
+    'm' => ['Batch'.str_repeat(' ', 13).'#12', [], null],
+    'n' => ['Batch'.str_repeat(' ', 14).'#12', ['12'], '12'],
+    'o' => ["\u{1F943}\u{1F943}\u{1F943} Batch".str_repeat(' ', 13).'#12', ['12'], null],  // tegn, ikke bytes (4-byte-tegn)
+    'p' => ['Ærø Batch Cask 12', ['12'], '12'],  // filteret gælder kun #-mønstret
 ];
 
 t_case('101 hsg_extract_cask_number med rigtigt byte-offset (tabel T, med og uden mbstring)', function () use ($tableT) {
