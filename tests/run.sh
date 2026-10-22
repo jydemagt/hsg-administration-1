@@ -47,7 +47,8 @@ else
     bad "config.php findes allerede – kør røgtest i en ren kopi (fx git worktree), ikke i en installation"
   else
     PORT=${HSG_TEST_PORT:-8787}; BASE="http://127.0.0.1:$PORT"; JAR=$(mktemp)
-    php -S 127.0.0.1:$PORT -t "$ROOT" >/tmp/hsg-php-server.log 2>&1 & SRV=$!
+    # Uploadgrænserne ligger over nyhedsbrevsimportens egen grænse på 5 MB, så testen rammer den.
+    php -d upload_max_filesize=16M -d post_max_size=24M -S 127.0.0.1:$PORT -t "$ROOT" >/tmp/hsg-php-server.log 2>&1 & SRV=$!
     trap 'kill $SRV 2>/dev/null; rm -f "$ROOT/config.php" "$JAR"' EXIT
     sleep 1
     token() { curl -s -b "$JAR" -c "$JAR" "$1" | grep -o 'name="csrf" value="[^"]*"' | head -1 | sed 's/.*value="//;s/"$//'; }

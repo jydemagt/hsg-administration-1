@@ -17,7 +17,7 @@ Spec: `docs/specs/2026-10-19-nyhedsbrev.md`.
 
 ## Månedlig import af kundelisten
 
-1. Gå til *Nyhedsbrev → Import*, og vælg Excel-filen (.xlsx) eller en CSV-fil (højst 5.000 rækker).
+1. Gå til *Nyhedsbrev → Import*, og vælg Excel-filen (.xlsx) eller en CSV-fil (højst 5 MB og 5.000 rækker).
 2. Vælg **Hvem er i filen?**
    - *Kunder* – alle i filen er kunder.
    - *Forhandlere* – alle i filen er forhandlere.
@@ -33,7 +33,13 @@ Spec: `docs/specs/2026-10-19-nyhedsbrev.md`.
 **Kolonner:** Mailkolonnen findes ud fra overskriften (*E-mail*, *Mail*, *Emailadresse*, *Mailadresse*, *E-post*).
 Har filen ingen overskrifter, bruges **kolonne D**. Navn (*Navn*, *Name*, *Kontakt*, *Kontaktperson*) og
 firma (*Firma*, *Virksomhed*, *Company*) er valgfrie. Ændrer du kolonnevalget, huskes det ud fra
-overskrifterne til næste import. Andre kolonner (telefon, adresse osv.) læses aldrig ind.
+overskrifterne til næste import. Andre kolonner (telefon, adresse osv.) gemmes aldrig i databasen.
+Kun kolonne A–AD (de første 30 kolonner) læses.
+
+**Grænser:** Filen må højst fylde 5 MB og have 5.000 rækker med indhold (inklusive overskriftsrækken).
+En Excel-fil må højst fylde 30 MB, når den pakkes ud. Er den større (fx fordi den har flere store ark),
+så gem kun arket med modtagerne i en ny fil, eller gem det som CSV. Teksten i kolonne A–AD må højst fylde
+10 MB i alt. Tomme rækker tæller ikke med.
 
 **Regler:**
 - Mailadresser renses (mellemrum, `mailto:` og `<>` fjernes) og skrives med små bogstaver.
@@ -45,7 +51,10 @@ overskrifterne til næste import. Andre kolonner (telefon, adresse osv.) læses 
   Typeskift vises tydeligt i forhåndsvisningen, før du importerer.
 - **Afmeldte, stoppede og slettede modtagere ændres aldrig af en import** og tilmeldes aldrig igen.
 - Aktive modtagere, der ikke står i filen, ændres ikke. Forhåndsvisningen viser kun antallet.
-- Forhåndsvisningen gemmes kun i din session (højst 2 timer) og slettes, når importen er gennemført eller annulleret.
+- Forhåndsvisningen gemmes kun midlertidigt i din session og aldrig i databasen. Den slettes, når importen er
+  gennemført eller annulleret. Efter 2 timer er den udløbet og slettes, næste gang du åbner *Nyhedsbrev*.
+- En celle på mere end 320 tegn afkortes og slutter med "…". Klippes en mailadresse midt over, står den
+  afklippede del med "…" under *Ugyldige* og importeres aldrig.
 
 ## Modtagere
 
@@ -55,7 +64,7 @@ filtreres (Aktive, Forhandlere, Kunder, Afmeldte, Stoppede). Søgefeltet søger 
 - **Tilføj modtager:** Mail, navn, firma og type. Findes adressen allerede, får du besked.
   Er adressen tidligere afmeldt eller slettet, kræves fluebenet
   *"Modtageren har selv bedt om at blive tilmeldt igen"*.
-- **Rediger** en modtager for at rette mail, navn, firma og type. Mailadressen kan kun ændres for aktive modtagere,
+- Tryk på mailadressen eller **Rediger** for at rette mail, navn, firma og type. Mailadressen kan kun ændres for aktive modtagere,
   så en afmeldt eller stoppet adresse aldrig mister sin spærring.
 - **Afmeld:** Modtageren afmeldes (fx efter en svarmail med "afmeld").
 - **Stop:** Bruges fx ved afviste mails. **Genaktivér** gør en stoppet modtager aktiv igen.
@@ -78,8 +87,10 @@ aldrig mailadressen.
 1. Find modtageren med søgefeltet, og åbn den.
 2. **Eksportér data (CSV)** giver en CSV-fil (UTF-8 med semikolon) med modtagerens oplysninger, som kan sendes
    til den registrerede (ret til indsigt).
-3. **Slet modtager** anonymiserer modtageren (ret til sletning): mail, navn, firma og afmeldingslink slettes.
-   Kun en uigenkendelig spærring (SHA-256 af mailadressen) gemmes, så personen ikke kommer med igen ved næste import.
+3. **Slet modtager** sletter modtagerens mail, navn, firma og afmeldingslink (ret til sletning).
+   Mailadressen gemmes kun som en hash (SHA-256), så personen ikke kommer med igen ved næste import.
+   Hashen er ikke anonym: den, der kender mailadressen, kan beregne den samme hash og genkende den.
+   Den bruges kun som spærring og vises ingen steder.
 
 Afmeldte modtagere bevares som spærreliste uden automatisk anonymisering. Audit-loggen indeholder aldrig
 mailadresser – kun modtager-id og antal.
@@ -90,4 +101,7 @@ mailadresser – kun modtager-id og antal.
 - Afmeldingstokens gemmes som SHA-256 (opslag) og krypteret med samme nøgle som de personlige adgangslinks
   (`storage/data/access-link.key`), så linket kan vises igen og virker efter en gendannelse.
 - Indstillingen `newsletter_import_columns` husker kolonnevalget ved import.
+- Importen har sine egne læsere i `core/newsletter.php` (`core/supplier_import.php` er uændret). En xlsx-fil
+  læses med PHP's XMLReader ét element ad gangen, og den udpakkede størrelse kontrolleres, før noget pakkes ud.
+  Kræver PHP-udvidelserne zip og xmlreader. CSV kræver ingen udvidelser.
 - Afmeldingssiden sender `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex, nofollow` og `Cache-Control: no-store`.

@@ -42,55 +42,62 @@ require_once __DIR__.'/core/audit.php';
 require_once __DIR__.'/core/access_links.php';
 require_once __DIR__.'/core/newsletter.php';
 
-$company = trim((string)setting_get($pdo, 'company_name', 'HSG Whisky ApS')) ?: 'HSG Whisky ApS';
-$invalidHtml = '<p>Linket er ugyldigt eller udløbet. Kontakt '.h($company).', hvis du vil afmeldes.</p>';
+// En databasefejl efter forbindelsen (fx en låst tabel) giver en neutral side uden SQL, stier eller
+// oplysninger om modtageren. hsg_newsletter_public_page() afslutter med exit, som catch ikke fanger.
+try {
+    $company = trim((string)setting_get($pdo, 'company_name', 'HSG Whisky ApS')) ?: 'HSG Whisky ApS';
+    $invalidHtml = '<p>Linket er ugyldigt eller udløbet. Kontakt '.h($company).', hvis du vil afmeldes.</p>';
 
-// Kun t (64 hex-tegn) accepteres. Formatet kontrolleres, før databasen spørges.
-$token = $_GET['t'] ?? '';
-if (!is_string($token) || !hsg_newsletter_is_token_format($token) || !db_table_exists($pdo, 'hsg_newsletter_recipients')) {
-    hsg_newsletter_public_page(404, 'Afmeld nyhedsbrevet', $invalidHtml);
-}
-$recipient = hsg_newsletter_find_by_token($pdo, $token);
-if ($recipient === null) {
-    hsg_newsletter_public_page(404, 'Afmeld nyhedsbrevet', $invalidHtml);
-}
-$id = (int)$recipient['id'];
+    // Kun t (64 hex-tegn) accepteres. Formatet kontrolleres, før databasen spørges.
+    $token = $_GET['t'] ?? '';
+    if (!is_string($token) || !hsg_newsletter_is_token_format($token) || !db_table_exists($pdo, 'hsg_newsletter_recipients')) {
+        hsg_newsletter_public_page(404, 'Afmeld nyhedsbrevet', $invalidHtml);
+    }
+    $recipient = hsg_newsletter_find_by_token($pdo, $token);
+    if ($recipient === null) {
+        hsg_newsletter_public_page(404, 'Afmeld nyhedsbrevet', $invalidHtml);
+    }
+    $id = (int)$recipient['id'];
 
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-    // RFC 8058 ét-klik-afmelding fra mailprogrammet: ingen CSRF, ingen session, svar "Afmeldt".
-    $oneClick = ($_POST['List-Unsubscribe'] ?? null) === 'One-Click'
-        || trim((string)file_get_contents('php://input')) === 'List-Unsubscribe=One-Click';
-    if ($oneClick) {
-        hsg_newsletter_unsubscribe($pdo, $id, 'one_click');
-        http_response_code(200);
-        header('Content-Type: text/plain; charset=utf-8');
-        echo 'Afmeldt';
-        exit;
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+        // RFC 8058 ét-klik-afmelding fra mailprogrammet: ingen CSRF, ingen session, svar "Afmeldt".
+        $oneClick = ($_POST['List-Unsubscribe'] ?? null) === 'One-Click'
+            || trim((string)file_get_contents('php://input')) === 'List-Unsubscribe=One-Click';
+        if ($oneClick) {
+            hsg_newsletter_unsubscribe($pdo, $id, 'one_click');
+            http_response_code(200);
+            header('Content-Type: text/plain; charset=utf-8');
+            echo 'Afmeldt';
+            exit;
+        }
+
+        // verify_csrf() godtager en tom formular, hvis sessionen heller ikke har et token (fx en POST
+        // uden cookies). Her kræves derfor også, at både formular og session har et token.
+        $postedCsrf = $_POST['csrf'] ?? '';
+        if (!is_string($postedCsrf) || $postedCsrf === '' || (string)($_SESSION['csrf'] ?? '') === '' || !hash_equals((string)$_SESSION['csrf'], $postedCsrf)) {
+            hsg_newsletter_public_page(419, 'Afmeld nyhedsbrevet', '<p>Formularen er udløbet. <a href="nyhedsbrev-afmeld.php?t='.h($token).'">Åbn siden igen</a>, og tryk på knappen.</p>');
+        }
+        verify_csrf();
+        $changed = hsg_newsletter_unsubscribe($pdo, $id, 'link');
+        if (!$changed) {
+            hsg_newsletter_public_page(200, 'Afmeld nyhedsbrevet', '<p>Du er allerede afmeldt nyhedsbrevet.</p>');
+        }
+        $contact = trim((string)setting_get($pdo, 'newsletter_reply_to', '')) ?: trim((string)setting_get($pdo, 'newsletter_from_email', ''));
+        $regret = $contact !== '' && hsg_newsletter_is_valid_email($contact)
+            ? '<p class="muted">Har du afmeldt ved en fejl, så skriv til '.h($contact).'.</p>'
+            : '<p class="muted">Har du afmeldt ved en fejl, så kontakt '.h($company).'.</p>';
+        hsg_newsletter_public_page(200, 'Afmeld nyhedsbrevet', '<p><strong>Du er nu afmeldt.</strong> Du modtager ikke flere nyhedsbreve fra '.h($company).'. Afmeldingen gælder med det samme.</p>'.$regret);
     }
 
-    // verify_csrf() godtager en tom formular, hvis sessionen heller ikke har et token (fx en POST
-    // uden cookies). Her kræves derfor også, at både formular og session har et token.
-    $postedCsrf = $_POST['csrf'] ?? '';
-    if (!is_string($postedCsrf) || $postedCsrf === '' || (string)($_SESSION['csrf'] ?? '') === '' || !hash_equals((string)$_SESSION['csrf'], $postedCsrf)) {
-        hsg_newsletter_public_page(419, 'Afmeld nyhedsbrevet', '<p>Formularen er udløbet. <a href="nyhedsbrev-afmeld.php?t='.h($token).'">Åbn siden igen</a>, og tryk på knappen.</p>');
-    }
-    verify_csrf();
-    $changed = hsg_newsletter_unsubscribe($pdo, $id, 'link');
-    if (!$changed) {
+    // GET (og HEAD) viser kun en bekræftelse og ændrer intet.
+    if ($recipient['status'] === 'unsubscribed') {
         hsg_newsletter_public_page(200, 'Afmeld nyhedsbrevet', '<p>Du er allerede afmeldt nyhedsbrevet.</p>');
     }
-    $contact = trim((string)setting_get($pdo, 'newsletter_reply_to', '')) ?: trim((string)setting_get($pdo, 'newsletter_from_email', ''));
-    $regret = $contact !== '' && hsg_newsletter_is_valid_email($contact)
-        ? '<p class="muted">Har du afmeldt ved en fejl, så skriv til '.h($contact).'.</p>'
-        : '<p class="muted">Har du afmeldt ved en fejl, så kontakt '.h($company).'.</p>';
-    hsg_newsletter_public_page(200, 'Afmeld nyhedsbrevet', '<p><strong>Du er nu afmeldt.</strong> Du modtager ikke flere nyhedsbreve fra '.h($company).'. Afmeldingen gælder med det samme.</p>'.$regret);
+    $body = '<p>Vil du afmelde '.h(hsg_newsletter_mask_email((string)$recipient['email'])).' fra nyhedsbrevet fra '.h($company).'?</p>'
+        .'<form method="post" action="nyhedsbrev-afmeld.php?t='.h($token).'">'.csrf_field()
+        .'<button type="submit" style="width:100%">Ja, afmeld mig</button></form>';
+    hsg_newsletter_public_page(200, 'Afmeld nyhedsbrevet', $body);
+} catch (Throwable $e) {
+    error_log('nyhedsbrev-afmeld.php: '.get_class($e).': '.$e->getMessage());
+    hsg_newsletter_public_page(500, 'Afmeld nyhedsbrevet', '<p>Der opstod en teknisk fejl. Prøv linket igen om lidt.</p>');
 }
-
-// GET (og HEAD) viser kun en bekræftelse og ændrer intet.
-if ($recipient['status'] === 'unsubscribed') {
-    hsg_newsletter_public_page(200, 'Afmeld nyhedsbrevet', '<p>Du er allerede afmeldt nyhedsbrevet.</p>');
-}
-$body = '<p>Vil du afmelde '.h(hsg_newsletter_mask_email((string)$recipient['email'])).' fra nyhedsbrevet fra '.h($company).'?</p>'
-    .'<form method="post" action="nyhedsbrev-afmeld.php?t='.h($token).'">'.csrf_field()
-    .'<button type="submit" style="width:100%">Ja, afmeld mig</button></form>';
-hsg_newsletter_public_page(200, 'Afmeld nyhedsbrevet', $body);

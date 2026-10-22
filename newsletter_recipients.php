@@ -8,6 +8,9 @@ require_once __DIR__.'/core/newsletter.php';
 // Mailadresser må aldrig stå i URL'er: siderne bruger ?id=, søgning sker i browseren,
 // og eksport og sletning sker via POST.
 
+// En forladt import må ikke blive liggende i sessionen (se newsletter_import.php).
+hsg_newsletter_preview_expire();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = (string)($_POST['action'] ?? '');
     $id = (int)($_POST['id'] ?? 0);
@@ -78,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($action === 'delete') {
             if (hsg_newsletter_delete($pdo, $id)) {
-                flash('success', 'Modtageren er slettet. Mailadressen er kun gemt som en uigenkendelig spærring, så den ikke importeres igen.');
+                flash('success', 'Modtageren er slettet. Mailadressen gemmes kun som en hash (SHA-256), så den ikke importeres igen.');
                 redirect('newsletter_recipients.php');
             }
             flash('error', 'Modtageren findes ikke eller er allerede slettet.');
@@ -159,7 +162,7 @@ if ($id > 0) {
     <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="reactivate"><input type="hidden" name="id" value="<?=intval($r['id'])?>"><button type="submit" class="secondary">Genaktivér</button></form>
     <?php endif; ?>
     <form method="post" data-no-disable="1"><?=csrf_field()?><input type="hidden" name="action" value="export"><input type="hidden" name="id" value="<?=intval($r['id'])?>"><button type="submit" class="secondary">Eksportér data (CSV)</button></form>
-    <form method="post" onsubmit="if(!confirm('Slet modtageren permanent? Mailadressen gemmes kun som en uigenkendelig spærring, så den ikke importeres igen.')){event.stopPropagation();return false;}"><?=csrf_field()?><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?=intval($r['id'])?>"><button type="submit" class="danger">Slet modtager</button></form>
+    <form method="post" onsubmit="if(!confirm('Slet modtageren permanent? Mailadressen gemmes kun som en hash (SHA-256), så den ikke importeres igen.')){event.stopPropagation();return false;}"><?=csrf_field()?><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?=intval($r['id'])?>"><button type="submit" class="danger">Slet modtager</button></form>
   </div>
   <?php if ($status === 'unsubscribed'): ?>
   <form method="post" style="margin-top:14px"><?=csrf_field()?><input type="hidden" name="action" value="reactivate"><input type="hidden" name="id" value="<?=intval($r['id'])?>">
@@ -167,7 +170,7 @@ if ($id > 0) {
     <div><button type="submit" class="secondary">Genaktivér</button></div>
   </form>
   <?php endif; ?>
-  <p class="muted"><strong>Stop</strong> bruges fx ved afviste mails. <strong>Eksportér data</strong> giver en CSV-fil til den registrerede (ret til indsigt). <strong>Slet modtager</strong> anonymiserer modtageren (ret til sletning).</p>
+  <p class="muted"><strong>Stop</strong> bruges fx ved afviste mails. <strong>Eksportér data</strong> giver en CSV-fil til den registrerede (ret til indsigt). <strong>Slet modtager</strong> sletter mail, navn og firma (ret til sletning). Mailadressen gemmes kun som en hash (SHA-256), så den ikke importeres igen.</p>
 </div>
 <?php
     page_footer();
@@ -236,7 +239,7 @@ echo hsg_newsletter_tabs_html('recipients');
     <tbody>
     <?php foreach ($list as $row): ?>
       <tr>
-        <td><?=h($row['email'])?></td>
+        <td><a href="newsletter_recipients.php?id=<?=intval($row['id'])?>"><?=h($row['email'])?></a></td>
         <td><?=h($row['name'] ?? '')?><?php if (!empty($row['company'])): ?><br><small class="muted"><?=h($row['company'])?></small><?php endif; ?></td>
         <td><span class="badge <?=h(hsg_newsletter_segment_badge((string)$row['segment']))?>"><?=h(hsg_newsletter_segment_label((string)$row['segment']))?></span></td>
         <td><span class="badge <?=h(hsg_newsletter_status_badge((string)$row['status']))?>"><?=h(hsg_newsletter_status_label((string)$row['status']))?></span></td>
