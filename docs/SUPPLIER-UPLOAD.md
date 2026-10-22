@@ -21,7 +21,7 @@ HSG forsøger automatisk at finde kolonnenavne og varedata for bl.a.:
 - Outturn / antal flasker
 - Lagerantal i alt og lagerantal pr. lokation
 
-Hvis oplysninger som ABV, alder, årgang eller fadnummer står direkte i vareteksten, kan de udledes uden AI.
+Hvis oplysninger som ABV, alder, årgang eller fadnummer står direkte i vareteksten, kan de udledes uden AI. Et fadnummer udledes kun, hvis det indeholder mindst ét ciffer (fx "#43" eller "Cask No. 231584"). Ord som "Cask Strength", "Cask Finish" og "Cask Craft" giver ikke et fadnummer, og et rigtigt nummer senere i teksten bruges i stedet.
 
 ## Kolonnegæt
 Kolonnevalget foreslås i denne rækkefølge:
@@ -76,7 +76,7 @@ Match prioriteres i denne rækkefølge:
 3. Stærkt navnematch
 4. Supplerende kontrol af destilleri, årgang, alder og ABV
 
-Et fadnummer skal indeholde mindst ét ciffer for at tælle. Ord som "Finish", "Strength" og "Craft", der kan blive læst som fadnummer ud fra navnet ("Cask Finish", "Cask Strength"), giver hverken match på fadnummer eller "forskelligt fadnummer", når varianter sammenlignes.
+Et fadnummer skal indeholde mindst ét ciffer for at tælle. Ord som "Finish", "Strength" og "Craft" udledes ikke længere af navnet ("Cask Finish", "Cask Strength"). Reglen ved matching er et ekstra værn mod fadnumre uden ciffer, som er indtastet manuelt, kommer fra filens Fadnummer-kolonne eller endnu ikke er rettet (se Produkter → "Fadnr. uden ciffer"): De giver hverken match på fadnummer eller "forskelligt fadnummer", når varianter sammenlignes.
 
 Match på 90 % eller mere er valgt som udgangspunkt i previewet. Usikre matches opdateres aldrig automatisk. Rækker med en ikke-flettet variant, en matchkonflikt eller en kontrolafvigelse på lageret er aldrig valgt på forhånd.
 
