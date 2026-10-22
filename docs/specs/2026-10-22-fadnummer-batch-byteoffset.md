@@ -186,6 +186,7 @@ Forventningerne er regnet i hånden tegn for tegn og byte for byte. **Udvikleren
 | n | `Batch` + 14 mellemrum + `#12` | `['12']` | `'12'` | `'12'` | 19 tegn: "Batch" er uden for vinduet (afsnit 10) |
 | o | `🥃🥃🥃 Batch` + 13 mellemrum + `#12` (🥃 er U+1F943, 4 bytes) | `['12']` | `'12'` | `null` | tegn, ikke bytes (afsnit 10) |
 | p | `Ærø Batch Cask 12` | `['12']` | `'12'` | `'12'` | filteret gælder kun #-mønstret (afsnit 10) |
+| q | `Batch` + 7 × NBSP (U+00A0) + `#12` | `['12']` | `'12'` | `null` | NBSP er 2 bytes, men 1 tegn, og `\s` matcher det med `/u`. Et vindue på 18 bytes ville ikke se "Batch" (afsnit 10) |
 
 101. **Givet** `hsg_extract_cask_number(X)` for hver X i tabel T, **når** testen køres med eller uden mbstring, **så** er resultatet som i kolonnen "Efter".
 102. **Givet** at `mb_substr` findes, **når** `hsg_cask_number_candidates(X)` kaldes for hver X i tabel T, **så** er resultatet præcis som i kolonnen "Gammel".
@@ -251,9 +252,10 @@ Testeren meldte KLAR, og revieweren godkendte uden SKAL-punkter. BØR-punkterne 
 
 1. **Halen kostede O(n) pr. #-match (BØR 1):** `substr($text,0,$offset)` og regex'en `.{0,18}\z` gennemløb hele teksten før matchet for hvert match. Revieweren målte en Excel-celle på 32.767 tegn med `#12 ` gentaget (8.192 match): 326 ms før branchen, 2,3 s på branchen med JIT og 11,3 s med `pcre.jit=0`. Det er en driftsrisiko, fordi `product_enrich.php` tager POST-tekst uden længdegrænse, og webhotellet har 30 s `max_execution_time`. Halen beregnes nu ved en baglæns bytegang over højst 18 tegn uden `mb_*` (D1). Den giver samme hale som regex'en på startlageret, tabel T og tilfældige tekster med æ, ø, å, –, ’ og 4-byte-tegn. Med `pcre.jit=0` tager samme celle nu ca. 15 ms i stedet for ca. 10,6 s (udviklerens måling). Den gamle gren er uændret. Kriterie 101 og 103.
 2. **Vinduet ved 18 tegn (BØR 2):** Tabel T har fået rækkerne m, n og o. Står "Batch" + 13 mellemrum lige før `#`, filtreres nummeret fra, men med 14 mellemrum gør det ikke. Med 4-byte-tegn foran tæller vinduet tegn og ikke bytes. Kriterie 101 og 102.
+   Række q er tilføjet bagefter: `Batch` + 7 × NBSP + `#12`. NBSP er 2 bytes, men 1 tegn, og `\s` matcher det med `/u`. Før `#` står 12 tegn (19 bytes), så det rigtige vindue på 18 tegn ser "Batch" og filtrerer nummeret fra. Et vindue på 18 bytes, der rykkes frem til en tegngrænse, ser kun "atch" + NBSP og giver `12`. Den mutant bestod rækkerne a–p, men fejler på q. Kriterie 101 og 102.
 3. **Filteret gælder kun #-mønstret (KAN 3):** Række p, `Ærø Batch Cask 12`, giver `12`. Kriterie 101 og 102.
 4. **Kodekommentaren (KAN 5):** Kommentaren i den nye gren sagde, at matchet starter med `#`. Det passer ikke for cask-mønstret. Nu står der, at teksten er gyldig UTF-8, og at `/u` giver offsets på tegngrænser.
 5. **Docblocken for `hsg_cask_number_candidates` (KAN 6):** "Uden mbstring er det byte-baseret" er præciseret. Nu står der, at halen uden mbstring er 18 bytes og kan skære et tegn over, så filteret svigter (fx 'Kløver Whisky Batch #12'). D1 er opdateret. Docblocken for `hsg_extract_cask_number` passer stadig og er uændret. Kriterie 106.
 6. **Release-linjen (KAN 7):** Linjen i `README.txt` nævner nu også ’ og, at et rigtigt fadnummer før "Batch #…" bliver fundet (retning b). Afsnit 5 er opdateret. Kriterie 109.
 
-Rækkerne m–p i tabel T hører under kriterie 101 og 102. Der er ingen nye kriterier og ingen nye filer i forhold til afsnit 7.
+Rækkerne m–q i tabel T hører under kriterie 101 og 102. Der er ingen nye kriterier og ingen nye filer i forhold til afsnit 7.

@@ -159,6 +159,9 @@ $tableT = [
     'n' => ['Batch'.str_repeat(' ', 14).'#12', ['12'], '12'],
     'o' => ["\u{1F943}\u{1F943}\u{1F943} Batch".str_repeat(' ', 13).'#12', ['12'], null],  // tegn, ikke bytes (4-byte-tegn)
     'p' => ['Ærø Batch Cask 12', ['12'], '12'],  // filteret gælder kun #-mønstret
+    // NBSP (U+00A0) er 2 bytes, men 1 tegn, og \s matcher det med /u. Før # står 12 tegn (19 bytes), så et vindue
+    // på 18 tegn ser "Batch", men et vindue på 18 bytes ser kun "atch" + NBSP og ville lade 12 slippe igennem.
+    'q' => ['Batch'.str_repeat("\u{00A0}", 7).'#12', ['12'], null],
 ];
 
 t_case('101 hsg_extract_cask_number med rigtigt byte-offset (tabel T, med og uden mbstring)', function () use ($tableT) {
