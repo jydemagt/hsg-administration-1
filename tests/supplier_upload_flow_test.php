@@ -5,7 +5,7 @@ declare(strict_types=1);
  * upload → kolonnegæt/husket valg → gæt forfra → lokationskolonner → reservationsvalg → anvend (lager, lagerbevægelser,
  * alias, audit-log, flash) og afvisning af gamle previews (spec 2026-10-19, kriterie 5, 8, 13, 16, 24, 27, 28, 30, 32, 33, 34)
  * samt hjælpeteksten ved reservationsvalget og ugyldige preview-tokens (tillæg 2026-10-20, kriterie 57 og 59) og
- * "Fil:"-linjen med en ugyldig "Lagerantal i alt" (tillæg 2026-10-22, kriterie 71).
+ * "Fil:"-linjen med en ugyldig "Lagerantal i alt" (tillæg 2026-10-22, kriterie 74).
  *
  * KØRES KUN af tests/run.sh, mens røgtestens server kører:
  *     php tests/supplier_upload_flow_test.php http://127.0.0.1:8787 testadmin 'Test-Pass-12345!'
@@ -319,7 +319,7 @@ try {
         t_eq('add', setting_raw($pdo, 'supplier_import_reservation_mode'), 'reservationsvalget er husket efter Anvend');
     });
 
-    t_case('71 Fil-linjen viser en ugyldig "Lagerantal i alt" i tilstand L og T', function () use ($http, $root, $headers, $col, $L1, $L2, $L3, &$tokens) {
+    t_case('74 Fil-linjen viser en ugyldig "Lagerantal i alt" i tilstand L og T', function () use ($http, $root, $headers, $col, $L1, $L2, $L3, &$tokens) {
         // Egen upload, så de øvrige trin er uændrede. Intet anvendes, og det huskede kolonnevalg sættes tilbage i finally.
         $fh = fopen('php://memory', 'w+b');
         foreach ([$headers, ['TSTKIM-7101', 'TSTKIM Ugyldig Total', 'TSTKIM Dist5', '', '', '3 + 2', '41', '', '12', '', '', '']] as $line) fputcsv($fh, $line, ';', '"', '');

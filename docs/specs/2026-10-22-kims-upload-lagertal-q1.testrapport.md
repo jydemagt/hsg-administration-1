@@ -1,6 +1,7 @@
 # Testrapport: Kims uploadfil – "Lagerantal i alt" skal være ét tal (Q1) og strammere lagerceller (modul `supplier_upload` 1.1.2)
 
 - **Spec:** `docs/specs/2026-10-22-kims-upload-lagertal-q1.md` (acceptkriterie 60–74). Forgængere: `2026-10-19-kims-upload-lagerfejl.md` og `2026-10-20-kims-upload-review-rettelser.md`.
+- **Omnummereret efter testen:** Tillæg 2026-10-20 fik kriterie 60–62 efter sin retest. Derfor er kriterierne i denne spec og testenes `t_case`-navne flyttet 3 op: 60–74 hedder nu 63–77, og 71u hedder 74u. Rapporten nedenfor bruger de oprindelige numre (60 → 63 … 74 → 77). Testindholdet er uændret.
 - **Branch:** `feature/kims-upload-lagertal-q1` (testet på commit `d298d44`; ændringerne er `e1cc91f..d298d44` oven på grundlaget `df886b4`).
 - **Testet:** 22-10-2026, af uafhængig tester. Udviklerens egne scripts og bemærkninger er ikke brugt som bevis; alt nedenfor er kørt af testeren.
 - **Brugerens beslutninger** (5 cifre, ingen nyt flag, `53 stk.`/`-`/`?` er ugyldige) er lagt til grund. De er ikke genåbnet.

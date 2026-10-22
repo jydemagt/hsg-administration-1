@@ -213,8 +213,8 @@ Uændret:
 |---|---|
 | `core/supplier_import.php` | • Nye funktioner `hsg_supplier_stock_cell` og `hsg_supplier_short_text`, placeret ved `:112`.<br>• `hsg_supplier_location_cells` (`:121-146`) bruger `hsg_supplier_stock_cell`.<br>• `hsg_supplier_source_fields` (`:160-172`) bruger den til totalen og sætter `stock_file_total_invalid`.<br>• `hsg_supplier_merge_raw_items` (`:615-657`): `total_invalid`, fjernelse ved fletning og bemærkning L/T.<br>• Kommentaren til `hsg_supplier_merge_source` (`:377`).<br>Signaturerne er uændrede. |
 | `supplier_upload.php` | `supplier_upload_file_line` (`:197-217`): ugyldig total i tilstand L og T (3.6) |
-| `tests/supplier_import_test.php` | Kriterie 60–70 |
-| `tests/supplier_upload_flow_test.php` | Kriterie 71 (alternativt manuel test) |
+| `tests/supplier_import_test.php` | Kriterie 63–73 |
+| `tests/supplier_upload_flow_test.php` | Kriterie 74 (alternativt manuel test) |
 | `docs/SUPPLIER-UPLOAD.md` | • "Hvad er et tal i en lokationscelle?" (`:101`) ændres til "Hvad er et tal i en lagercelle?". Reglen gælder også "Lagerantal i alt".<br>• Konsekvensen i tilstand L og T beskrives.<br>• Loftet på 5 cifre, "kun hårde mellemrum = tom", én afrunding (`0.4999` → 0) og afkortningen til 40 tegn beskrives.<br>• Tabellen får nye rækker fra 3.5. |
 | `modules/supplier_upload/module.php` | `version` → `1.1.2` |
 | *Ved release* | `app_version.php`, README og `hsg-package.json` (release-tjeklisten) |
@@ -223,11 +223,11 @@ Uændret:
 
 ## 7. Acceptkriterier
 
-Nummereringen fortsætter efter tillæg 2026-10-20 (39–59). Hjælperne `kim_row`, `kim_map`, `hsg_product` og `merge_opts` findes i `tests/supplier_import_test.php`. Testen gør PHP-advarsler til fejl, så "ingen advarsel" testes automatisk.
+Nummereringen fortsætter efter tillæg 2026-10-20 (39–62). Kriterierne hed 60–74, da spec'en blev godkendt, og er flyttet 3 op, fordi tillæg 2026-10-20 fik kriterie 60–62 efter sin retest. Hjælperne `kim_row`, `kim_map`, `hsg_product` og `merge_opts` findes i `tests/supplier_import_test.php`. Testen gør PHP-advarsler til fejl, så "ingen advarsel" testes automatisk.
 
 ### Lagercellen (3.1, 3.4)
 
-60. **Givet** `hsg_supplier_stock_cell(X)`, **så** gælder:
+63. **Givet** `hsg_supplier_stock_cell(X)`, **så** gælder:
     - **Tom:** `state = 'blank'` og `value = null` for X = `''`, `'   '`, `"\u{00A0}"`, `"\u{202F}"` og `" \u{00A0}\t\u{202F} "`.
     - **Tal:** `state = 'number'` og `value` er:
 
@@ -256,7 +256,7 @@ Nummereringen fortsætter efter tillæg 2026-10-20 (39–59). Hjælperne `kim_ro
       - for mange cifre: `'100000'`, `'-100000'`, `'000041'`, `'5010494560018'`, `'9223372036854775808'` og `'99999999999999999999'`
 
       Ingen af kaldene giver en PHP-advarsel.
-61. **Givet** `hsg_supplier_short_text`, **så** gælder:
+64. **Givet** `hsg_supplier_short_text`, **så** gælder:
     - `str_repeat('a', 40)` og `str_repeat('ø', 40)` returneres uændret.
     - `str_repeat('a', 41)` giver `str_repeat('a', 40).'…'`.
     - `str_repeat('a', 39).'æøå'` giver `str_repeat('a', 39).'æ…'`, og resultatet er gyldig UTF-8 (`preg_match('//u', $r) === 1`).
@@ -264,11 +264,11 @@ Nummereringen fortsætter efter tillæg 2026-10-20 (39–59). Hjælperne `kim_ro
 
 ### Lokationsceller (P2, P3, P4, P5)
 
-62. **Givet** `hsg_supplier_location_cells(kim_row([...]), kim_map(false))`, **så** gælder:
+65. **Givet** `hsg_supplier_location_cells(kim_row([...]), kim_map(false))`, **så** gælder:
     - R=41, S=`"\u{00A0}"` og T=`" \u{202F} "` giver præcis `['values'=>['stock_loc_1'=>41,'stock_loc_2'=>0,'stock_loc_3'=>0],'blank'=>['stock_loc_2','stock_loc_3'],'invalid'=>[]]`. I dag er S og T ugyldige.
     - Kun hårde mellemrum i R, S og T giver `['values'=>[],'blank'=>['stock_loc_1','stock_loc_2','stock_loc_3'],'invalid'=>[]]`. Varen fra `hsg_supplier_merge_raw_items` har bemærkningen "Bemærk: Ingen tal i lokationskolonnerne – lageret ændres ikke." og ingen bemærkning med "Ugyldig værdi".
     - R=`'0.4999'`, S=`'9223372036854775808'` og T=`'5010494560018'` giver `values = ['stock_loc_1'=>0]` og `invalid = ['stock_loc_2'=>'9223372036854775808','stock_loc_3'=>'5010494560018']`.
-63. **Givet**
+66. **Givet**
     - et HSG-produkt med samme SKU som filrækken og Christiansfeld 5,
     - filrækken R=`str_repeat('ø', 45)`, S=1 og T='' (`kim_map(false)`),
 
@@ -279,12 +279,12 @@ Nummereringen fortsætter efter tillæg 2026-10-20 (39–59). Hjælperne `kim_ro
 
 ### "Lagerantal i alt" i tilstand L (3.2)
 
-64. **Givet** `hsg_supplier_source_fields(kim_row(['sku'=>'64-1','name'=>'X','R'=>41,'S'=>'','T'=>12,'Q'=>'3 + 2']), kim_map())`, **så**
+67. **Givet** `hsg_supplier_source_fields(kim_row(['sku'=>'64-1','name'=>'X','R'=>41,'S'=>'','T'=>12,'Q'=>'3 + 2']), kim_map())`, **så**
     - er `stock_loc_1=41`, `stock_loc_2=0`, `stock_loc_3=12` og `stock_file_total_invalid='3 + 2'`,
     - er der hverken `stock_file_total` eller `stock_quantity`.
 
     Med Q=`"\u{00A0}"` er der hverken `stock_file_total` eller `stock_file_total_invalid`. Med Q=`'0.4999'` er `stock_file_total=0`.
-65. **Givet**
+68. **Givet**
     - HSG-produktet `hsg_product(['id'=>65,'sku'=>'65-1','name'=>'Kontrol Whisky','distillery'=>'Testdestilleri','stock_loc_1'=>41,'stock_loc_2'=>2,'stock_loc_3'=>12])`,
     - filrækken sku 65-1, name 'Kontrol Whisky' og dist 'Testdestilleri' med R=41, S='', T=12 og Q=`'3 + 2'` (`kim_map()`, `merge_opts()`). Destilleriet er med, fordi navneparseren ellers udleder destilleriet "Kontrol Whisky" af navnet og giver en ekstra ændring (rettet efter testen).
 
@@ -299,13 +299,13 @@ Nummereringen fortsætter efter tillæg 2026-10-20 (39–59). Hjælperne `kim_ro
 
 ### "Lagerantal i alt" i tilstand T (3.2)
 
-66. **Givet** `hsg_supplier_source_fields(kim_row(['sku'=>'66-1','name'=>'X','Q'=>'3 + 2']), kim_map(true,false), 1)`, **så** er `stock_file_total_invalid='3 + 2'`, og der er ingen `stock_loc_*`, `stock_file_total` eller `stock_quantity`. Desuden gælder:
+69. **Givet** `hsg_supplier_source_fields(kim_row(['sku'=>'66-1','name'=>'X','Q'=>'3 + 2']), kim_map(true,false), 1)`, **så** er `stock_file_total_invalid='3 + 2'`, og der er ingen `stock_loc_*`, `stock_file_total` eller `stock_quantity`. Desuden gælder:
     - **Uden fallback-id:** Det samme gælder, og der er ingen `stock_quantity`.
     - **Q=`"\u{00A0}"`:** Der er ingen lagernøgler og ingen `stock_file_total_invalid`.
     - **Q=`'0.4999'` og fallback 1:** `stock_loc_1=0` og `stock_file_total=0`.
 
     Test 12 (Q=53) er uændret grøn.
-67. **Givet**
+70. **Givet**
     - HSG-produktet `hsg_product(['id'=>67,'sku'=>'67-1','name'=>'Total Whisky','stock_loc_1'=>41,'stock_loc_2'=>2,'stock_loc_3'=>12])`,
     - filrækken sku 67-1, name 'Total Whisky', dist 'Testdestilleri' og Q=`'3 + 2'` (`kim_map(true,false)`, `merge_opts()`),
 
@@ -321,7 +321,7 @@ Nummereringen fortsætter efter tillæg 2026-10-20 (39–59). Hjælperne `kim_ro
 
 ### Fletning (3.3)
 
-68. **Givet**
+71. **Givet**
     - filrækkerne 17-1028 ('Jane Street 2015', R=5, S='', T='', Q=`'3 + 2'`) og 17-1028a (samme navn, R='', S=2, T='', Q=2),
     - `kim_map()` og ingen HSG-produkter,
 
@@ -331,27 +331,27 @@ Nummereringen fortsætter efter tillæg 2026-10-20 (39–59). Hjælperne `kim_ro
     - intet `stock_mismatch` og bemærkning L.
 
     **Givet** Q=5 på 17-1028 og Q=`'?'` på 17-1028a, **så** er `stock_file.total = null` og `total_invalid = '?'`. Delsummen 5 bruges altså ikke, og der er ingen afvigelse.
-69. **Givet** filrækkerne 17-1028 (Q=5) og 17-1028a (Q=`'?'`) med samme navn, `kim_map(true,false)` og `merge_opts()`, **når** rækkerne flettes, **så**
+72. **Givet** filrækkerne 17-1028 (Q=5) og 17-1028a (Q=`'?'`) med samme navn, `kim_map(true,false)` og `merge_opts()`, **når** rækkerne flettes, **så**
     - har varens `source` hverken `stock_loc_*` eller `stock_file_total`,
     - er `stock_file.total_invalid = '?'` og `total_stock = 0`,
     - har varen bemærkning T.
 
     **Givet** Q=5 og Q=2, **så** er `source.stock_loc_1 = 7` og `stock_file.total = 7`, som i dag.
-70. **Givet** `hsg_supplier_merge_source` og `hsg_supplier_parse_decimal`, **så** gælder:
+73. **Givet** `hsg_supplier_merge_source` og `hsg_supplier_parse_decimal`, **så** gælder:
     - `hsg_supplier_merge_source(['stock_file_total'=>3,'name'=>'A'], ['stock_file_total_invalid'=>'?','name'=>'B'])` er præcis `['stock_file_total'=>3,'name'=>'A','stock_file_total_invalid'=>'?']`.
     - `hsg_supplier_merge_source(['stock_file_total_invalid'=>'a'], ['stock_file_total_invalid'=>'b'])['stock_file_total_invalid']` er `'a'`.
     - `hsg_supplier_parse_decimal` er uændret: `'1.234,50'` giver 1234.5, `'53 stk.'` giver 53.0, og `'0.4999'` giver 0.5.
 
 ### Preview og generelt
 
-71. **Givet** et preview med lokationskolonner og en vare med R=41, S tom, T=12 og Q=`'3 + 2'`, **så** viser varen linjen `Fil: <Christiansfeld> 41 · <Michael> 0 (tom) · <Gert> 12 · i alt „3 + 2“ (ugyldig)`. Lokationsnavnene er dem, testen bruger.
+74. **Givet** et preview med lokationskolonner og en vare med R=41, S tom, T=12 og Q=`'3 + 2'`, **så** viser varen linjen `Fil: <Christiansfeld> 41 · <Michael> 0 (tom) · <Gert> 12 · i alt „3 + 2“ (ugyldig)`. Lokationsnavnene er dem, testen bruger.
 
     **Givet** et preview med kun "Lagerantal i alt" og Q=`'3 + 2'`, **så** vises `Fil: lagerantal i alt „3 + 2“ (ugyldig)`.
 
     Det testes i flowtesten eller manuelt. Et preview uden `total_invalid` vises som før.
-72. **Når** `bash tests/run.sh` køres, **så** er alle trin grønne, og de eksisterende kriterier 1–59 er uændret grønne (enhedstest, databasetest og flowtest).
-73. **Givet** den rigtige fil "lager 19-10-2026.xlsx" (manuel test; filen må ikke lægges i repoet), **når** previewet laves på `feature/kims-upload-review-rettelser` og på denne branch med samme kolonnevalg og reservationsvalg, **så** er varer, match, ændringer og forvalg identiske. Eventuelle forskelle skal kunne forklares med cellerne i 3.5, og testeren skriver dem i PR'en.
-74. **Givet** modulmanifestet, **så** er `version` lig `1.1.2`, og `docs/SUPPLIER-UPLOAD.md` er opdateret som angivet i afsnit 6.
+75. **Når** `bash tests/run.sh` køres, **så** er alle trin grønne, og de eksisterende kriterier 1–62 er uændret grønne (enhedstest, databasetest og flowtest).
+76. **Givet** den rigtige fil "lager 19-10-2026.xlsx" (manuel test; filen må ikke lægges i repoet), **når** previewet laves på `feature/kims-upload-review-rettelser` og på denne branch med samme kolonnevalg og reservationsvalg, **så** er varer, match, ændringer og forvalg identiske. Eventuelle forskelle skal kunne forklares med cellerne i 3.5, og testeren skriver dem i PR'en.
+77. **Givet** modulmanifestet, **så** er `version` lig `1.1.2`, og `docs/SUPPLIER-UPLOAD.md` er opdateret som angivet i afsnit 6.
 
 ---
 
