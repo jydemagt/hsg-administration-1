@@ -27,10 +27,11 @@ function hsg_cask_number_scan(string $text, bool $legacy): array {
                 $before=function_exists('mb_substr')?mb_substr($text,0,$offset,'UTF-8'):substr($text,0,$offset);
                 $tail=function_exists('mb_substr')?mb_substr($before,max(0,mb_strlen($before,'UTF-8')-18),null,'UTF-8'):substr($before,-18);
             }else{
-                // Byte-offsettet ligger på en tegngrænse (/u, og matchet starter med #), så $before er gyldig UTF-8.
-                // Halen er de sidste højst 18 TEGN; substr($before,-18) kunne skære et tegn over.
-                $before=substr($text,0,$offset);
-                $tail=preg_match('/.{0,18}\z/su',$before,$t)?$t[0]:'';
+                // $text er gyldig UTF-8 (preg_match_all med /u har tjekket den), og /u giver offsets på tegngrænser.
+                // Halen er de sidste højst 18 TEGN før matchet: gå baglæns og tæl tegnenes første byte. Den bruges kun for #-mønstret.
+                $i=$offset;$n=0;
+                while($i>0 && $n<18){$i--; if((ord($text[$i])&0xC0)!==0x80)$n++;}
+                $tail=substr($text,$i,$offset-$i);
             }
             if($pi===1 && preg_match('/\b(?:batch|bottle|flaske)\s*$/iu',$tail))continue;
             if(preg_match('/^(?:19|20)\d{2}$/',$value))continue;
@@ -46,7 +47,8 @@ function hsg_cask_number_scan(string $text, bool $legacy): array {
  * først alle match efter cask/fad/barrel, derefter alle match efter #, hver i tekstens rækkefølge.
  * Årstal filtreres fra; værdierne er trimmet og med store bogstaver.
  * Batch/bottle/flaske-filteret er bevidst det gamle, også med fejlen: Med mbstring bruges byte-offsettet som
- * tegn-offset, så filteret ser for langt frem, når der står æ, ø, å eller – før #. Uden mbstring er det byte-baseret.
+ * tegn-offset, så filteret ser for langt frem, når der står æ, ø, å eller – før #. Uden mbstring er halen 18 bytes og
+ * kan skære et tegn over, så filteret svigter (fx 'Kløver Whisky Batch #12').
  * Ret det ikke, for så passer beviset ikke længere med de værdier, som den gamle kode har gemt.
  * Det første element er præcis det, udledningen gav før cifferreglen. Den nye udledning er hsg_extract_cask_number.
  */
