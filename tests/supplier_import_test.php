@@ -630,6 +630,7 @@ t_case('59 KAN-4: preview-token valideres ét sted', function () {
     t_true(!hsg_supplier_preview_token_valid(''), "'' er ugyldigt");
     t_true(!hsg_supplier_preview_token_valid('../x'), "'../x' er ugyldigt");
     t_true(!hsg_supplier_preview_token_valid(str_repeat('ABCDEF0123', 4)), '40 store hex-tegn er ugyldigt');
+    t_true(!hsg_supplier_preview_token_valid(str_repeat('a', 40)."\n"), '40 små hex-tegn med linjeskift til sidst er ugyldigt');
     $message = '';
     try { hsg_supplier_preview_load('../x'); } catch (RuntimeException $e) { $message = $e->getMessage(); }
     t_eq('Ugyldigt preview-token.', $message, 'preview_load afviser ../x, før der bygges en filsti');
