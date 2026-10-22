@@ -635,6 +635,207 @@ t_case('59 KAN-4: preview-token valideres ét sted', function () {
     t_eq('Ugyldigt preview-token.', $message, 'preview_load afviser ../x, før der bygges en filsti');
 });
 
+/* ---------- F. "Lagerantal i alt" skal være ét tal og strammere lagerceller (tillæg 2026-10-22, kriterie 60–70) ----------
+ * Kriterie 71 ("Fil:"-linjen) testes i tests/supplier_upload_flow_test.php, fordi funktionen ligger i supplier_upload.php. */
+
+/** Bemærkningerne på en vare, der indeholder $needle. */
+function notes_with(array $item, string $needle): array {
+    return array_values(array_filter((array)($item['notes'] ?? []), static fn($n) => str_contains((string)$n, $needle)));
+}
+
+// Lagercellen (3.1, 3.4)
+
+t_case('60 hsg_supplier_stock_cell: tom, tal og ugyldig', function () {
+    foreach (['', '   ', "\u{00A0}", "\u{202F}", " \u{00A0}\t\u{202F} "] as $x) {
+        $c = hsg_supplier_stock_cell($x);
+        t_eq(['blank', null], [$c['state'], $c['value']], 'tom: '.json_encode($x));
+    }
+    $numbers = [['41', 41], ['0', 0], ['-0', 0], ['41.0', 41], ['2,4', 2], ['2.6', 3], ['-2', 0], ['-0.5', 0], ['0.5', 1], ['2,5', 3],
+        ['0.4999', 0], ['0,4999', 0], ['2.4999', 2], ['99999', 99999], ["5\u{00A0}", 5], ['40.999999999999993', 41], ['40,999999999999993', 41]];
+    foreach ($numbers as [$x, $n]) {
+        $c = hsg_supplier_stock_cell($x);
+        t_eq(['number', $n], [$c['state'], $c['value']], 'tal: '.json_encode($x));
+    }
+    $invalid = ['3 + 2', '53 stk.', '?', '-', '1e3', '−2',
+        '1.234', '1,234', '1 234',
+        '100000', '-100000', '000041', '5010494560018', '9223372036854775808', '99999999999999999999'];
+    foreach ($invalid as $x) t_eq(['state' => 'invalid', 'value' => null, 'text' => $x], hsg_supplier_stock_cell($x), 'ugyldig: '.$x);
+});
+
+t_case('61 hsg_supplier_short_text afkorter til 40 tegn', function () {
+    t_eq(str_repeat('a', 40), hsg_supplier_short_text(str_repeat('a', 40)), '40 × a er uændret');
+    t_eq(str_repeat('ø', 40), hsg_supplier_short_text(str_repeat('ø', 40)), '40 × ø er uændret');
+    t_eq(str_repeat('a', 40).'…', hsg_supplier_short_text(str_repeat('a', 41)), '41 × a');
+    $r = hsg_supplier_short_text(str_repeat('a', 39).'æøå');
+    t_eq(str_repeat('a', 39).'æ…', $r, '39 × a + æøå');
+    t_eq(1, preg_match('//u', $r), 'resultatet er gyldig UTF-8');
+    t_eq(str_repeat('ø', 40).'…', hsg_supplier_stock_cell(str_repeat('ø', 45))['text'], 'stock_cell(45 × ø)[text]');
+});
+
+// Lokationsceller (P2, P3, P4, P5)
+
+t_case('62 Lokationsceller: hårde mellemrum er tomme, højst 5 cifre og én afrunding', function () {
+    t_eq(['values' => ['stock_loc_1' => 41, 'stock_loc_2' => 0, 'stock_loc_3' => 0], 'blank' => ['stock_loc_2', 'stock_loc_3'], 'invalid' => []],
+        hsg_supplier_location_cells(kim_row(['R' => 41, 'S' => "\u{00A0}", 'T' => " \u{202F} "]), kim_map(false)), 'R=41, S=NBSP, T=smalt NBSP');
+    $row = kim_row(['sku' => '62-1', 'name' => 'Hårde Mellemrum', 'R' => "\u{00A0}", 'S' => "\u{202F}", 'T' => " \u{00A0}\t "]);
+    t_eq(['values' => [], 'blank' => ['stock_loc_1', 'stock_loc_2', 'stock_loc_3'], 'invalid' => []], hsg_supplier_location_cells($row, kim_map(false)), 'kun hårde mellemrum');
+    $items = hsg_supplier_merge_raw_items([$row], kim_map(false), [], null, 1, null, merge_opts());
+    t_eq(1, count($items), 'én vare');
+    if (count($items) !== 1) return;
+    t_has_note($items[0], 'Bemærk: Ingen tal i lokationskolonnerne – lageret ændres ikke.', 'bemærkning');
+    t_eq([], notes_with($items[0], 'Ugyldig værdi'), 'ingen bemærkning med "Ugyldig værdi"');
+    $cells = hsg_supplier_location_cells(kim_row(['R' => '0.4999', 'S' => '9223372036854775808', 'T' => '5010494560018']), kim_map(false));
+    t_eq(['stock_loc_1' => 0], $cells['values'], 'values');
+    t_eq(['stock_loc_2' => '9223372036854775808', 'stock_loc_3' => '5010494560018'], $cells['invalid'], 'invalid');
+});
+
+t_case('63 Lang ugyldig tekst i en lokationscelle afkortes', function () {
+    $product = hsg_product(['id' => 63, 'sku' => '63-1', 'name' => 'Lang Tekst Whisky', 'stock_loc_1' => 5]);
+    $row = kim_row(['sku' => '63-1', 'name' => 'Lang Tekst Whisky', 'R' => str_repeat('ø', 45), 'S' => 1, 'T' => '']);
+    $items = hsg_supplier_merge_raw_items([$row], kim_map(false), [$product], null, 1, null, merge_opts());
+    t_eq(1, count($items), 'én vare');
+    if (count($items) !== 1) return;
+    $short = str_repeat('ø', 40).'…';
+    t_eq(['stock_loc_1' => $short], $items[0]['stock_file']['invalid'], 'stock_file.invalid');
+    t_true(!array_key_exists('stock_loc_1', $items[0]['changes']), 'changes har ingen stock_loc_1');
+    t_eq(['Bemærk: Ugyldig værdi „'.$short.'“ for Christiansfeld – lokationen ændres ikke.'], notes_with($items[0], 'Ugyldig værdi'), 'præcis bemærkningen med den afkortede tekst');
+});
+
+// "Lagerantal i alt" i tilstand L (3.2)
+
+t_case('64 Tilstand L: ugyldig "Lagerantal i alt" i source_fields', function () {
+    $src = hsg_supplier_source_fields(kim_row(['sku' => '64-1', 'name' => 'X', 'R' => 41, 'S' => '', 'T' => 12, 'Q' => '3 + 2']), kim_map());
+    t_eq(41, $src['stock_loc_1'] ?? null, 'stock_loc_1');
+    t_eq(0, $src['stock_loc_2'] ?? null, 'stock_loc_2');
+    t_eq(12, $src['stock_loc_3'] ?? null, 'stock_loc_3');
+    t_eq('3 + 2', $src['stock_file_total_invalid'] ?? null, 'stock_file_total_invalid');
+    t_true(!array_key_exists('stock_file_total', $src), 'intet stock_file_total');
+    t_true(!array_key_exists('stock_quantity', $src), 'intet stock_quantity');
+    $nbsp = hsg_supplier_source_fields(kim_row(['sku' => '64-1', 'name' => 'X', 'R' => 41, 'S' => '', 'T' => 12, 'Q' => "\u{00A0}"]), kim_map());
+    t_true(!array_key_exists('stock_file_total', $nbsp), 'Q=NBSP: intet stock_file_total');
+    t_true(!array_key_exists('stock_file_total_invalid', $nbsp), 'Q=NBSP: intet stock_file_total_invalid');
+    $round = hsg_supplier_source_fields(kim_row(['sku' => '64-1', 'name' => 'X', 'R' => 41, 'S' => '', 'T' => 12, 'Q' => '0.4999']), kim_map());
+    t_eq(0, $round['stock_file_total'] ?? null, 'Q=0.4999: stock_file_total = 0');
+});
+
+t_case('65 Tilstand L: "3 + 2" giver ingen falsk kontrolafvigelse', function () {
+    // Samme destilleri i HSG og filen (som i test 13). Ellers udleder navneparseren destilleriet "Kontrol Whisky" af navnet,
+    // og changes får også en destilleri-ændring.
+    $product = hsg_product(['id' => 65, 'sku' => '65-1', 'name' => 'Kontrol Whisky', 'distillery' => 'Testdestilleri', 'stock_loc_1' => 41, 'stock_loc_2' => 2, 'stock_loc_3' => 12]);
+    $row = kim_row(['sku' => '65-1', 'name' => 'Kontrol Whisky', 'dist' => 'Testdestilleri', 'R' => 41, 'S' => '', 'T' => 12, 'Q' => '3 + 2']);
+    $items = hsg_supplier_merge_raw_items([$row], kim_map(), [$product], null, 1, null, merge_opts());
+    t_eq(1, count($items), 'én vare');
+    if (count($items) !== 1) return;
+    $it = $items[0];
+    t_eq(['stock_loc_2' => ['old' => 2, 'new' => 0, 'file' => 0]], $it['changes'], 'changes');
+    t_eq(['stock_loc_1' => 41, 'stock_loc_2' => 0, 'stock_loc_3' => 12], $it['stock_file']['locations'], 'stock_file.locations');
+    t_eq(null, $it['stock_file']['total'], 'stock_file.total');
+    t_eq('3 + 2', $it['stock_file']['total_invalid'] ?? 'MANGLER', 'stock_file.total_invalid');
+    t_eq([], $it['flags'], 'ingen flag');
+    t_eq([], notes_with($it, 'passer ikke med lagerantal i alt'), 'ingen afvigelsesbemærkning');
+    t_has_note($it, 'Bemærk: Ugyldig værdi „3 + 2“ for lagerantal i alt – bruges ikke som kontroltal.', 'bemærkning L');
+    t_true($it['selected'], 'forvalgt');
+    t_true(!array_key_exists('stock_file_total', $it['source']), 'source har intet stock_file_total');
+    t_true(!array_key_exists('stock_file_total_invalid', $it['source']), 'source har intet stock_file_total_invalid');
+});
+
+// "Lagerantal i alt" i tilstand T (3.2)
+
+t_case('66 Tilstand T: ugyldig "Lagerantal i alt" i source_fields', function () {
+    $isStockKey = static fn($k) => str_starts_with((string)$k, 'stock_loc_') || in_array($k, ['stock_file_total', 'stock_quantity'], true);
+    $row = kim_row(['sku' => '66-1', 'name' => 'X', 'Q' => '3 + 2']);
+    $src = hsg_supplier_source_fields($row, kim_map(true, false), 1);
+    t_eq('3 + 2', $src['stock_file_total_invalid'] ?? null, 'fallback 1: stock_file_total_invalid');
+    t_eq([], array_values(array_filter(array_keys($src), $isStockKey)), 'fallback 1: ingen stock_loc_*, stock_file_total eller stock_quantity');
+    $legacy = hsg_supplier_source_fields($row, kim_map(true, false));
+    t_eq('3 + 2', $legacy['stock_file_total_invalid'] ?? null, 'uden fallback-id: stock_file_total_invalid');
+    t_eq([], array_values(array_filter(array_keys($legacy), $isStockKey)), 'uden fallback-id: ingen lagernøgler (heller ikke stock_quantity)');
+    $nbsp = hsg_supplier_source_fields(kim_row(['sku' => '66-1', 'name' => 'X', 'Q' => "\u{00A0}"]), kim_map(true, false), 1);
+    t_eq([], array_values(array_filter(array_keys($nbsp), $isStockKey)), 'Q=NBSP: ingen lagernøgler');
+    t_true(!array_key_exists('stock_file_total_invalid', $nbsp), 'Q=NBSP: intet stock_file_total_invalid');
+    $round = hsg_supplier_source_fields(kim_row(['sku' => '66-1', 'name' => 'X', 'Q' => '0.4999']), kim_map(true, false), 1);
+    t_eq(0, $round['stock_loc_1'] ?? null, 'Q=0.4999: stock_loc_1 = 0');
+    t_eq(0, $round['stock_file_total'] ?? null, 'Q=0.4999: stock_file_total = 0');
+});
+
+t_case('67 Tilstand T: "3 + 2" skrives ikke som 32 på Christiansfeld', function () {
+    $product = hsg_product(['id' => 67, 'sku' => '67-1', 'name' => 'Total Whisky', 'stock_loc_1' => 41, 'stock_loc_2' => 2, 'stock_loc_3' => 12]);
+    $row = kim_row(['sku' => '67-1', 'name' => 'Total Whisky', 'dist' => 'Testdestilleri', 'Q' => '3 + 2']);
+    $items = hsg_supplier_merge_raw_items([$row], kim_map(true, false), [$product], null, 1, null, merge_opts());
+    t_eq(1, count($items), 'én vare');
+    if (count($items) !== 1) return;
+    $it = $items[0];
+    t_eq([], array_values(array_filter(array_keys($it['changes']), static fn($k) => str_starts_with((string)$k, 'stock_loc_'))), 'changes har ingen stock_loc_*');
+    t_true(array_key_exists('distillery', $it['changes']), 'changes indeholder distillery');
+    t_eq('total', $it['stock_file']['mode'], 'stock_file.mode');
+    t_eq([], $it['stock_file']['locations'], 'stock_file.locations');
+    t_eq(null, $it['stock_file']['total'], 'stock_file.total');
+    t_eq('3 + 2', $it['stock_file']['total_invalid'] ?? 'MANGLER', 'stock_file.total_invalid');
+    t_eq(0, $it['stock_file']['sum'], 'stock_file.sum');
+    t_has_note($it, 'Bemærk: Ugyldig værdi „3 + 2“ for lagerantal i alt – lageret ændres ikke.', 'bemærkning T');
+    t_eq([], notes_with($it, 'skrives på Christiansfeld'), 'ingen "skrives på Christiansfeld"');
+    t_eq([], $it['flags'], 'ingen flag');
+    t_true($it['selected'], 'forvalgt på grund af destilleriet');
+    $new = hsg_supplier_merge_raw_items([$row], kim_map(true, false), [], null, 1, null, merge_opts());
+    t_eq(1, count($new), 'uden match: én vare');
+    if (count($new) !== 1) return;
+    t_eq(0, $new[0]['total_stock'], 'uden match: total_stock');
+    t_true(!$new[0]['is_create_new'], 'uden match: is_create_new er falsk');
+    t_true(!$new[0]['selected'], 'uden match: ikke forvalgt');
+});
+
+// Fletning (3.3)
+
+function jane_2015_rows(mixed $q1, mixed $q2, bool $withLocations = true): array {
+    return [
+        kim_row(['sku' => '17-1028', 'name' => 'Jane Street 2015'] + ($withLocations ? ['R' => 5, 'S' => '', 'T' => ''] : []) + ['Q' => $q1]),
+        kim_row(['sku' => '17-1028a', 'name' => 'Jane Street 2015'] + ($withLocations ? ['R' => '', 'S' => 2, 'T' => ''] : []) + ['Q' => $q2]),
+    ];
+}
+
+t_case('68 Fletning i tilstand L: én ugyldig total gør gruppens total ugyldig', function () {
+    $items = hsg_supplier_merge_raw_items(jane_2015_rows('3 + 2', 2), kim_map(), [], null, 1, null, merge_opts());
+    t_eq(1, count($items), 'én vare');
+    if (count($items) !== 1) return;
+    t_eq(['stock_loc_1' => 5, 'stock_loc_2' => 2, 'stock_loc_3' => 0], $items[0]['stock_file']['locations'], 'stock_file.locations');
+    t_eq(null, $items[0]['stock_file']['total'], 'stock_file.total');
+    t_eq('3 + 2', $items[0]['stock_file']['total_invalid'] ?? 'MANGLER', 'stock_file.total_invalid');
+    t_true(!in_array('stock_mismatch', $items[0]['flags'], true), 'intet stock_mismatch');
+    t_has_note($items[0], 'Bemærk: Ugyldig værdi „3 + 2“ for lagerantal i alt – bruges ikke som kontroltal.', 'bemærkning L');
+    $items = hsg_supplier_merge_raw_items(jane_2015_rows(5, '?'), kim_map(), [], null, 1, null, merge_opts());
+    t_eq(1, count($items), 'Q=5 og Q=?: én vare');
+    if (count($items) !== 1) return;
+    t_eq(null, $items[0]['stock_file']['total'], 'Q=5 og Q=?: delsummen 5 bruges ikke');
+    t_eq('?', $items[0]['stock_file']['total_invalid'] ?? 'MANGLER', 'Q=5 og Q=?: stock_file.total_invalid');
+    t_true(!in_array('stock_mismatch', $items[0]['flags'], true), 'Q=5 og Q=?: intet stock_mismatch');
+    t_eq([], notes_with($items[0], 'passer ikke med lagerantal i alt'), 'Q=5 og Q=?: ingen afvigelse');
+});
+
+t_case('69 Fletning i tilstand T: ingen delsum skrives', function () {
+    $items = hsg_supplier_merge_raw_items(jane_2015_rows(5, '?', false), kim_map(true, false), [], null, 1, null, merge_opts());
+    t_eq(1, count($items), 'én vare');
+    if (count($items) !== 1) return;
+    t_eq([], array_values(array_filter(array_keys($items[0]['source']), static fn($k) => str_starts_with((string)$k, 'stock_loc_') || $k === 'stock_file_total')), 'source har hverken stock_loc_* eller stock_file_total');
+    t_eq('?', $items[0]['stock_file']['total_invalid'] ?? 'MANGLER', 'stock_file.total_invalid');
+    t_eq(0, $items[0]['total_stock'], 'total_stock');
+    t_has_note($items[0], 'Bemærk: Ugyldig værdi „?“ for lagerantal i alt – lageret ændres ikke.', 'bemærkning T');
+    $items = hsg_supplier_merge_raw_items(jane_2015_rows(5, 2, false), kim_map(true, false), [], null, 1, null, merge_opts());
+    t_eq(1, count($items), 'Q=5 og Q=2: én vare');
+    if (count($items) !== 1) return;
+    t_eq(7, $items[0]['source']['stock_loc_1'] ?? null, 'Q=5 og Q=2: source.stock_loc_1');
+    t_eq(7, $items[0]['stock_file']['total'], 'Q=5 og Q=2: stock_file.total');
+    t_true(array_key_exists('total_invalid', $items[0]['stock_file']) && $items[0]['stock_file']['total_invalid'] === null, 'Q=5 og Q=2: stock_file.total_invalid findes og er null');
+});
+
+t_case('70 merge_source og parse_decimal er uændrede', function () {
+    t_eq(['stock_file_total' => 3, 'name' => 'A', 'stock_file_total_invalid' => '?'],
+        hsg_supplier_merge_source(['stock_file_total' => 3, 'name' => 'A'], ['stock_file_total_invalid' => '?', 'name' => 'B']), 'stock_file_total_invalid lægges til');
+    t_eq('a', hsg_supplier_merge_source(['stock_file_total_invalid' => 'a'], ['stock_file_total_invalid' => 'b'])['stock_file_total_invalid'], 'den primære rækkes tekst bevares');
+    t_eq(1234.5, hsg_supplier_parse_decimal('1.234,50'), "parse_decimal('1.234,50')");
+    t_eq(53.0, hsg_supplier_parse_decimal('53 stk.'), "parse_decimal('53 stk.')");
+    t_eq(0.5, hsg_supplier_parse_decimal('0.4999'), "parse_decimal('0.4999')");
+});
+
 /* ---------- Resultat ---------- */
 
 $fails = $GLOBALS['t_fail'];
