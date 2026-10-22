@@ -1,5 +1,7 @@
 # Testrapport: Nyhedsbrev, felter sendt som lister og oprydning af forhåndsvisningen
 
+> **Bemærk:** Rapporten nedenfor beskriver commit `e1c0726`. Flere fund er rettet bagefter. Se "Efter testen og reviewet" nederst for den kode, der merges (commit `5f80b4e`).
+
 - **Branch:** `feature/nyhedsbrev-post-input`, testet på commit `e1c0726` (én commit oven på `2ec1d90`, PR #173). Lokal `main` er forældet (`be131df`), så alle sammenligninger er mod `2ec1d90`. Ingen versionsløft og ingen release.
 - **Testet:** 22-10-2026, af uafhængig tester. Udviklerens tal er gentaget, ikke brugt som bevis.
 - **Miljø:** PHP 8.5.8 (`php -S`, `display_errors=On`, `E_ALL`), MariaDB 11.4 (tom database pr. kørsel), Windows/Git Bash, kørt i en kopi uden for OneDrive.
@@ -66,3 +68,29 @@ Ingen SKAL.
 - `tests/newsletter_probe.php`: kører `auth.php` med en given session og skriver, om `core/newsletter.php` blev indlæst, og om forhåndsvisningen findes.
 - `tests/run.sh`: én ny `source`-linje.
 - Mine tests fejler under begge mutationer (se "Kørsler") og er grønne på branchen.
+
+## Efter testen og reviewet (udvikleren, commit `a580ab2` og `5f80b4e`)
+
+Revieweren GODKENDTE `a580ab2` uden SKAL-fund. Testerens og reviewerens fund er rettet sådan:
+
+| Fund | Status | Rettelse |
+|---|---|---|
+| Tester BØR 1: listetesten er blind for `<b>Warning</b>:` | Rettet (`a580ab2`) | Testen i `tests/newsletter_funktionel.sh` matcher begge formater. `html_errors` i `run.sh` er ikke ændret (se BØR 2). |
+| Tester BØR 2: `stock.php:75` | Ikke rettet | Findes også på `main`. Den er sammen med `html_errors=0` i `run.sh` og `fgetcsv`-deprecation en separat opgave. |
+| Tester KAN 1: `update` med `name[]` sletter navn og firma | Rettet (`a580ab2`) | En POST med et felt som liste afvises før handlingen med "Formularen er ugyldig. Genindlæs siden, og prøv igen." (`hsg_newsletter_has_list()`, konstanten `HSG_NEWSLETTER_INVALID_FORM`). Nyt tjek: modtager 4 bevarer navn, firma og type. |
+| Tester KAN 2: `self_requested[]=1` tæller som ja | Rettet (`a580ab2`) | Afvises som andre lister. |
+| Tester KAN 3: "en side i systemet" er for bredt | Rettet (`a580ab2`) | Vejledning og spec siger nu "en side i administrationen / bag `auth.php`, når modulet er slået til". |
+| Tester KAN 4 / reviewer KAN 1: hver side indlæser `core/newsletter.php`, mens der ligger en forhåndsvisning | Rettet (`5f80b4e`) | Forhåndsvisningen ligger i `core/newsletter_import_preview.php`, og `hooks.php` indlæser kun den. Probe-testen forventer nu `nl=nej` i alle tilfælde. |
+| Reviewer BØR 1: rapporten passer ikke til HEAD | Rettet | Dette afsnit. |
+| Reviewer KAN 2: `hooks.php` afviger fra mønsteret i ARCHITECTURE.md | Rettet (`5f80b4e`) | Ny sætning under "Hooks". |
+| Reviewer KAN 3: `ctype_digit` | Rettet (`5f80b4e`) | `hsg_newsletter_input_id()` bruger `preg_match('/^[0-9]+$/D')`. |
+| Reviewer KAN 4: samme fejltekst to steder | Rettet (`5f80b4e`) | Konstanten `HSG_NEWSLETTER_INVALID_FORM`. |
+| Reviewer KAN 5: `tests/newsletter_probe.php` mangler databaseværn | Rettet (`5f80b4e`) | Samme værn som `tests/newsletter_sql.php`. Serverloggens sti kan også sættes med `HSG_PHP_LOG` i `newsletter_funktionel.sh`. |
+
+Ændrede forventninger i testene:
+- Linje 30 ovenfor gælder `e1c0726`. Nu afvises `mode[]`, `preview_token[]` og andre lister i POST med "Formularen er ugyldig". Liste-id'er (`id[]=4`, `id[0]=4`, `id[a]=4`, `id[]=1&id[]=4`) giver samme tekst i id-løkken. Skæve, ikke-liste id'er (`id=4x`, `id=-1`, `id=1.0`, stort tal) giver stadig handlingens egen fejltekst.
+
+| Kørsel | Resultat |
+|---|---|
+| `bash tests/run.sh` på `a580ab2` (MariaDB 11.4, tom database) | grøn: 143 enhedstests, 150 OK-linjer, "ALLE TESTS BESTÅET" |
+| `bash tests/run.sh` på `5f80b4e` (MariaDB 11.4, tom database) | grøn: 143 enhedstests, 150 OK-linjer, "ALLE TESTS BESTÅET" (probe: `nl=nej` uden, med frisk og med udløbet forhåndsvisning) |
