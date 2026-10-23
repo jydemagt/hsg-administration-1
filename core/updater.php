@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/php_requirements.php';
 
 /**
  * HSG Administration self-update service.
@@ -118,10 +119,9 @@ function hsg_update_validate_package(string $zipPath,bool $allowSameVersion=fals
         if($cmp===0 && !$allowSameVersion) throw new RuntimeException('Version '.$target.' er allerede installeret.');
         $minPhp=(string)($manifest['min_php']??'8.1.0');
         if(version_compare(PHP_VERSION,$minPhp,'<')) throw new RuntimeException('Pakken kræver PHP '.$minPhp.' eller nyere. Webhotellet kører PHP '.PHP_VERSION.'.');
-        foreach((array)($manifest['required_extensions']??[]) as $ext){
-            $ext=(string)$ext;
-            if($ext!=='' && !extension_loaded($ext)) throw new RuntimeException('PHP-udvidelsen '.$ext.' mangler på webhotellet.');
-        }
+        // Pakkens egen liste bruges (den nye kode har kravene), ikke den installerede.
+        $missingExt=hsg_missing_extensions((array)($manifest['required_extensions']??[]));
+        if($missingExt!==[]) throw new RuntimeException('Opgraderingen kan ikke installeres. '.hsg_missing_extensions_message($missingExt).' Intet er installeret eller ændret.');
         $required=(array)($manifest['required_files']??['app_version.php','auth.php','migrations.php','core/modules.php']);
         foreach($required as $file){
             $file=hsg_update_normalize_entry((string)$file);

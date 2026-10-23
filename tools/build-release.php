@@ -17,6 +17,7 @@ if (php_sapi_name() !== 'cli') {
 }
 
 define('HSG_ROOT', dirname(__DIR__));
+require_once HSG_ROOT . '/core/php_requirements.php';
 
 // Prohibited runtime files/directories that must NEVER be included in a release ZIP
 const PROHIBITED_PATHS = [
@@ -206,7 +207,7 @@ function hsg_build_generate_manifest(string $buildDir, string $version, string $
         'package_type' => 'distribution',
         'version' => $version,
         'min_php' => '8.1.0',
-        'required_extensions' => ['pdo', 'pdo_mysql', 'zip', 'json', 'gd', 'curl'],
+        'required_extensions' => hsg_required_extensions(),
         'required_files' => [
             'app_version.php',
             'auth.php',
