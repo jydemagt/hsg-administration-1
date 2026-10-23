@@ -44,6 +44,8 @@ if php tools/build-release.php --test-negative >/tmp/hsg-build-neg.log 2>&1; the
 else
   cat /tmp/hsg-build-neg.log; bad "Release-negativtest fejlede"
 fi
+# PHP-krav (tester): bygget ZIP har de krævede udvidelser, og negativtest B og C afvises af den tilsigtede grund (spec 2026-10-23-mbstring-krav, kriterie 122-123)
+if out=$(php tests/php_krav_release_test.php 2>&1); then ok "$out"; else echo "$out"; bad "Release-test af PHP-kravene fejlede"; fi
 
 # 4. Installation + røgtest af sider (kræver testdatabase)
 if [ -z "${HSG_TEST_DB_NAME:-}" ]; then
@@ -133,6 +135,9 @@ else
 
     # PHP-krav: hurtigsøgningen i core/bootstrap.php svarer med JSON (spec 2026-10-23-mbstring-krav, kriterie 115)
     source "$ROOT/tests/php_krav_smoke.sh"
+
+    # PHP-krav, testerens supplement: Systemstatus og install.php med og uden mbstring (kriterie 116-120)
+    source "$ROOT/tests/php_krav_tester.sh"
 
     grep -iE 'Fatal|Uncaught' /tmp/hsg-php-server.log && bad "PHP-fejl i serverlog"
   fi
