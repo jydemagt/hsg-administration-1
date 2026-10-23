@@ -20,7 +20,7 @@
    Risikoen vurderes som lav. mbstring er standard på danske webhoteller. Simply.com skriver fx, at alle standardmoduler er installeret. phpMyAdmin og de fleste WordPress/WooCommerce-opsætninger kræver også mbstring.
 2. **Å2: Skal `openssl` også være et krav?** **Svar: Ja.** `openssl` kommer sidst i `hsg_required_extensions()`.
    `install.php` kalder `hsg_access_link_encrypt()` (`core/access_links.php:29`). Uden OpenSSL fejler installationen *efter* tabellerne og administratoren er oprettet, så databasen står halvt installeret. Risikoen for, at en opgradering afvises, er i praksis nul, for uden OpenSSL virker de personlige links heller ikke i dag.
-3. **Å3: Hurtigsøgningen er forældreløs.** **Svar:** Den får kun fallbacken, som anbefalet.
+3. **Å3: Hurtigsøgningen er forældreløs.** **Svar:** Den får kun fallbacken, som anbefalet. Under udviklingen godkendte brugeren også, at to forespørgsler med forkerte kolonner rettes (afsnit 10).
    `core/bootstrap.php` bliver ikke inkluderet af nogen fil, og ingen side eller JavaScript kalder `action=quick_search`. Det gælder både på `main` og i alle lokale worktrees. Endpointet kan kun nås direkte som `core/bootstrap.php?action=quick_search`. Det har intet login-krav og ingen vedligeholdelseslås, men hvert resultat er filtreret med `can()`. Om søgningen skal kobles på brugerfladen, sikres med login eller fjernes, afgøres i en separat opgave.
 4. **Hurtigsøgningens fallback.** **Svar: Den simple fallback** med samme mønster som resten af koden (3.5). Den skal kun forhindre HTTP 500. Den skal ikke give samme søgeresultat uden mbstring.
 5. **D4: Skal installationen stoppe, når en udvidelse mangler?** **Svar: Ja**, bekræftet.
@@ -150,7 +150,7 @@ Kaldene får samme fallback-mønster som resten af koden:
 
 Fallbacken skal kun forhindre HTTP 500 uden mbstring. Den skal ikke give samme søgeresultat som med mbstring. Uden mbstring tæller fx `Å` som 2 tegn, og `ÅBN` laves ikke om til `åbn`. Det er accepteret.
 
-Alt andet er uændret: rettigheder, SQL, JSON-format og håndteringen af ugyldig UTF-8. Filen får ingen nye `require`.
+Alt andet er uændret: rettigheder, JSON-format og håndteringen af ugyldig UTF-8. SQL'en er kun ændret i de to forespørgsler i afsnit 10. Filen får ingen nye `require`.
 
 ---
 
@@ -189,10 +189,10 @@ Rettighederne er uændrede, og der kommer ingen nye capabilities.
 | `core/updater.php` | Tjekket og beskeden i 3.3. Filen får `require_once __DIR__.'/php_requirements.php'`. |
 | `install.php` | Tjekket og siden i 3.1. |
 | `admin.php` | Kortet og advarslen i 3.2. |
-| `core/bootstrap.php` | Kun de to fallbacks i 3.5, inline. |
+| `core/bootstrap.php` | De to fallbacks i 3.5, inline, og de to forespørgsler i afsnit 10. |
 | `README.txt` | Kun afsnittet "KRAV / ANBEFALET PHP" (linje 45-54). Teksten står herunder. |
 | `tests/php_requirements_test.php` | **Ny** enhedstest (kriterie 111, 112 og 121), samme stil som `tests/newsletter_test.php`. |
-| `tests/php_krav_smoke.sh` | **Ny** røgtest (kriterie 115). `tests/run.sh` source'r den i database-trinet, som nyhedsbrevets filer. |
+| `tests/php_krav_smoke.sh` | **Ny** røgtest (kriterie 115 og afsnit 10). `tests/run.sh` source'r den i database-trinet, som nyhedsbrevets filer. |
 | `tests/run.sh` | Højst tre små tilføjelser: enhedstesten i enhedstest-trinet, `source` af røgtesten og den valgfrie kørsel uden mbstring (afsnit 7.1). Kæden ændrer også filen, så tilføjelserne holdes som selvstændige linjer. |
 
 **Røres ikke:**
@@ -302,7 +302,7 @@ Hvor ikke andet står, køres kriterierne i et miljø med **alle** krævede udvi
 
 - **Eksisterende fallbacks fjernes eller ændres ikke**, heller ikke selvom mbstring nu er et krav. Det gælder `product_enrichment`, `supplier_import`, `import`, `newsletter`, `catalog_pdf` og `pdf_simple`. #178 D2 bruger `product_enrichment`-fallbacken som bevis, og kæden ændrer flere af filerne.
 - **At hurtigsøgningen giver samme resultat uden mbstring** (fx at `ÅBN` matcher `åbn`). Fallbacken skal kun forhindre HTTP 500 (Å4).
-- **Hurtigsøgningen** kobles ikke på brugerfladen og får hverken login-krav, vedligeholdelseslås, håndtering af ugyldig UTF-8 eller af `q[]=` (Å3).
+- **Hurtigsøgningen** kobles ikke på brugerfladen og får hverken login-krav, vedligeholdelseslås, håndtering af ugyldig UTF-8 eller af `q[]=` (Å3). Ud over fallbackene ændres kun de to forespørgsler i afsnit 10.
 - `simplexml` og `xmlreader` kommer ikke på listen over krævede udvidelser.
 - Tjek af udvidelser i `restore.php` i FULL-backuppen.
 - Minimumsversionen af PHP tjekkes ikke i `install.php`.
@@ -319,3 +319,13 @@ Hvor ikke andet står, køres kriterierne i et miljø med **alle** krævede udvi
 2. **`install.php` uden OpenSSL** fejler halvvejs, efter schema og admin er oprettet. Det er løst her: openssl er nu på listen (Å2), så installationen stopper, før databasen røres.
 3. **`verify_csrf()` godtager en tom token**, hvis sessionen ikke har nogen token endnu (`hash_equals('', '')` er sand, `functions.php:9`). Risikoen er lav: cookien er `SameSite=Lax`, og næsten alle sider skriver et `csrf_field()`, før der kan postes. Det bør dog have sin egen opgave. Spec'en her bygger ikke på fejlen.
 4. **Lokal testkørsel:** Når installationen kræver alle udvidelser, skal den lokale `PHPRC`-ini også indlæse `gd`, `curl` og `openssl`. Ellers stopper røgtestens installation. Testrapporterne til Kims upload (`2026-10-20-kims-upload-review-rettelser.testrapport.md` og `2026-10-22-kims-upload-lagertal-q1.testrapport.md`) viste, at release-negativtest B og C blev afvist af den forkerte grund ("pdo_mysql mangler"). Kriterie 123 fanger det samme for mbstring.
+
+---
+
+## 10. Rettelse under udvikling (2026-10-23)
+
+Hurtigsøgningens to forespørgsler i `is_admin()`-blokken brugte kolonner, der ikke findes: `lager_users.email` og `billing_first_name`, `billing_last_name`, `billing_email` og `total` i `hsg_woocommerce_orders`. Derfor gav alle admin-søgninger på mindst 2 tegn en `PDOException` (Uncaught). Fejlen fandtes også på `main` og blev fundet, fordi kriterie 115 ikke kunne opfyldes. Brugeren godkendte rettelsen 2026-10-23.
+
+- **Linkbrugere:** `SELECT id, name FROM lager_users WHERE name LIKE ?`. Undertitlen er altid "Personligt link-adgang".
+- **Ordrer:** `order_number`, `customer_name` og `customer_email` søges, og titlen og undertitlen bruger `customer_name` og `total_amount`.
+- Rettigheder, JSON-format og resten af filen er uændrede. Der kommer ingen nye kriterier, for 115 dækker det. Røgtesten søger desuden efter en testbruger og en testordre og kræver, at de findes uden `Uncaught`.
