@@ -5,7 +5,11 @@ require_once __DIR__.'/functions.php';
 require_once __DIR__.'/core/access_links.php';
 require_once __DIR__.'/core/product_enrichment.php';
 require_once __DIR__.'/core/catalog_image_seed.php';
+require_once __DIR__.'/core/php_requirements.php';
 if(file_exists(__DIR__.'/config.php')){echo '<!doctype html><html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="assets/style.css"><title>Installeret</title></head><body><main class="public"><div class="card narrow"><h1>Systemet er allerede installeret</h1><p>Af sikkerhedshensyn kan installationen ikke køres igen, mens <code>config.php</code> findes.</p><a class="button" href="admin-login.php">Administrator-login</a></div></main></body></html>';exit;}
+// Mangler en krævet PHP-udvidelse, stopper installationen her: før POST-data læses, og før databasen røres.
+$missingExt=hsg_missing_extensions();
+if($missingExt!==[]){?><!doctype html><html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="assets/style.css"><title>Installer HSG Administration</title></head><body><main class="public"><div class="card narrow"><h1>Installer HSG Administration</h1><div class="flash error" role="alert"><?=h(hsg_missing_extensions_message($missingExt))?></div><p>Installationen kan først starte, når alle krævede udvidelser er slået til. Intet er gemt, og databasen er ikke rørt.</p><h2>Krævede PHP-udvidelser</h2><ul><?php foreach(hsg_required_extensions() as $ext):$extMissing=in_array($ext,$missingExt,true);?><li><span class="badge <?=$extMissing?'red':'green'?>"><?=$extMissing?'Mangler':'OK'?></span> <?=h($ext)?></li><?php endforeach;?></ul><p><a class="button" href="install.php">Tjek igen</a></p></div></main></body></html><?php exit;}
 $error='';$newLink='';$installed=false;
 if($_SERVER['REQUEST_METHOD']==='POST'){
   verify_csrf();
