@@ -12,14 +12,14 @@ require_once __DIR__.'/settings.php';
 if (isset($_GET['action']) && $_GET['action'] === 'quick_search') {
     header('Content-Type: application/json; charset=utf-8');
     $q = trim((string)($_GET['q'] ?? ''));
-    if (mb_strlen($q) < 2) {
+    if ((function_exists('mb_strlen') ? mb_strlen($q, 'UTF-8') : strlen($q)) < 2) {
         echo json_encode(['results' => []]);
         exit;
     }
 
     $results = [];
     $like = '%' . $q . '%';
-    $lowerQ = mb_strtolower($q);
+    $lowerQ = function_exists('mb_strtolower') ? mb_strtolower($q, 'UTF-8') : strtolower($q);
 
     // Command Palette Action Shortcuts (Filtered by Server-Side Permissions)
     $actions = [
