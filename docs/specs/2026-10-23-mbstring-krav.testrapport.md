@@ -159,3 +159,15 @@ Ingen SKAL. Ingen kriterier fejlede, så der er ingen fejltrin at genskabe.
 - **Et rigtigt webhotel** uden openssl: efterlignet med en ini-fil uden `extension=openssl`.
 - Tjek af `h()` på tekster, der kun består af konstanter (kan ikke ses i output).
 - Nyhedsbrevets lange tests er ikke kørt i mutantkopierne (de er kørt i fuld pakke, se "Kørsler").
+
+## Tillæg: 375 px (projektleder, 2026-10-24)
+
+Kontrolleret i den indbyggede browser med viewport 375×812 (mobil), mod rene `git archive`-kopier af `91e57a0` på lokale `php -S`-servere (`-d opcache.enable=0`) og testdatabasen på MariaDB 10.4.
+
+| Kriterie | Side og tilstand | Resultat |
+|---|---|---|
+| 118 | `install.php` uden config.php, flere udvidelser mangler (mbstring, openssl m.fl.) | BESTÅET. `scrollWidth` 375 = viewport, ingen elementer går ud over højre kant. Fejlboksen, forklaringen og listen med OK/Mangler ombrydes pænt. |
+| 120 | `admin.php` med alle udvidelser | BESTÅET. Ingen vandret scroll. Kortet viser "✓ Alle aktiveret", "PHP-udvidelser" og listen på to linjer, og der er ingen `flash error`. |
+| 120 | `admin.php` på samme installation uden mbstring | BESTÅET. Ingen vandret scroll. Badgen er "🔴 Mangler: mbstring", og advarselsboksen med "… Næste opgradering kan ikke installeres, før det er gjort." ombrydes inden for kortet. |
+
+Dermed er 375 px-delen af kriterie 118 og 120 også bestået.
