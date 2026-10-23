@@ -30,6 +30,13 @@ else
   echo "$out"; bad "Enhedstest af nyhedsbrevet fejlede"
 fi
 
+# PHP-krav: fællesfunktionerne i core/php_requirements.php og updaterens tjek (spec 2026-10-23-mbstring-krav)
+if out=$(php tests/php_requirements_test.php 2>&1); then ok "$out"; else echo "$out"; bad "Enhedstest af PHP-kravene fejlede"; fi
+# Samme enhedstest uden mbstring, hvis der er angivet en ini-fil uden mbstring (spec afsnit 7.1)
+if [ -n "${HSG_TEST_PHP_INI_UDEN_MBSTRING:-}" ]; then
+  if out=$(php -c "$HSG_TEST_PHP_INI_UDEN_MBSTRING" tests/php_requirements_test.php --uden-mbstring 2>&1); then ok "Uden mbstring: $out"; else echo "$out"; bad "Enhedstest af PHP-kravene uden mbstring fejlede"; fi
+else info "Test uden mbstring sprunget over (HSG_TEST_PHP_INI_UDEN_MBSTRING ikke sat)"; fi
+
 # 3. Release-bygger: negativtest (forbudte filer må aldrig komme med)
 info "3/4 Release-bygger negativtest"
 if php tools/build-release.php --test-negative >/tmp/hsg-build-neg.log 2>&1; then
@@ -123,6 +130,9 @@ else
 
     # Nyhedsbrev, opfølgning (testerens supplement): felter sendt som lister, id[]-angreb og oprydning af forhåndsvisningen
     source "$ROOT/tests/newsletter_post_input.sh"
+
+    # PHP-krav: hurtigsøgningen i core/bootstrap.php svarer med JSON (spec 2026-10-23-mbstring-krav, kriterie 115)
+    source "$ROOT/tests/php_krav_smoke.sh"
 
     grep -iE 'Fatal|Uncaught' /tmp/hsg-php-server.log && bad "PHP-fejl i serverlog"
   fi
