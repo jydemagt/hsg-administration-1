@@ -171,3 +171,19 @@ Kontrolleret i den indbyggede browser med viewport 375×812 (mobil), mod rene `g
 | 120 | `admin.php` på samme installation uden mbstring | BESTÅET. Ingen vandret scroll. Badgen er "🔴 Mangler: mbstring", og advarselsboksen med "… Næste opgradering kan ikke installeres, før det er gjort." ombrydes inden for kortet. |
 
 Dermed er 375 px-delen af kriterie 118 og 120 også bestået.
+
+## Tillæg: retest efter reviewets KAN 1, 3, 4 og 5 (projektleder, 2026-10-24)
+
+Rettelserne står i `2927deb`, `3e4fedb` og `2b7395e` (spec afsnit 11). Revieweren har godkendt dem uden fund. Revieweren kontrollerede også, at en gyldig pakke accepteres af den installerede updater fra `origin/main`, og at en pakke uden `core/php_requirements.php` afvises.
+
+`run-all.sh` på `2b7395e` med `HSG_TEST_PHP_INI_UDEN_MBSTRING` sat:
+
+| Trin | Resultat |
+|---|---|
+| 1 Syntaks | OK |
+| 2 Enhedstest | Nyhedsbrev 143/0, PHP-krav 15/0, uden mbstring 16/0 |
+| 3 Release | Negativtest OK, release-test 16/0 |
+| 4 Installation og røgtest | Alle OK undtagen det kendte tjek `KAN afmeldingssiden ved databasefejl`, der fejler, fordi MariaDB 10.4 ikke har `RENAME COLUMN`. Det fejler også på main. |
+| I alt | 219 OK, 1 kendt FEJL |
+
+Konklusionen er stadig **KLAR**.
