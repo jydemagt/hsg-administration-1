@@ -136,7 +136,8 @@ t_case('88 modules/products/migrations.php', function () use ($root) {
     $manifest = require $root.'/modules/products/module.php';
     t_eq('1.5.1', $manifest['version'] ?? null, 'products-version 1.5.1');
     $supplier = require $root.'/modules/supplier_upload/module.php';
-    t_eq('1.1.1', $supplier['version'] ?? null, 'supplier_upload er uændret 1.1.1');
+    // Q2 ændrer ikke supplier_upload. Q1 (#176, spec 2026-10-22-kims-upload-lagertal-q1) hævede den til 1.1.2.
+    t_eq('1.1.2', $supplier['version'] ?? null, 'supplier_upload er 1.1.2 (Q1), uændret af Q2');
 });
 
 /* Tabel T i spec 2026-10-22-fadnummer-batch-byteoffset: tekst => [gammel candidates med mbstring, ny extract].
