@@ -22,16 +22,14 @@ while IFS= read -r -d '' f; do
 done < <(find . -name '*.php' -not -path './storage/*' -not -path './vendor/*' -not -path './.git/*' -print0)
 [ $LINT_ERR -eq 0 ] && ok "Alle PHP-filer er syntaktisk korrekte" || bad "Syntaksfejl fundet"
 
-# 2. Release-bygger: negativtest (forbudte filer må aldrig komme med)
-info "2/4 Release-bygger negativtest"
-if php tools/build-release.php --test-negative >/tmp/hsg-build-neg.log 2>&1; then
-  ok "Release-negativtest bestået"
+# 2. Enhedstest af rene funktioner (ingen database)
+info "2/4 Enhedstest af nyhedsbrevets rene funktioner"
+if out=$(php tests/newsletter_test.php 2>&1); then
+  ok "$out"
 else
-  cat /tmp/hsg-build-neg.log; bad "Release-negativtest fejlede"
+  echo "$out"; bad "Enhedstest af nyhedsbrevet fejlede"
 fi
-
-# 3. Enhedstest af rene funktioner (ingen database, ingen ZipArchive)
-info "3/4 Enhedstest: Kims uploadfil og fadnummer-udledning"
+info "Enhedstest: Kims uploadfil og fadnummer-udledning (ingen ZipArchive)"
 if php tests/supplier_import_test.php; then
   ok "Enhedstest: Kims uploadfil bestået"
 else
@@ -43,6 +41,14 @@ else
   bad "Enhedstest: fadnummer-udledning fejlede"
 fi
 
+# 3. Release-bygger: negativtest (forbudte filer må aldrig komme med)
+info "3/4 Release-bygger negativtest"
+if php tools/build-release.php --test-negative >/tmp/hsg-build-neg.log 2>&1; then
+  ok "Release-negativtest bestået"
+else
+  cat /tmp/hsg-build-neg.log; bad "Release-negativtest fejlede"
+fi
+
 # 4. Installation + røgtest af sider (kræver testdatabase)
 if [ -z "${HSG_TEST_DB_NAME:-}" ]; then
   info "4/4 Røgtest sprunget over (HSG_TEST_DB_* ikke sat)"
@@ -52,7 +58,8 @@ else
     bad "config.php findes allerede – kør røgtest i en ren kopi (fx git worktree), ikke i en installation"
   else
     PORT=${HSG_TEST_PORT:-8787}; BASE="http://127.0.0.1:$PORT"; JAR=$(mktemp)
-    php -S 127.0.0.1:$PORT -t "$ROOT" >/tmp/hsg-php-server.log 2>&1 & SRV=$!
+    # Uploadgrænserne ligger over nyhedsbrevsimportens egen grænse på 5 MB, så testen rammer den.
+    php -d upload_max_filesize=16M -d post_max_size=24M -S 127.0.0.1:$PORT -t "$ROOT" >/tmp/hsg-php-server.log 2>&1 & SRV=$!
     trap 'kill $SRV 2>/dev/null; rm -f "$ROOT/config.php" "$JAR"' EXIT
     sleep 1
     token() { curl -s -b "$JAR" -c "$JAR" "$1" | grep -o 'name="csrf" value="[^"]*"' | head -1 | sed 's/.*value="//;s/"$//'; }
@@ -77,6 +84,7 @@ else
     PAGES="admin.php status.php products.php brands.php stock.php reservations.php locations.php
            catalog.php reports.php quality.php users.php system.php backup.php import_center.php
            supplier_upload.php image_check.php update.php admin-account.php
+           newsletter.php newsletter_recipients.php newsletter_import.php
            products.php?status=all&filter=cask_no_digit"
     for p in $PAGES; do
       [ -f "${p%%\?*}" ] || continue
@@ -116,6 +124,41 @@ else
 
     # Kims uploadfil: hele flowet via HTTP (upload, kolonnegæt, reservationsvalg, anvend, audit-log). Rydder selv op.
     if php tests/supplier_upload_flow_test.php "$BASE" testadmin 'Test-Pass-12345!'; then ok "Flowtest: Kims uploadfil bestået"; else bad "Flowtest: Kims uploadfil fejlede"; fi
+
+    # Nyhedsbrev: administrationssider kræver login og CSRF
+    for p in newsletter.php newsletter_recipients.php newsletter_import.php; do
+      code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/$p")
+      [ "$code" = "401" ] && ok "$p uden login afvist (HTTP 401)" || bad "$p uden login gav HTTP $code"
+    done
+    for p in newsletter_recipients.php newsletter_import.php; do
+      code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' -d 'action=create&email=x%40example.dk' "$BASE/$p")
+      [ "$code" = "419" ] && ok "$p: POST uden CSRF afvist (HTTP 419)" || bad "$p: POST uden CSRF gav HTTP $code"
+    done
+
+    # Nyhedsbrev: offentlig afmeldingsside med ugyldigt token giver 404 uden PHP-fejl
+    ZERO=$(printf '0%.0s' $(seq 1 64))
+    for q in "t=" "t=abc" "t=$ZERO" "t=${ZERO}0" "t=$(printf 'g%.0s' $(seq 1 64))"; do
+      for m in GET POST; do
+        if [ "$m" = "POST" ]; then
+          code=$(curl -s -o /tmp/hsg-page.html -w '%{http_code}' -d 'List-Unsubscribe=One-Click' "$BASE/nyhedsbrev-afmeld.php?$q")
+        else
+          code=$(curl -s -o /tmp/hsg-page.html -w '%{http_code}' "$BASE/nyhedsbrev-afmeld.php?$q")
+        fi
+        if [ "$code" = "404" ] && ! grep -qiE 'Fatal error|Parse error|Uncaught|Warning:|Notice:|Deprecated:' /tmp/hsg-page.html; then
+          ok "nyhedsbrev-afmeld.php $m ?${q:0:12}… → HTTP 404"
+        else bad "nyhedsbrev-afmeld.php $m ?${q:0:12}… → HTTP $code / PHP-fejl i output"; fi
+      done
+    done
+    hdr=$(curl -s -D - -o /dev/null "$BASE/nyhedsbrev-afmeld.php?t=$ZERO")
+    if echo "$hdr" | grep -qi '^Referrer-Policy: no-referrer' && echo "$hdr" | grep -qi '^X-Robots-Tag: noindex' && echo "$hdr" | grep -qi '^Cache-Control: no-store'; then
+      ok "nyhedsbrev-afmeld.php sender Referrer-Policy, X-Robots-Tag og Cache-Control"
+    else bad "nyhedsbrev-afmeld.php mangler sikkerhedsheadere"; fi
+
+    # Nyhedsbrev trin 1: funktionel test af acceptkriterierne (import, afmelding, GDPR, adgang)
+    source "$ROOT/tests/newsletter_funktionel.sh"
+
+    # Nyhedsbrev, opfølgning (testerens supplement): felter sendt som lister, id[]-angreb og oprydning af forhåndsvisningen
+    source "$ROOT/tests/newsletter_post_input.sh"
 
     grep -iE 'Fatal|Uncaught' /tmp/hsg-php-server.log && bad "PHP-fejl i serverlog"
   fi

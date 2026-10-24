@@ -48,6 +48,7 @@ KRAV / ANBEFALET PHP
 - PDO MySQL.
 - ZipArchive (XLSX + ZIP-backup).
 - SimpleXML (XLSX-import).
+- XMLReader (XLSX-import i Nyhedsbrev). Følger normalt med SimpleXML (samme libxml-pakke).
 - GD anbefales til billedbehandling.
 - cURL kræves til automatisk internetbilledhentning og OneDrive.
 - HTTPS anbefales stærkt.

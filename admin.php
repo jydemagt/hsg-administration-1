@@ -47,6 +47,9 @@ $groups=[
    ['Produkter med negativt lager',$negative.' produkter kan kræve oprydning.','products.php?status=all&filter=negative_stock','!'],
  ],
 ];
+if(hsg_module_is_enabled('newsletter') && can('newsletter.send')){
+  $groups['Daglig drift'][]=['Nyhedsbrev','Modtagere, import og månedlige udsendelser.','newsletter.php','✉'];
+}
 ?>
 
 <div class="card" style="margin-bottom:20px;">
