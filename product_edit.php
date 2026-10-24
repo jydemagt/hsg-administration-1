@@ -134,7 +134,7 @@ page_header($edit ? 'Rediger produkt: ' . h($edit['sku']) : 'Opret nyt produkt')
     </div>
 
     <div class="split">
-      <label>Fadnummer<?=$reqMark('cask_number')?><input name="cask_number" value="<?=h($edit['cask_number'] ?? '')?>" placeholder="fx 300805 eller 892-4"><span class="muted">Nummeret efter # / Cask No. bruges som stærkt match ved leverandørupload og billedtjek.</span></label>
+      <label>Fadnummer<?=$reqMark('cask_number')?><input name="cask_number" value="<?=h($edit['cask_number'] ?? '')?>" placeholder="fx 300805 eller 892-4"><span class="muted">Nummeret efter # / Cask No. bruges som stærkt match ved leverandørupload og billedtjek. Det skal indeholde mindst ét ciffer – ord som "Strength" eller "Finish" er ikke et fadnummer.</span></label>
       <label>Antal flasker i aftapning<?=$reqMark('bottle_count')?><input name="bottle_count" value="<?=h($edit['bottle_count'] ?? '')?>"></label>
     </div>
 

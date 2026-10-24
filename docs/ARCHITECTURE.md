@@ -41,6 +41,8 @@ Valgfrie filer:
 
 `migrations.php` returnerer et array med versionsnummer => callable. Platformen kører kun migrationer nyere end den registrerede modulversion.
 
+**Engangsrettelser af data lægges som modulmigration** (hæv modulversionen), ikke i `ensure_schema_updates` i rodens `migrations.php`. Ved opgradering via update.php kører `ensure_schema_updates` i selve opgraderingsforespørgslen med den **gamle** kode, som allerede er indlæst (`core/updater.php`), og bagefter returnerer funktionen tidligt, fordi `schema_version` allerede er hævet. Ny kode i den ville derfor først køre ved den næste versionsændring. En modulmigration kører ved første forespørgsel efter opgraderingen med den nye kode, præcis én gang, i en transaktion. Filen indlæses ved hver forespørgsel og må kun returnere arrayet (ingen funktionsdefinitioner). Eksempel: `modules/products/migrations.php` (1.5.1, oprydning af fadnumre uden ciffer).
+
 Eksempel:
 
 ```php

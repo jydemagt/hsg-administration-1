@@ -184,7 +184,7 @@ Kolonnerne er uændrede: Opdatér | Filrække | Leverandørens vare | Match i HS
 | Variant ikke flettet | `Bemærk: 12-1123a er ikke flettet med 12-1123: <begrundelse>. Varen behandles som sit eget varenummer og er ikke valgt på forhånd.` |
 | To enheder matcher samme HSG-produkt, men er forskellige varer | `Bemærk: Matcher samme HSG-produkt som 12-1123, men er en anden vare: <begrundelse>. Vælg produkt manuelt eller opret nyt.` |
 | Kontrolafvigelse | `Bemærk: Summen af lokationskolonnerne (53) passer ikke med lagerantal i alt (60). Tjek kolonnevalget og rækken i Kims fil. Rækken er ikke valgt på forhånd.` |
-| Alle lokationsceller tomme | `Ingen tal i lokationskolonnerne – lageret ændres ikke.` |
+| Alle lokationsceller tomme | `Bemærk: Ingen tal i lokationskolonnerne – lageret ændres ikke.` (ændret i tillæg 2026-10-20, KAN-1) |
 | Tekst i en lokationscelle | `Bemærk: Ugyldig værdi „?“ for Gert – lokationen ændres ikke.` |
 | Totaltilstand med lager på andre lokationer | `Bemærk: Lagerantal i alt (53) skrives på Christiansfeld. Produktet har også 14 stk. på andre lokationer, så lageret i alt bliver 67.` |
 | Reservationsvalg `none` og Kims tal < reserveret | `Bemærk: Christiansfeld får 0 fysisk efter import, men 2 er reserveret. Disponibelt bliver −2, varen kan forsvinde fra Lagerstatus, og reservationen kan ikke markeres som solgt.` |
@@ -505,7 +505,7 @@ Lokations-id i eksemplerne: 1 = Christiansfeld (første lokation), 2 = Michael, 
 ### B. Lager pr. lokation og total (Fejl 2 og 3)
 
 9. **Givet** map R→`stock_loc_1`, S→`stock_loc_2`, T→`stock_loc_3` og Q→`stock_quantity` og rækken R=41, S='', T=12, Q=53, **når** `hsg_supplier_source_fields` kaldes, **så** indeholder resultatet `stock_loc_1=41`, `stock_loc_2=0`, `stock_loc_3=12` og `stock_file_total=53` og **ingen** nøgle `stock_quantity`.
-10. **Givet** samme map og rækken R='', S='', T='', Q=5, **så** har resultatet ingen `stock_loc_*`-nøgler, og `stock_file_total=5`. I previewet står "Ingen tal i lokationskolonnerne – lageret ændres ikke."
+10. **Givet** samme map og rækken R='', S='', T='', Q=5, **så** har resultatet ingen `stock_loc_*`-nøgler, og `stock_file_total=5`. I previewet står "Bemærk: Ingen tal i lokationskolonnerne – lageret ændres ikke." (med "Bemærk:" efter tillæg 2026-10-20, KAN-1).
 11. **Givet** rækken R=10, S='?', T='', **så** er `stock_loc_1=10` og `stock_loc_3=0`, og `stock_loc_2` findes ikke. Previewet viser "Bemærk: Ugyldig værdi „?“ for Michael – lokationen ændres ikke."
 12. **Givet** et map uden lokationskolonner (kun Q→`stock_quantity`), Q=53 og `$fallbackLocationId=1`, **så** er `stock_loc_1=53` og `stock_file_total=53`, og der er ingen `stock_quantity`.
 13. **Givet** HSG-produktet 13-1021 med Christiansfeld 41, Michael 2 og Gert 12 og ingen reservationer, og filrækken R=41, S tom, T=12, Q=53, **når** previewet laves, **så** er den eneste lagerændring "Lagerantal: Michael: 2 → 0". Der er ingen ændring af "Lagerantal i alt" og ingen ændring af Christiansfeld, og linjen "Fil: Christiansfeld 41 · Michael 0 (tom) · Gert 12 · i alt 53" vises. **Når** ændringen anvendes, **så** er lageret 41/0/12 = 53. Der findes præcis én ny lagerbevægelse (Michael, −2, `import`), og Christiansfeld er ikke ændret.

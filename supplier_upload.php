@@ -43,6 +43,7 @@ $reservationModes=[
 ];
 $oldPreviewMessage='Previewet er lavet med en ældre version af systemet. Upload filen igen.';
 $token=trim((string)($_GET['preview']??$_POST['preview_token']??''));
+if(!hsg_supplier_preview_token_valid($token))$token=''; // Ugyldigt token: ingen preview og intet token i redirects.
 $postAction=$_SERVER['REQUEST_METHOD']==='POST'?(string)($_POST['action']??''):'';
 
 /** Henter previewet til en handling. Et preview fra en ældre version (uden format 2) afvises, og intet ændres. */
@@ -192,11 +193,12 @@ $missingCask=(int)$pdo->query("SELECT COUNT(*) FROM lager_products WHERE status<
 
 function supfmt(mixed $v,string $field): string {if($v===null||$v==='')return '—';if(in_array($field,['wholesale_price','retail_price'],true))return number_format((float)$v,2,',','.').' kr.';if($field==='abv')return rtrim(rtrim(number_format((float)$v,2,',',''),'0'),',').' %';if($field==='bottle_size_cl')return rtrim(rtrim(number_format((float)$v,2,',',''),'0'),',').' cl';return (string)$v;}
 
-/** Linjen "Fil: …" med Kims lagertal for varen (før reservationstillæg). */
+/** Linjen "Fil: …" med Kims lagertal for varen (før reservationstillæg). En ugyldig total vises med den afkortede tekst. */
 function supplier_upload_file_line(array $item, array $mappedLocKeys, array $locationNames): string {
     $stockFile=(array)($item['stock_file']??[]);
     $mode=(string)($stockFile['mode']??'');
     $locations=(array)($stockFile['locations']??[]);
+    $totalInvalid=$stockFile['total_invalid']??null; // Ældre previews har ikke nøglen.
     if($mode==='locations'){
         $blank=array_map('strval',(array)($stockFile['blank']??[]));$invalid=(array)($stockFile['invalid']??[]);$parts=[];
         foreach($mappedLocKeys as $key){
@@ -206,8 +208,10 @@ function supplier_upload_file_line(array $item, array $mappedLocKeys, array $loc
             else $parts[]=$name.' (tom)';
         }
         if(isset($stockFile['total']))$parts[]='i alt '.(int)$stockFile['total'];
+        elseif($totalInvalid!==null)$parts[]='i alt „'.(string)$totalInvalid.'“ (ugyldig)';
         return 'Fil: '.implode(' · ',$parts);
     }
+    if($mode==='total'&&$totalInvalid!==null)return 'Fil: lagerantal i alt „'.(string)$totalInvalid.'“ (ugyldig)';
     if($mode==='total'&&$locations){
         $key=(string)array_key_first($locations);
         return 'Fil: lagerantal i alt '.(int)($stockFile['total']??$locations[$key]).' → skrives på '.($locationNames[$key]??$key);
@@ -264,7 +268,7 @@ $firstLocationName=(string)($activeLocations[0]['name']??'første lokation');
     <label>Reservationer<select name="reservation_mode"><?php foreach($reservationModes as $modeKey=>$modeLabel):?><option value="<?=h($modeKey)?>" <?=$reservationMode===$modeKey?'selected':''?>><?=h($modeLabel)?></option><?php endforeach;?></select></label>
     <button class="button secondary">Genberegn preview</button>
   </form>
-  <p class="muted" style="margin-top:6px">Hvis Kim tæller reserverede flasker som solgt, skal reservationerne lægges oven i. Ellers trækkes de fra to gange, og varen kan forsvinde fra Lagerstatus. Valget huskes til næste upload.<br><small>Tallene beregnes igen med de aktuelle reservationer, når du trykker 'Anvend'.</small></p>
+  <p class="muted" style="margin-top:6px">Hvis Kim tæller reserverede flasker som solgt, skal reservationerne lægges oven i. Ellers trækkes de fra to gange, og varen kan forsvinde fra Lagerstatus. Valget huskes til næste upload.<br><small>Et nyt valg bruges først, når du har trykket 'Genberegn preview'. Tallene beregnes igen med de aktuelle reservationer, når du trykker 'Anvend'.</small></p>
   <p><span class="badge green">90–100 %</span> vælges som udgangspunkt automatisk. <span class="badge">70–89 %</span> kræver din vurdering. Usikre/umatchede rækker ændrer intet.</p>
 </div>
 
