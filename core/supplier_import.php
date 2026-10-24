@@ -48,16 +48,16 @@ function hsg_supplier_read_xlsx(string $path): array {
 function hsg_supplier_read_csv(string $path): array {
     $fh=fopen($path,'rb');if(!$fh)throw new RuntimeException('Kunne ikke åbne CSV-filen.');
     $first=fgets($fh);rewind($fh);$d=substr_count((string)$first,';')>substr_count((string)$first,',')?';':',';$rows=[];
-    while(($r=fgetcsv($fh,0,$d))!==false)$rows[]=array_map(static fn($v)=>trim((string)$v),$r);fclose($fh);return ['CSV'=>$rows];
+    while(($r=fgetcsv($fh,0,$d,'"','\\'))!==false)$rows[]=array_map(static fn($v)=>trim((string)$v),$r);fclose($fh);return ['CSV'=>$rows];
 }
 
 function hsg_supplier_aliases(): array {
     return [
       'sku'=>['sku','varenummer','varenr','varenr.','itemno','itemnumber','productcode','productid','artikelnummer','artnr','stockcode','code','nummer'],
-      'name'=>['navn','produkt','produktnavn','product','productname','item','itemname','description','beskrivelse','varetekst','title','whisky'],
+      'name'=>['navn','produkt','produktnavn','product','productname','item','itemname','description','beskrivelse','varetekst','title','whisky','variant'],
       'cask_number'=>['fadnummer','fadnr','fadno','casknumber','caskno','casknr','cask#','caskid','barrelnumber','barrelno','barrelnr'],
       'cask_type'=>['fadtype','casktype','barreltype','caskfinish','finish','finishtype','maturation','maturationtype','woodtype','cask','barrel'],
-      'wholesale_price'=>['engrospris','engrospriseksklmoms','wholesale','wholesaleprice','tradeprice','dealerprice','netprice','costprice','buyingprice','purchaseprice','indkobspris','indkoebspris'],
+      'wholesale_price'=>['engrospris','engrospriseksklmoms','wholesale','wholesaleprice','tradeprice','dealerprice','netprice','costprice','buyingprice','purchaseprice','indkobspris','indkoebspris','engros'],
       'retail_price'=>['udsalgspris','udsalgsprisinklmoms','retailprice','retail','rrp','srp','salgspris','recommendedretailprice','vejledendeudsalgspris'],
       'abv'=>['abv','alc','alc%','alcohol','alcohol%','strength','vol','vol%'],
       'distillery'=>['destilleri','distillery','producer','producent'],
@@ -78,6 +78,7 @@ function hsg_supplier_detect_header(array $rows): array {
     $best=['row'=>-1,'score'=>-1,'map'=>[],'headers'=>[]];
     foreach(array_slice($rows,0,25,true) as $ri=>$row){$map=[];$score=0;$headers=[];
         foreach($row as $ci=>$cell){$cell=trim((string)$cell);if($cell==='')continue;$headers[$ci]=$cell;$n=hsg_supplier_norm($cell);
+            if($n==='')continue; // "?", "-" o.l. må ikke tælle som match på alle felter
             if(isset($reverse[$n])){$field=$reverse[$n];if(!isset($map[$field])){$map[$field]=$ci;$score+=in_array($field,['name','sku','cask_number','wholesale_price','retail_price'],true)?3:1;}}
             else{
                 foreach($aliases as $field=>$names){foreach($names as $alias){$an=hsg_supplier_norm($alias);if(strlen($an)>=5 && (str_contains($n,$an)||str_contains($an,$n))){if(!isset($map[$field])){$map[$field]=$ci;$score++;}break;}}}
@@ -100,24 +101,94 @@ function hsg_supplier_parse_decimal(mixed $v): ?float {
 
 function hsg_supplier_row_value(array $row,array $map,string $field): string {return isset($map[$field])?trim((string)($row[$map[$field]]??'')):'';}
 
-function hsg_supplier_source_fields(array $row,array $map): array {
+function hsg_supplier_is_stock_field(string $field): bool {return $field==='stock_quantity'||str_starts_with($field,'stock_loc_');}
+
+/** Har kolonnevalget mindst én kolonne valgt som "Lagerantal for <lokation>"? (tilstand L) */
+function hsg_supplier_map_has_locations(array $map): bool {
+    foreach(array_keys($map) as $k)if(str_starts_with((string)$k,'stock_loc_'))return true;
+    return false;
+}
+
+/** Rå celletekst afkortet til $max tegn + "…" (tegn, ikke bytes – æ, ø og å klippes ikke over). Ugyldig UTF-8 returneres uændret. */
+function hsg_supplier_short_text(string $s, int $max = 40): string {
+    if(preg_match('/^.{0,'.max(0,$max).'}/us',$s,$m)!==1)return $s;
+    return strlen($m[0])<strlen($s)?$m[0].'…':$s;
+}
+
+/**
+ * Én lagercelle (lokationscelle eller "Lagerantal i alt"): ['state'=>'blank'|'number'|'invalid', 'value'=>?int, 'text'=>string].
+ * - Mellemrum (også hårde mellemrum U+00A0/U+202F) i begyndelsen og slutningen fjernes. Er der intet tilbage, er cellen tom.
+ * - Et tal er valgfrit minus, 1–5 cifre (0–9, også foranstillede nuller) og højst én decimal-separator (. eller ,) med
+ *   cifre efter – men ikke præcis tre cifre efter separatoren. Værdien afrundes én gang (,5 væk fra 0), og negative
+ *   tal bliver 0.
+ * - Alt andet er ugyldigt ("3 + 2", "53 stk.", "?", "1.234", "000041", EAN …), og text er den afkortede tekst.
+ *   Ugyldig UTF-8 er altid ugyldig (aldrig tom), og teksten afkortes da ikke.
+ */
+function hsg_supplier_stock_cell(mixed $v): array {
+    $t=preg_replace('/^[\s\x{00A0}\x{202F}]+|[\s\x{00A0}\x{202F}]+$/u','',(string)$v);
+    if($t===null)return ['state'=>'invalid','value'=>null,'text'=>trim((string)$v)];
+    if($t==='')return ['state'=>'blank','value'=>null,'text'=>''];
+    if(preg_match('/^-?[0-9]{1,5}(?:[.,]([0-9]+))?$/',$t,$m)===1&&strlen($m[1]??'')!==3){
+        // Højst én separator, så den er altid decimaltegnet (også "40,999999999999993").
+        return ['state'=>'number','value'=>max(0,(int)round((float)str_replace(',','.',$t))),'text'=>$t];
+    }
+    return ['state'=>'invalid','value'=>null,'text'=>hsg_supplier_short_text($t)];
+}
+
+/**
+ * Kims lokationstal for én række (tilstand L). Hver celle vurderes med hsg_supplier_stock_cell: tal (også 0) bruges,
+ * tomme celler tæller som 0, hvis mindst én anden valgt lokationscelle i rækken har et tal – ellers bidrager rækken
+ * ikke med lager. Ugyldig tekst ændrer ikke lokationen.
+ * Returnerer ['values'=>[stock_loc_x=>int], 'blank'=>[stock_loc_x, …], 'invalid'=>[stock_loc_x=>afkortet tekst]].
+ */
+function hsg_supplier_location_cells(array $row, array $map): array {
+    $numbers=[];$blank=[];$invalid=[];
+    foreach($map as $fieldKey=>$colIdx){
+        $fieldKey=(string)$fieldKey;
+        if(!str_starts_with($fieldKey,'stock_loc_'))continue;
+        $cell=hsg_supplier_stock_cell(trim((string)($row[$colIdx]??'')));
+        if($cell['state']==='blank')$blank[]=$fieldKey;
+        elseif($cell['state']==='invalid')$invalid[$fieldKey]=$cell['text'];
+        else $numbers[$fieldKey]=(int)$cell['value'];
+    }
+    $values=[];
+    if($numbers){
+        foreach(array_keys($map) as $fieldKey){
+            $fieldKey=(string)$fieldKey;
+            if(isset($numbers[$fieldKey]))$values[$fieldKey]=$numbers[$fieldKey];
+            elseif(in_array($fieldKey,$blank,true))$values[$fieldKey]=0;
+        }
+    }
+    return ['values'=>$values,'blank'=>$blank,'invalid'=>$invalid];
+}
+
+/**
+ * Feltværdier fra én filrække.
+ * - Tilstand L (lokationskolonner valgt): stock_loc_* efter reglen for tomme celler og Kims total som stock_file_total
+ *   (kun kontroltal). Aldrig stock_quantity.
+ * - Tilstand T (kun "Lagerantal i alt"): med $fallbackLocationId skrives totalen som stock_loc_<første lokation> og
+ *   stock_file_total. Uden fallback-id som stock_quantity (som før).
+ * "Lagerantal i alt" følger samme celleregel som lokationscellerne (hsg_supplier_stock_cell). Er cellen ugyldig, skrives
+ * intet lager og intet kontroltal; den afkortede tekst lægges i den interne nøgle stock_file_total_invalid, som
+ * hsg_supplier_merge_raw_items fjerner fra source igen.
+ */
+function hsg_supplier_source_fields(array $row,array $map,?int $fallbackLocationId=null): array {
     $name=hsg_supplier_row_value($row,$map,'name');$fields=[];
     foreach(['sku','name','distillery','age_text','brand_name','category','country','cask_type','cask_number','bottle_count'] as $f){$v=hsg_supplier_row_value($row,$map,$f);if($v!=='')$fields[$f]=$v;}
     foreach(['wholesale_price','retail_price','abv','bottle_size_cl'] as $f){$v=hsg_supplier_row_value($row,$map,$f);$n=hsg_supplier_parse_decimal($v);if($n!==null)$fields[$f]=$n;}
     $vy=hsg_supplier_row_value($row,$map,'vintage_year');if(preg_match('/\b(19|20)\d{2}\b/',$vy,$m))$fields['vintage_year']=(int)$m[0];
-    $sq=hsg_supplier_row_value($row,$map,'stock_quantity');
-    if($sq!==''){
-        $sqNum=hsg_supplier_parse_decimal($sq);
-        if($sqNum!==null)$fields['stock_quantity']=(int)max(0,round($sqNum));
+    $total=null;
+    if(isset($map['stock_quantity'])){
+        $cell=hsg_supplier_stock_cell(hsg_supplier_row_value($row,$map,'stock_quantity'));
+        if($cell['state']==='number')$total=(int)$cell['value'];
+        elseif($cell['state']==='invalid')$fields['stock_file_total_invalid']=$cell['text'];
     }
-    foreach($map as $fieldKey=>$colIdx){
-        if(str_starts_with($fieldKey,'stock_loc_')){
-            $sv=hsg_supplier_row_value($row,$map,$fieldKey);
-            if($sv!==''){
-                $svNum=hsg_supplier_parse_decimal($sv);
-                if($svNum!==null)$fields[$fieldKey]=(int)max(0,round($svNum));
-            }
-        }
+    if(hsg_supplier_map_has_locations($map)){
+        foreach(hsg_supplier_location_cells($row,$map)['values'] as $fieldKey=>$qty)$fields[$fieldKey]=$qty;
+        if($total!==null)$fields['stock_file_total']=$total;
+    }elseif($total!==null){
+        if($fallbackLocationId!==null&&$fallbackLocationId>0){$fields['stock_loc_'.$fallbackLocationId]=$total;$fields['stock_file_total']=$total;}
+        else $fields['stock_quantity']=$total;
     }
     if($name!==''){
         $parsed=hsg_product_parse_text($name);foreach((array)($parsed['fields']??[]) as $f=>$v)if(!isset($fields[$f])&&$v!==null&&trim((string)$v)!=='')$fields[$f]=$v;
@@ -135,7 +206,8 @@ function hsg_supplier_match_score(array $src,array $p): array {
     $reasons=[];$score=0;
     $sku=trim((string)($src['sku']??''));if($sku!==''&&strcasecmp($sku,(string)$p['sku'])===0)return ['score'=>100,'reason'=>'SKU er identisk'];
     $cask=strtoupper(trim((string)($src['cask_number']??'')));$pcask=strtoupper(trim((string)($p['cask_number']??'')));
-    if($cask!==''&&$pcask!==''&&$cask===$pcask){$score=98;$reasons[]='fadnummer er identisk';}
+    // Et fadnummer uden ciffer (fx STRENGTH fra "Cask Strength") er ikke et fadnummer og giver ikke et match.
+    if($cask!==''&&$pcask!==''&&$cask===$pcask&&preg_match('/\d/',$cask)===1){$score=98;$reasons[]='fadnummer er identisk';}
     $name=trim((string)($src['name']??''));if($name!==''){
         $a=hsg_supplier_name_key($name);$b=hsg_supplier_name_key((string)$p['name']);
         if($a!==''&&$a===$b){$score=max($score,96);$reasons[]='produktnavn er identisk';}
@@ -201,9 +273,47 @@ function hsg_supplier_remember_columns(PDO $pdo, array $headers, array $colMap):
 }
 
 /**
- * Foreslår HSG-felt pr. kolonne. Kolonner, hvis overskrift fandtes i seneste upload, får præcis
- * det valg, der blev brugt sidst – også "Ignorer kolonne". Kun nye overskrifter gættes automatisk,
- * og felter, der bevidst stod uden kolonne sidst, gættes ikke igen.
+ * K4: Ligner overskriften et beløb (værdi, pris, kostpris, moms, kr., DKK …)? Så må kolonnen aldrig bruges som lagerantal.
+ */
+function hsg_supplier_header_is_money(string $header): bool {
+    $n=hsg_supplier_norm($header);
+    if($n!==''){
+        foreach(['vaerdi','value','pris','price','kost','cost','belob','amount','moms'] as $word)if(str_contains($n,$word))return true;
+    }
+    return preg_match('/(?<![\p{L}\p{N}])(?:kr|dkk|eur|usd)(?![\p{L}\p{N}])/iu',$header)===1;
+}
+
+/** K2/K4: Må et gæt (eller et husket/manuelt valg) knytte feltet til denne overskrift? */
+function hsg_supplier_guess_allowed(string $field, string $header): bool {
+    if(hsg_supplier_is_stock_field($field)&&hsg_supplier_header_is_money($header))return false;
+    $n=hsg_supplier_norm($header);
+    $contains=static function(array $words) use ($n): bool {foreach($words as $w)if(str_contains($n,$w))return true;return false;};
+    if($field==='retail_price'&&$contains(['engros','wholesale','netto','dealer','trade','indkob','kost','cost']))return false;
+    if($field==='wholesale_price'&&$contains(['udsalg','vejl','retail','rrp','inklmoms']))return false;
+    return true;
+}
+
+/**
+ * Huskede valg, der ikke bruges, fordi en beløbskolonne var knyttet til lager (K4): [kolonneindeks => afvist felt].
+ */
+function hsg_supplier_rejected_saved_columns(array $headers, array $savedHeaderMap): array {
+    $rejected=[];
+    foreach(hsg_supplier_header_keys($headers) as $ci=>$key){
+        if($key===''||!array_key_exists($key,$savedHeaderMap))continue;
+        $savedField=trim((string)$savedHeaderMap[$key]);
+        if($savedField!==''&&hsg_supplier_is_stock_field($savedField)&&hsg_supplier_header_is_money((string)$headers[$ci]))$rejected[(int)$ci]=$savedField;
+    }
+    return $rejected;
+}
+
+/**
+ * Foreslår HSG-felt pr. kolonne (K1–K5):
+ * 1. Husket valg fra seneste upload bruges først – også "Ignorer kolonne". En beløbskolonne, der var husket som lager, afvises.
+ *    Felter, der bevidst stod uden kolonne sidst, gættes ikke igen.
+ * 2. Præcise alias-match for de øvrige kolonner fra venstre mod højre (første kolonne pr. felt vinder).
+ * 3. Delvise match for de kolonner, der stadig er tomme – kun til felter, der ikke er brugt. To trin: først hvor
+ *    overskriften indeholder et alias, derefter hvor aliaset indeholder overskriften.
+ * Lokationskolonner gættes aldrig automatisk.
  */
 function hsg_supplier_suggest_columns(array $headers, array $savedHeaderMap = [], ?array $allowedFields = null): array {
     $aliases=hsg_supplier_aliases();$reverse=[];
@@ -214,31 +324,61 @@ function hsg_supplier_suggest_columns(array $headers, array $savedHeaderMap = []
         if($key===''||!array_key_exists($key,$savedHeaderMap))continue;
         $savedField=trim((string)$savedHeaderMap[$key]);
         if($savedField===''){$colMap[$ci]='';continue;}
+        if(hsg_supplier_is_stock_field($savedField)&&hsg_supplier_header_is_money((string)$headers[$ci])){$colMap[$ci]='';continue;}
         if($isAllowed($savedField)&&!in_array($savedField,$usedFields,true)){$colMap[$ci]=$savedField;$usedFields[]=$savedField;}
     }
     $mappedLast=array_filter(array_map(static fn($f)=>trim((string)$f),$savedHeaderMap),static fn($f)=>$f!=='');
     $blocked=$savedHeaderMap?array_diff(array_keys($aliases),$mappedLast):[];
+    $available=static function(string $f) use (&$usedFields,$blocked): bool {return !in_array($f,$usedFields,true) && !in_array($f,$blocked,true);};
+
+    // Gennemløb 1: præcise match.
+    $pending=[];
     foreach($headers as $ci=>$cell){
         $ci=(int)$ci;
         if(array_key_exists($ci,$colMap))continue;
         $cell=trim((string)$cell);if($cell===''){$colMap[$ci]='';continue;}
         $n=hsg_supplier_norm($cell);
-        $matched=null;
-        if(isset($reverse[$n])){$matched=$reverse[$n];}
-        else{
+        $exact=$reverse[$n]??null;
+        if($exact!==null&&$available($exact)&&hsg_supplier_guess_allowed($exact,$cell)){$colMap[$ci]=$exact;$usedFields[]=$exact;continue;}
+        $pending[$ci]=[$cell,$n];
+    }
+    // Gennemløb 2: delvise match i to trin, begge fra venstre mod højre.
+    //   2a: overskriften indeholder et alias ("Retail Price (inc VAT)" → udsalgspris).
+    //   2b: aliaset indeholder overskriften ("Price" → første ledige prisfelt) – først når 2a har taget sine felter.
+    // Produktnavn kræver et alias på mindst 8 tegn (whisky, navn, item … kun præcist).
+    foreach([true,false] as $headerContainsAlias){
+        foreach($pending as $ci=>[$cell,$n]){
+            if(isset($colMap[$ci])||$n==='')continue;
             foreach($aliases as $field=>$names){
+                if(!$available($field)||!hsg_supplier_guess_allowed($field,$cell))continue;
+                $minLength=$field==='name'?8:4;
                 foreach($names as $alias){
                     $an=hsg_supplier_norm($alias);
-                    if(strlen($an)>=4 && (str_contains($n,$an)||str_contains($an,$n))){$matched=$field;break 2;}
+                    if(strlen($an)>=$minLength && ($headerContainsAlias?str_contains($n,$an):str_contains($an,$n))){$colMap[$ci]=$field;$usedFields[]=$field;break 2;}
                 }
             }
         }
-        if($matched && !in_array($matched,$usedFields,true) && !in_array($matched,$blocked,true)){
-            $usedFields[]=$matched;
-            $colMap[$ci]=$matched;
-        } else {
-            $colMap[$ci]='';
-        }
+    }
+    foreach(array_keys($pending) as $ci)if(!isset($colMap[$ci]))$colMap[$ci]='';
+    ksort($colMap);
+    return $colMap;
+}
+
+/**
+ * K6 – "Gæt kolonner forfra": gætter uden husket valg og lægger bagefter de huskede lokationskolonner
+ * (stock_loc_*) ind igen på kolonner, der står tomme efter gættet. Gemmer intet.
+ */
+function hsg_supplier_reguess_columns(array $headers, array $savedHeaderMap, ?array $allowedFields = null): array {
+    $colMap=hsg_supplier_suggest_columns($headers,[],$allowedFields);
+    $aliases=hsg_supplier_aliases();
+    $isAllowed=static fn(string $f): bool => $allowedFields!==null ? in_array($f,$allowedFields,true) : (isset($aliases[$f])||str_starts_with($f,'stock_loc_'));
+    $usedFields=array_values(array_filter($colMap,static fn($f)=>$f!==''));
+    foreach(hsg_supplier_header_keys($headers) as $ci=>$key){
+        if($key===''||!array_key_exists($key,$savedHeaderMap))continue;
+        $savedField=trim((string)$savedHeaderMap[$key]);
+        if(!str_starts_with($savedField,'stock_loc_')||!$isAllowed($savedField)||in_array($savedField,$usedFields,true))continue;
+        if(($colMap[$ci]??'')!==''||hsg_supplier_header_is_money((string)$headers[$ci]))continue;
+        $colMap[$ci]=$savedField;$usedFields[]=$savedField;
     }
     ksort($colMap);
     return $colMap;
@@ -254,16 +394,82 @@ function hsg_supplier_base_sku(string $sku): string {
     return $s;
 }
 
-/** Lægger en ekstra filrække oven i en primær række: lagerfelter summeres, øvrige felter udfylder kun tomme felter. */
+/**
+ * Lægger en ekstra filrække oven i en primær række: lagerfelter summeres, øvrige felter udfylder kun tomme felter.
+ * Den interne nøgle stock_file_total_invalid er ikke et lagerfelt: den første ikke-tomme værdi bevares (den primære
+ * række først), og hsg_supplier_merge_raw_items gør så hele gruppens total ugyldig.
+ */
 function hsg_supplier_merge_source(array $primary, array $extra): array {
     foreach($extra as $k=>$v){
-        if($k==='stock_quantity'||str_starts_with($k,'stock_loc_')){$primary[$k]=(int)($primary[$k]??0)+(int)$v;continue;}
+        if($k==='stock_quantity'||$k==='stock_file_total'||str_starts_with($k,'stock_loc_')){$primary[$k]=(int)($primary[$k]??0)+(int)$v;continue;}
         if((!isset($primary[$k])||trim((string)$primary[$k])==='')&&$v!==null&&trim((string)$v)!=='')$primary[$k]=$v;
     }
     return $primary;
 }
 
-function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $products, ?int $brandId = null, int $start = 1, ?PDO $pdo = null): array {
+/**
+ * Er to rækker (eller en række og et HSG-produkt) den samme vare? Bruges før bogstav-varenumre og enheder,
+ * der matcher samme HSG-produkt, flettes. Nøgler: name, distillery, cask_number, vintage_year, age_text.
+ * Stopregler: forskelligt fadnummer, kendt destilleri, årgang eller alder afviser altid. Et fadnummer uden ciffer
+ * tæller som tomt.
+ * Navneregler: samme navn, næsten samme navn (≥ 90 %), lignende navn (≥ 75 %) og samme kendte destilleri,
+ * eller navn mangler på den ene side og samme kendte destilleri. Ellers afvist.
+ * Returnerer ['ok'=>bool, 'reason'=>string].
+ */
+function hsg_supplier_variant_compatible(array $a, array $b): array {
+    // Et fadnummer uden ciffer (fx FINISH fra "Cask Finish", STRENGTH fra "Cask Strength") tæller som tomt.
+    $caskOf=static function(array $x): string {
+        $c=strtoupper(preg_replace('/[#\s]+/u','',trim((string)($x['cask_number']??'')))??'');
+        return preg_match('/\d/',$c)===1?$c:'';
+    };
+    $caskA=$caskOf($a);$caskB=$caskOf($b);
+    if($caskA!==''&&$caskB!==''&&$caskA!==$caskB)return ['ok'=>false,'reason'=>'forskelligt fadnummer (#'.$caskA.' / #'.$caskB.')'];
+
+    $unknown=['','na','ukendt','unknown','diverse'];
+    $distRawA=trim((string)($a['distillery']??''));$distRawB=trim((string)($b['distillery']??''));
+    $distA=hsg_supplier_norm($distRawA);$distB=hsg_supplier_norm($distRawB);
+    $knownA=!in_array($distA,$unknown,true);$knownB=!in_array($distB,$unknown,true);
+    if($knownA&&$knownB&&$distA!==$distB)return ['ok'=>false,'reason'=>'forskelligt destilleri ('.$distRawA.' / '.$distRawB.')'];
+    $sameDistillery=$knownA&&$knownB&&$distA===$distB;
+
+    $yearA=(int)trim((string)($a['vintage_year']??''));$yearB=(int)trim((string)($b['vintage_year']??''));
+    if($yearA>0&&$yearB>0&&$yearA!==$yearB)return ['ok'=>false,'reason'=>'forskellig årgang ('.$yearA.' / '.$yearB.')'];
+
+    $ageRawA=trim((string)($a['age_text']??''));$ageRawB=trim((string)($b['age_text']??''));
+    if(preg_match('/\d+/',$ageRawA,$ma)&&preg_match('/\d+/',$ageRawB,$mb)&&(int)$ma[0]!==(int)$mb[0])return ['ok'=>false,'reason'=>'forskellig alder ('.$ageRawA.' / '.$ageRawB.')'];
+
+    $nameA=trim((string)($a['name']??''));$nameB=trim((string)($b['name']??''));
+    $keyA=$nameA!==''?hsg_supplier_name_key($nameA):'';$keyB=$nameB!==''?hsg_supplier_name_key($nameB):'';
+    if($keyA!==''&&$keyB!==''){
+        if($keyA===$keyB)return ['ok'=>true,'reason'=>'samme navn'];
+        $pct=0.0;similar_text($keyA,$keyB,$pct);
+        if($pct>=90)return ['ok'=>true,'reason'=>'næsten samme navn'];
+        if($pct>=75&&$sameDistillery)return ['ok'=>true,'reason'=>'samme destilleri og lignende navn'];
+        return ['ok'=>false,'reason'=>'navnene er forskellige („'.$nameA.'“ / „'.$nameB.'“)'];
+    }
+    if(($keyA==='')!==($keyB==='')&&$sameDistillery)return ['ok'=>true,'reason'=>'samme destilleri'];
+    return ['ok'=>false,'reason'=>'for få oplysninger til at afgøre, om det er samme vare'];
+}
+
+/**
+ * Samler filrækkerne til varer og finder match i HSG.
+ * $options: fallback_location_id (?int, første aktive lokation – bruges når kun "Lagerantal i alt" er valgt),
+ *           location_names ([id => navn], til bemærkninger) og add_reserved (bool, læg aktive reservationer oven i).
+ * Produkterne kan have stock_loc_<id> (fysisk lager) og reserved_loc_<id> (aktive reservationer).
+ */
+function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $products, ?int $brandId = null, int $start = 1, ?PDO $pdo = null, array $options = []): array {
+    $fallbackLid = (int)($options['fallback_location_id'] ?? 0) > 0 ? (int)$options['fallback_location_id'] : null;
+    $locationNames = (array)($options['location_names'] ?? []);
+    $addReserved = !empty($options['add_reserved']);
+    $locKeys = [];
+    foreach(array_keys($fieldMap) as $f) if(str_starts_with((string)$f, 'stock_loc_')) $locKeys[] = (string)$f;
+    $stockMode = $locKeys ? 'locations' : (array_key_exists('stock_quantity', $fieldMap) ? 'total' : 'none');
+    $locLabel = static function(string $key) use ($locationNames): string {
+        $id = (int)substr($key, 10);
+        $name = trim((string)($locationNames[$id] ?? ''));
+        return $name !== '' ? $name : 'lokation #'.$id;
+    };
+
     $byId = [];$bySku = [];
     foreach($products as $p) {
         $byId[(int)$p['id']] = $p;
@@ -271,9 +477,11 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
         if($k !== '') $bySku[$k][] = (int)$p['id'];
     }
 
+    $noCells = ['values' => [], 'blank' => [], 'invalid' => []];
     $parsedRows = [];
     foreach($rawRows as $i => $row) {
-        $src = hsg_supplier_source_fields((array)$row, $fieldMap);
+        $row = (array)$row;
+        $src = hsg_supplier_source_fields($row, $fieldMap, $fallbackLid);
         if(!$src || (empty($src['name']) && empty($src['sku']) && empty($src['cask_number']))) continue;
         $sku = trim((string)($src['sku'] ?? ''));
         $parsedRows[] = [
@@ -281,27 +489,57 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
             'src' => $src,
             'sku' => $sku,
             'sku_key' => strtoupper($sku),
-            'base_sku' => hsg_supplier_base_sku($sku)
+            'base_sku' => hsg_supplier_base_sku($sku),
+            'cells' => $stockMode === 'locations' ? hsg_supplier_location_cells($row, $fieldMap) : $noCells,
         ];
     }
     $fileSkus = [];
-    foreach($parsedRows as $pRow) if($pRow['sku_key'] !== '') $fileSkus[$pRow['sku_key']] = true;
+    foreach($parsedRows as $pRow) if($pRow['sku_key'] !== '' && !isset($fileSkus[$pRow['sku_key']])) $fileSkus[$pRow['sku_key']] = $pRow;
 
-    // 1) Rækker med samme varenummer samles. En bogstav-variant (17-1028a) samles under varenummeret
-    //    uden bogstav (17-1028), men kun hvis det findes i filen eller i HSG. Ellers står varianten alene.
-    $baseMatches = [];$units = [];
+    // 1) Rækker med samme varenummer samles. En bogstav-variant (17-1028a) samles under varenummeret uden bogstav
+    //    (17-1028), hvis det findes i filen eller i HSG – men kun hvis det er samme vare (navn, fad, destilleri, årgang, alder).
+    //    Ellers står varianten alene, og dens match må aldrig pege på HSG-produktet med basens varenummer.
+    //    Basens ejer (gemt alias for basen, ellers produktet med basens SKU) findes uden brand-filter og bruges kun til at
+    //    udelukke og til kompatibilitetstjekket. Fletning ind i basen kræver stadig et match med brand-filteret.
+    $baseMatches = [];$baseOwners = [];$units = [];
+    $ownerOf = static function(string $base) use (&$baseOwners, &$baseMatches, $products, $brandId, $pdo): int {
+        if(!array_key_exists($base, $baseOwners)) {
+            // Uden brand-filter er ejeren det samme som matchet, så et allerede beregnet match genbruges.
+            $baseOwners[$base] = (!$brandId && array_key_exists($base, $baseMatches)) ? $baseMatches[$base] : hsg_supplier_find_match(['sku' => $base], $products, null, $pdo);
+        }
+        return (int)($baseOwners[$base]['id'] ?? 0);
+    };
     foreach($parsedRows as $pRow) {
-        $key = $pRow['sku_key'];
+        $key = $pRow['sku_key'];$split = null;$mergeReason = null;
         if($key !== '' && $pRow['base_sku'] !== $key) {
             $base = $pRow['base_sku'];
-            if(!isset($fileSkus[$base]) && !array_key_exists($base, $baseMatches)) {
-                $baseMatches[$base] = hsg_supplier_find_match(['sku' => $base], $products, $brandId, $pdo);
+            if(isset($fileSkus[$base])) {
+                // F1: basen står i filen.
+                $cmp = hsg_supplier_variant_compatible($pRow['src'], $fileSkus[$base]['src']);
+                if($cmp['ok']) { $key = $base; $mergeReason = $cmp['reason']; }
+                else {
+                    $ownerPid = $ownerOf($base);
+                    $split = ['base' => $fileSkus[$base]['sku'], 'reason' => $cmp['reason'], 'exclude' => array_values(array_unique(array_merge($bySku[$base] ?? [], $ownerPid > 0 ? [$ownerPid] : [])))];
+                }
+            } else {
+                // F2: basen findes kun i HSG.
+                if(!array_key_exists($base, $baseMatches)) $baseMatches[$base] = hsg_supplier_find_match(['sku' => $base], $products, $brandId, $pdo);
+                $matchPid = (int)($baseMatches[$base]['id'] ?? 0);
+                $ownerPid = $ownerOf($base);
+                $targetPid = $matchPid > 0 ? $matchPid : $ownerPid;
+                if($targetPid > 0) {
+                    $cmp = hsg_supplier_variant_compatible($pRow['src'], $byId[$targetPid] ?? []);
+                    if(!$cmp['ok']) $split = ['base' => (string)($byId[$targetPid]['sku'] ?? $base), 'reason' => $cmp['reason'], 'exclude' => array_values(array_unique(array_merge($bySku[$base] ?? [], array_values(array_filter([$matchPid, $ownerPid], static fn(int $id): bool => $id > 0)))))];
+                    elseif($matchPid > 0) { $key = $base; $mergeReason = $cmp['reason']; }
+                    // Kompatibel, men kun ejeren fandtes (uden for brand-filteret): ingen fletning og intet split.
+                }
             }
-            if(isset($fileSkus[$base]) || (int)($baseMatches[$base]['id'] ?? 0) > 0) $key = $base;
         }
         $unitKey = $key !== '' ? 'sku_'.$key : 'row_'.$pRow['original_row'];
         $units[$unitKey]['base'] = $key;
         $units[$unitKey]['rows'][] = $pRow;
+        if($mergeReason !== null && !isset($units[$unitKey]['merge_reasons'][$pRow['sku_key']])) $units[$unitKey]['merge_reasons'][$pRow['sku_key']] = $mergeReason;
+        if($split !== null && !isset($units[$unitKey]['split'])) $units[$unitKey]['split'] = $split;
     }
 
     $merged = [];
@@ -315,15 +553,23 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
             if($ri !== $primaryIdx) $src = hsg_supplier_merge_source($src, $r['src']);
             if($r['sku_key'] !== $base && !isset($variants[$r['sku_key']])) $variants[$r['sku_key']] = $r['sku'];
         }
-        $variants = array_values($variants);
+
+        $notes = [];$flags = [];$candidates = $products;
+        if(!empty($u['split'])) {
+            $sp = $u['split'];
+            $flags[] = 'variant_split';
+            $notes[] = 'Bemærk: '.$rows[0]['sku'].' er ikke flettet med '.$sp['base'].': '.$sp['reason'].'. Varen behandles som sit eget varenummer og er ikke valgt på forhånd.';
+            $exclude = array_flip(array_map('intval', (array)$sp['exclude']));
+            $candidates = array_values(array_filter($products, static fn($p) => !isset($exclude[(int)$p['id']])));
+        }
 
         if($base !== '' && !isset($fileSkus[$base])) {
-            // Kun bogstav-varianten står i filen, men varenummeret uden bogstav findes i HSG.
+            // Kun bogstav-varianten står i filen, men varenummeret uden bogstav findes i HSG (og det er samme vare).
             $match = $baseMatches[$base];
             $match['reason'] = 'Varenummer '.$base.' findes i HSG – bogstav-varianten flettes ind';
             $src['sku'] = (string)($byId[(int)$match['id']]['sku'] ?? $base);
         } else {
-            $match = hsg_supplier_find_match($src, $products, $brandId, $pdo);
+            $match = hsg_supplier_find_match($src, $candidates, $brandId, $pdo);
         }
         if((int)$match['id'] === 0) {
             // Undgå dubletter: findes en bogstav-variant allerede som produkt i HSG, bruges det.
@@ -333,30 +579,52 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
             }
         }
 
-        $notes = [];
-        if($variants) $notes[] = 'Lagerantal fra '.implode(', ', $variants).' er lagt sammen med '.($src['sku'] ?? $base).'.';
+        $byReason = [];
+        foreach($variants as $vKey => $v) $byReason[(string)($u['merge_reasons'][$vKey] ?? 'samme vare')][] = $v;
+        foreach($byReason as $reason => $vs) $notes[] = 'Lagerantal fra '.implode(', ', $vs).' er lagt sammen med '.($src['sku'] ?? $base).' ('.$reason.').';
         foreach($variants as $v) {
             foreach($bySku[strtoupper($v)] ?? [] as $vpid) {
                 if($vpid === (int)$match['id'] || ($byId[$vpid]['status'] ?? '') === 'discontinued') continue;
                 $notes[] = 'Bemærk: '.$v.' findes også som selvstændigt produkt i HSG (lager '.(int)($byId[$vpid]['stock_quantity'] ?? 0).' stk.). Det ændres ikke – sæt det som udgået, så lageret ikke tælles dobbelt.';
             }
         }
-        $merged[] = ['rows' => array_column($rows, 'original_row'), 'source' => $src, 'match' => $match, 'merged_skus' => $variants, 'notes' => $notes];
+        $merged[] = ['rows' => array_column($rows, 'original_row'), 'cells' => array_column($rows, 'cells'), 'source' => $src, 'match' => $match, 'merged_skus' => array_values($variants), 'notes' => $notes, 'flags' => $flags];
     }
 
-    // 2) Enheder, der matcher samme HSG-produkt, flettes også (lagerantal lægges sammen).
+    // 2) Enheder, der matcher samme HSG-produkt, flettes (lagerantal lægges sammen) – men kun hvis de er samme vare.
+    //    Ellers beholder den bedste enhed matchet, og de andre skal vælges manuelt.
     $grouped = [];
     foreach($merged as $mi => $m) {
         $pid = (int)$m['match']['id'];
-        $groupKey = $pid > 0 ? 'pid_'.$pid : 'unit_'.$mi;
+        if($pid <= 0) { $grouped['unit_'.$mi] = $m; continue; }
+        $groupKey = 'pid_'.$pid;
         if(!isset($grouped[$groupKey])) { $grouped[$groupKey] = $m; continue; }
         $g = $grouped[$groupKey];
-        $g['rows'] = array_merge($g['rows'], $m['rows']);
-        $g['source'] = hsg_supplier_merge_source($g['source'], $m['source']);
-        $g['merged_skus'] = array_values(array_unique(array_merge($g['merged_skus'], $m['merged_skus'])));
-        $g['notes'] = array_values(array_unique(array_merge($g['notes'], $m['notes'])));
-        if($m['match']['score'] > $g['match']['score']) $g['match'] = $m['match'];
-        $grouped[$groupKey] = $g;
+        $cmp = hsg_supplier_variant_compatible($g['source'], $m['source']);
+        if($cmp['ok']) {
+            $g['rows'] = array_merge($g['rows'], $m['rows']);
+            $g['cells'] = array_merge($g['cells'], $m['cells']);
+            $g['source'] = hsg_supplier_merge_source($g['source'], $m['source']);
+            $g['merged_skus'] = array_values(array_unique(array_merge($g['merged_skus'], $m['merged_skus'])));
+            $g['notes'] = array_values(array_unique(array_merge($g['notes'], $m['notes'])));
+            $g['flags'] = array_values(array_unique(array_merge($g['flags'], $m['flags'])));
+            if($m['match']['score'] > $g['match']['score']) $g['match'] = $m['match'];
+            $grouped[$groupKey] = $g;
+            continue;
+        }
+        $productSku = strtoupper(trim((string)($byId[$pid]['sku'] ?? '')));
+        $skuIs = static fn(array $unit): bool => $productSku !== '' && strtoupper(trim((string)($unit['source']['sku'] ?? ''))) === $productSku;
+        $gScore = (int)$g['match']['score'];$mScore = (int)$m['match']['score'];
+        $newWins = $mScore > $gScore || ($mScore === $gScore && $skuIs($m) && !$skuIs($g));
+        [$winner, $loser] = $newWins ? [$m, $g] : [$g, $m];
+        $winnerLabel = trim((string)($winner['source']['sku'] ?? ''));
+        if($winnerLabel === '') $winnerLabel = trim((string)($winner['source']['name'] ?? ''));
+        if($winnerLabel === '') $winnerLabel = 'filrække #'.(int)$winner['rows'][0];
+        $loser['match'] = ['id' => 0, 'score' => 0, 'reason' => 'Matcher samme HSG-produkt som '.$winnerLabel.' – vælg manuelt'];
+        $loser['notes'][] = 'Bemærk: Matcher samme HSG-produkt som '.$winnerLabel.', men er en anden vare: '.$cmp['reason'].'. Vælg produkt manuelt eller opret nyt.';
+        $loser['flags'][] = 'match_conflict';
+        $grouped[$groupKey] = $winner;
+        $grouped['conflict_'.$pid.'_'.$mi] = $loser;
     }
 
     $items = [];
@@ -364,20 +632,83 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
         $src = $g['source'];
         $match = $g['match'];
         $pid = (int)$match['id'];
-        $changes = [];
-        if ($pid && isset($byId[$pid])) {
-            $changes = hsg_supplier_changes_for_product($src, $byId[$pid]);
+        $product = $pid > 0 ? ($byId[$pid] ?? null) : null;
+        $notes = $g['notes'];
+        $flags = $g['flags'];
+
+        // Kims lagertal (før reservationstillæg). Ugyldig tekst i en lokationscelle ændrer aldrig lokationen.
+        $invalid = [];$numeric = [];
+        foreach($g['cells'] as $c) {
+            foreach((array)$c['invalid'] as $k => $raw) if(!isset($invalid[$k])) $invalid[$k] = (string)$raw;
+            foreach((array)$c['values'] as $k => $v) if(!in_array($k, (array)$c['blank'], true)) $numeric[$k] = true;
         }
+        foreach(array_keys($invalid) as $k) unset($src[$k]);
+        // Ugyldig "Lagerantal i alt" i blot én af de flettede rækker gør gruppens total ugyldig: ingen delsum skrives eller
+        // bruges som kontroltal. I tilstand T kommer stock_loc_* kun fra totalen og fjernes også. Nøglen når aldrig changes.
+        $totalInvalid = isset($src['stock_file_total_invalid']) ? (string)$src['stock_file_total_invalid'] : null;
+        unset($src['stock_file_total_invalid']);
+        if($totalInvalid !== null) {
+            unset($src['stock_file_total'], $src['stock_quantity']);
+            if($stockMode === 'total') foreach(array_keys($src) as $k) if(str_starts_with((string)$k, 'stock_loc_')) unset($src[$k]);
+        }
+        $stockFile = ['mode' => $stockMode, 'locations' => [], 'blank' => [], 'invalid' => $invalid, 'total' => isset($src['stock_file_total']) ? (int)$src['stock_file_total'] : null, 'total_invalid' => $totalInvalid, 'sum' => 0];
+        if($stockMode === 'locations') {
+            foreach($locKeys as $k) {
+                if(array_key_exists($k, $src)) $stockFile['locations'][$k] = (int)$src[$k];
+                if(!isset($numeric[$k]) && !isset($invalid[$k])) $stockFile['blank'][] = $k;
+            }
+        } elseif($stockMode === 'total') {
+            foreach($src as $k => $v) if(str_starts_with((string)$k, 'stock_loc_')) $stockFile['locations'][$k] = (int)$v;
+            if($stockFile['total'] === null && isset($src['stock_quantity'])) $stockFile['total'] = (int)$src['stock_quantity'];
+        }
+        $stockFile['sum'] = $stockFile['locations'] ? array_sum($stockFile['locations']) : (int)($stockFile['total'] ?? 0);
+        if($stockMode === 'none') $stockFile['sum'] = 0;
+
+        $reserved = [];
+        if($product) {
+            foreach($product as $k => $v) {
+                if(str_starts_with((string)$k, 'reserved_loc_') && (int)$v > 0) $reserved['stock_loc_'.substr((string)$k, 13)] = (int)$v;
+            }
+        }
+
+        if($stockMode === 'locations') {
+            if(!$stockFile['locations']) $notes[] = 'Bemærk: Ingen tal i lokationskolonnerne – lageret ændres ikke.';
+            foreach($invalid as $k => $raw) $notes[] = 'Bemærk: Ugyldig værdi „'.$raw.'“ for '.$locLabel($k).' – lokationen ændres ikke.';
+            if($totalInvalid !== null) $notes[] = 'Bemærk: Ugyldig værdi „'.$totalInvalid.'“ for lagerantal i alt – bruges ikke som kontroltal.';
+            if($stockFile['total'] !== null && $stockFile['locations'] && $stockFile['sum'] !== $stockFile['total']) {
+                $notes[] = 'Bemærk: Summen af lokationskolonnerne ('.$stockFile['sum'].') passer ikke med lagerantal i alt ('.$stockFile['total'].'). Tjek kolonnevalget og rækken i Kims fil. Rækken er ikke valgt på forhånd.';
+                $flags[] = 'stock_mismatch';
+            }
+        } elseif($stockMode === 'total' && $totalInvalid !== null) {
+            $notes[] = 'Bemærk: Ugyldig værdi „'.$totalInvalid.'“ for lagerantal i alt – lageret ændres ikke.';
+        } elseif($stockMode === 'total' && $product && $fallbackLid !== null && isset($src['stock_loc_'.$fallbackLid])) {
+            $fallbackKey = 'stock_loc_'.$fallbackLid;
+            $other = 0;
+            foreach($product as $k => $v) if(str_starts_with((string)$k, 'stock_loc_') && $k !== $fallbackKey) $other += (int)$v;
+            if($other > 0) {
+                $written = (int)$src[$fallbackKey] + ($addReserved ? (int)($reserved[$fallbackKey] ?? 0) : 0);
+                $notes[] = 'Bemærk: Lagerantal i alt ('.(int)$src[$fallbackKey].') skrives på '.$locLabel($fallbackKey).'. Produktet har også '.$other.' stk. på andre lokationer, så lageret i alt bliver '.($written + $other).'.';
+            }
+        }
+        if($product && !$addReserved) {
+            foreach($stockFile['locations'] as $k => $fileQty) {
+                $r = (int)($reserved[$k] ?? 0);
+                if($r > 0 && $fileQty < $r) $notes[] = 'Bemærk: '.$locLabel($k).' får '.$fileQty.' fysisk efter import, men '.$r.' er reserveret. Disponibelt bliver −'.($r - $fileQty).', varen kan forsvinde fra Lagerstatus, og reservationen kan ikke markeres som solgt.';
+            }
+        }
+
+        $changes = $product ? hsg_supplier_changes_for_product($src, $product, ['add_reserved' => $addReserved]) : [];
         sort($g['rows']);
         $rowLabel = count($g['rows']) > 1 ? '#' . implode(', #', $g['rows']) . ' (Flettet)' : '#' . $g['rows'][0];
 
         $totalStock = (int)($src['stock_quantity'] ?? 0);
         foreach ($src as $k => $v) {
-            if (str_starts_with($k, 'stock_loc_')) {
+            if (str_starts_with((string)$k, 'stock_loc_')) {
                 $totalStock += (int)$v;
             }
         }
         $isCreateNew = ($pid === 0 && $totalStock > 0);
+        $flags = array_values(array_unique($flags));
 
         $items[] = [
             'row' => $g['rows'][0],
@@ -388,33 +719,73 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
             'total_stock' => $totalStock,
             'is_create_new' => $isCreateNew,
             'merged_skus' => $g['merged_skus'],
-            'notes' => $g['notes'],
-            'selected' => ($pid > 0 && $match['score'] >= 90 && count($changes) > 0) || $isCreateNew
+            'notes' => array_values(array_unique($notes)),
+            'flags' => $flags,
+            'stock_file' => $stockFile,
+            'reserved' => $reserved,
+            'selected' => !$flags && (($pid > 0 && $match['score'] >= 90 && count($changes) > 0) || $isCreateNew)
         ];
     }
     return $items;
+}
+
+/** Aktive lokationer i rækkefølgen sort_order, id: [id => navn]. Den første bruges, når kun "Lagerantal i alt" er valgt. */
+function hsg_supplier_locations(PDO $pdo): array {
+    $out=[];
+    foreach($pdo->query('SELECT id,name FROM lager_locations WHERE active=1 ORDER BY sort_order ASC, id ASC')->fetchAll(PDO::FETCH_ASSOC) as $r)$out[(int)$r['id']]=(string)$r['name'];
+    return $out;
+}
+
+/** HSG-produkter med fysisk lager (stock_loc_<id>) og aktive reservationer (reserved_loc_<id>) pr. aktiv lokation. */
+function hsg_supplier_products_with_stock(PDO $pdo, array $locationIds): array {
+    $products=$pdo->query('SELECT p.*,b.name brand_name, COALESCE((SELECT SUM(s.quantity) FROM lager_stock s JOIN lager_locations l ON l.id=s.location_id WHERE s.product_id=p.id AND l.active=1), 0) stock_quantity FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id ORDER BY p.name')->fetchAll(PDO::FETCH_ASSOC);
+    $stock=[];
+    foreach($pdo->query('SELECT product_id,location_id,quantity FROM lager_stock')->fetchAll(PDO::FETCH_ASSOC) as $r)$stock[(int)$r['product_id']][(int)$r['location_id']]=(int)$r['quantity'];
+    $reserved=[];
+    foreach($pdo->query("SELECT product_id,location_id,SUM(quantity) qty FROM lager_reservations WHERE status='reserved' GROUP BY product_id,location_id")->fetchAll(PDO::FETCH_ASSOC) as $r)$reserved[(int)$r['product_id']][(int)$r['location_id']]=(int)$r['qty'];
+    foreach($products as &$p){
+        $pid=(int)$p['id'];
+        foreach($locationIds as $lid){
+            $lid=(int)$lid;
+            $p['stock_loc_'.$lid]=(int)($stock[$pid][$lid]??0);
+            $p['reserved_loc_'.$lid]=(int)($reserved[$pid][$lid]??0);
+        }
+    }
+    unset($p);
+    return $products;
+}
+
+/** Gemt reservationsvalg: 'add' (Kims tal er efter reservationer – læg dem oven i, standard) eller 'none'. */
+function hsg_supplier_reservation_mode(PDO $pdo): string {
+    $mode=trim((string)setting_get($pdo,'supplier_import_reservation_mode','add'));
+    return in_array($mode,['add','none'],true)?$mode:'add';
+}
+
+function hsg_supplier_allowed_fields(array $locationIds): array {
+    $allowed=array_keys(hsg_supplier_aliases());
+    foreach($locationIds as $lid)$allowed[]='stock_loc_'.(int)$lid;
+    return $allowed;
+}
+
+function hsg_supplier_merge_options(array $locations, string $reservationMode): array {
+    return [
+        'fallback_location_id'=>$locations?(int)array_key_first($locations):null,
+        'location_names'=>$locations,
+        'add_reserved'=>$reservationMode==='add',
+    ];
 }
 
 function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?int $brandId=null): array {
     $bestSheet=null;$bestHeader=null;
     foreach($sheets as $sheet=>$rows){try{$h=hsg_supplier_detect_header($rows);if($bestHeader===null||$h['score']>$bestHeader['score']){$bestSheet=$sheet;$bestHeader=$h;}}catch(Throwable $e){}}
     if($bestHeader===null||$bestSheet===null)throw new RuntimeException('Kunne ikke finde en tabel med produkter/priser i nogen af arkene.');
-    $products=$pdo->query('SELECT p.*,b.name brand_name, COALESCE((SELECT SUM(s.quantity) FROM lager_stock s JOIN lager_locations l ON l.id=s.location_id WHERE s.product_id=p.id AND l.active=1), 0) stock_quantity FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id ORDER BY p.name')->fetchAll(PDO::FETCH_ASSOC);
-    $locs=$pdo->query('SELECT id FROM lager_locations WHERE active=1')->fetchAll(PDO::FETCH_COLUMN);
-    $stLoc=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=?');
-    foreach($products as &$p){
-        foreach($locs as $lid){
-            $stLoc->execute([(int)$p['id'],(int)$lid]);
-            $p['stock_loc_'.$lid] = (int)($stLoc->fetchColumn()?:0);
-        }
-    }
-    unset($p);
+    $locations=hsg_supplier_locations($pdo);
+    $products=hsg_supplier_products_with_stock($pdo,array_keys($locations));
     $rows=$sheets[$bestSheet];$start=$bestHeader['row']+1;
     $headers=(array)$bestHeader['headers'];
     $savedColMap=hsg_supplier_saved_columns($pdo);
-    $allowedFields=array_keys(hsg_supplier_aliases());
-    foreach($locs as $lid)$allowedFields[]='stock_loc_'.(int)$lid;
-    $colMap=hsg_supplier_suggest_columns($headers,$savedColMap,$allowedFields);
+    $colMap=hsg_supplier_suggest_columns($headers,$savedColMap,hsg_supplier_allowed_fields(array_keys($locations)));
+    $rejected=hsg_supplier_rejected_saved_columns($headers,$savedColMap);
     $remembered=[];
     foreach(hsg_supplier_header_keys($headers) as $ci=>$key){
         if($key!==''&&array_key_exists($key,$savedColMap)&&trim((string)$savedColMap[$key])===($colMap[$ci]??null))$remembered[]=$ci;
@@ -422,9 +793,11 @@ function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?i
     $fieldMap=[];
     foreach($colMap as $ci=>$field){if($field!==''){$fieldMap[$field]=(int)$ci;}}
     $rawRows=array_values(array_slice($rows,$start,null,true));
-    $items=hsg_supplier_merge_raw_items($rawRows, $fieldMap, $products, $brandId, $start, $pdo);
+    $reservationMode=hsg_supplier_reservation_mode($pdo);
+    $items=hsg_supplier_merge_raw_items($rawRows, $fieldMap, $products, $brandId, $start, $pdo, hsg_supplier_merge_options($locations,$reservationMode));
 
     return [
+        'format'=>2,
         'filename'=>$filename,
         'sheet'=>$bestSheet,
         'header_row'=>$bestHeader['row']+1,
@@ -432,6 +805,8 @@ function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?i
         'mapping'=>$fieldMap,
         'col_mapping'=>$colMap,
         'col_remembered'=>$remembered,
+        'col_rejected'=>$rejected,
+        'reservation_mode'=>$reservationMode,
         'raw_rows'=>$rawRows,
         'items'=>$items,
         'created_at'=>date('c'),
@@ -439,13 +814,22 @@ function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?i
     ];
 }
 
-function hsg_supplier_recalculate_preview(PDO $pdo, array $preview, array $customColMap): array {
+/**
+ * Genberegner previewet med et (manuelt) kolonnevalg og evt. et nyt reservationsvalg. En beløbskolonne valgt som
+ * lager sættes til "Ignorer" (K4) og står i col_rejected_manual, så siden kan vise en advarsel.
+ */
+function hsg_supplier_recalculate_preview(PDO $pdo, array $preview, array $customColMap, ?string $reservationMode = null): array {
     $headers = (array)($preview['headers'] ?? []);
     $colMap = [];
     $fieldMap = [];
+    $manualRejected = [];
     foreach($customColMap as $ci => $field) {
         $ci = (int)$ci;
         $field = trim((string)$field);
+        if($field !== '' && hsg_supplier_is_stock_field($field) && hsg_supplier_header_is_money((string)($headers[$ci] ?? ''))) {
+            $manualRejected[$ci] = $field;
+            $field = '';
+        }
         $colMap[$ci] = $field;
         if($field !== '') {
             $fieldMap[$field] = $ci;
@@ -458,38 +842,39 @@ function hsg_supplier_recalculate_preview(PDO $pdo, array $preview, array $custo
         }
     }
     ksort($colMap);
-    $products = $pdo->query('SELECT p.*,b.name brand_name, COALESCE((SELECT SUM(s.quantity) FROM lager_stock s JOIN lager_locations l ON l.id=s.location_id WHERE s.product_id=p.id AND l.active=1), 0) stock_quantity FROM lager_products p LEFT JOIN lager_brands b ON b.id=p.brand_id ORDER BY p.name')->fetchAll(PDO::FETCH_ASSOC);
-    $locs=$pdo->query('SELECT id FROM lager_locations WHERE active=1')->fetchAll(PDO::FETCH_COLUMN);
-    $stLoc=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=?');
-    foreach($products as &$p){
-        foreach($locs as $lid){
-            $stLoc->execute([(int)$p['id'],(int)$lid]);
-            $p['stock_loc_'.$lid] = (int)($stLoc->fetchColumn()?:0);
-        }
+    if($reservationMode === null || !in_array($reservationMode, ['add', 'none'], true)) {
+        $reservationMode = in_array((string)($preview['reservation_mode'] ?? ''), ['add', 'none'], true) ? (string)$preview['reservation_mode'] : hsg_supplier_reservation_mode($pdo);
     }
-    unset($p);
+    $locations = hsg_supplier_locations($pdo);
+    $products = hsg_supplier_products_with_stock($pdo, array_keys($locations));
 
     $brandId = !empty($preview['brand_id']) ? (int)$preview['brand_id'] : null;
     $rawRows = (array)($preview['raw_rows'] ?? []);
     $start = (int)($preview['header_row'] ?? 1);
-    $items = hsg_supplier_merge_raw_items($rawRows, $fieldMap, $products, $brandId, $start, $pdo);
+    $items = hsg_supplier_merge_raw_items($rawRows, $fieldMap, $products, $brandId, $start, $pdo, hsg_supplier_merge_options($locations, $reservationMode));
 
+    $preview['format'] = 2;
+    $preview['reservation_mode'] = $reservationMode;
     $preview['mapping'] = $fieldMap;
     $preview['col_mapping'] = $colMap;
     $preview['col_remembered'] = [];
+    $preview['col_rejected'] = [];
+    $preview['col_rejected_manual'] = $manualRejected;
     $preview['items'] = $items;
     return $preview;
 }
 
 function hsg_supplier_preview_dir(): string {$d=__DIR__.'/../storage/import-previews';if(!is_dir($d)&&!@mkdir($d,0770,true)&&!is_dir($d))throw new RuntimeException('Kunne ikke oprette preview-mappe.');return $d;}
+/** Et preview-token er 40 små hex-tegn (bin2hex(random_bytes(20))). Alt andet afvises, før der bygges en filsti. */
+function hsg_supplier_preview_token_valid(string $token): bool {return preg_match('/^[a-f0-9]{40}\z/',$token)===1;}
 function hsg_supplier_preview_save(array $preview, ?string $existingToken = null): string {
-    $token = ($existingToken !== null && preg_match('/^[a-f0-9]{40}$/', $existingToken)) ? $existingToken : bin2hex(random_bytes(20));
+    $token = ($existingToken !== null && hsg_supplier_preview_token_valid($existingToken)) ? $existingToken : bin2hex(random_bytes(20));
     $path = hsg_supplier_preview_dir().'/'.$token.'.json';
     file_put_contents($path, json_encode($preview, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT|JSON_THROW_ON_ERROR), LOCK_EX);
     return $token;
 }
-function hsg_supplier_preview_load(string $token): array {if(!preg_match('/^[a-f0-9]{40}$/',$token))throw new RuntimeException('Ugyldigt preview-token.');$path=hsg_supplier_preview_dir().'/'.$token.'.json';if(!is_file($path))throw new RuntimeException('Previewet er udløbet eller findes ikke.');$data=json_decode((string)file_get_contents($path),true,512,JSON_THROW_ON_ERROR);return is_array($data)?$data:[];}
-function hsg_supplier_preview_delete(string $token): void {if(preg_match('/^[a-f0-9]{40}$/',$token))@unlink(hsg_supplier_preview_dir().'/'.$token.'.json');}
+function hsg_supplier_preview_load(string $token): array {if(!hsg_supplier_preview_token_valid($token))throw new RuntimeException('Ugyldigt preview-token.');$path=hsg_supplier_preview_dir().'/'.$token.'.json';if(!is_file($path))throw new RuntimeException('Previewet er udløbet eller findes ikke.');$data=json_decode((string)file_get_contents($path),true,512,JSON_THROW_ON_ERROR);return is_array($data)?$data:[];}
+function hsg_supplier_preview_delete(string $token): void {if(hsg_supplier_preview_token_valid($token))@unlink(hsg_supplier_preview_dir().'/'.$token.'.json');}
 
 function hsg_supplier_update_fields(): array {
     $fields = ['cask_number','cask_type','wholesale_price','retail_price','abv','distillery','age_text','vintage_year','category','country','bottle_size_cl','bottle_count','stock_quantity'];
@@ -502,11 +887,17 @@ function hsg_supplier_update_fields(): array {
     return $fields;
 }
 
-function hsg_supplier_changes_for_product(array $src,array $product): array {
+/**
+ * Ændringer for et eksisterende produkt. Lager pr. lokation: new = Kims tal (+ aktive reservationer på lokationen,
+ * hvis $options['add_reserved']). Indgangen har også 'file' (Kims tal) og 'reserved' (tillægget, kun når > 0).
+ * stock_file_total (Kims kontroltal) er aldrig en ændring.
+ */
+function hsg_supplier_changes_for_product(array $src,array $product,array $options=[]): array {
+    $addReserved=!empty($options['add_reserved']);
     $changes=[];
     $updateFields = hsg_supplier_update_fields();
     foreach($src as $k=>$v){
-        if(str_starts_with($k,'stock_loc_') && !in_array($k,$updateFields,true)){
+        if(str_starts_with((string)$k,'stock_loc_') && !in_array($k,$updateFields,true)){
             $updateFields[]=$k;
         }
     }
@@ -517,27 +908,46 @@ function hsg_supplier_changes_for_product(array $src,array $product): array {
         if(!$isStockField && $old !== null && trim((string)$old) !== '') {
             continue;
         }
+        $fileQty=0;$reservedQty=0;
+        if($isStockLoc){
+            $fileQty=(int)$new;
+            $reservedQty=$addReserved?max(0,(int)($product['reserved_loc_'.substr($field,10)]??0)):0;
+            $new=$fileQty+$reservedQty;
+        }
         $same=in_array($field,['wholesale_price','retail_price','abv','bottle_size_cl'],true)
             ?($old!==null&&trim((string)$old)!==''&&abs((float)$old-(float)$new)<0.001)
             :($isStockField
                 ?($old!==null&&trim((string)$old)!==''&&(int)$old===(int)$new)
                 :hsg_supplier_norm((string)$old)===hsg_supplier_norm((string)$new));
-        if(!$same)$changes[$field]=['old'=>$old,'new'=>$new];
+        if($same)continue;
+        $change=['old'=>$old,'new'=>$new];
+        if($isStockLoc){$change['file']=$fileQty;if($reservedQty>0)$change['reserved']=$reservedQty;}
+        $changes[$field]=$change;
     }
     return $changes;
 }
 
-function hsg_supplier_apply_product(PDO $pdo,int $productId,array $src): array {
+/**
+ * Opdaterer et eksisterende produkt. Lager og aktive reservationer læses igen her (inde i transaktionen), så det
+ * skrevne tal bygger på de aktuelle reservationer. $options['add_reserved']: læg reservationerne oven i Kims tal.
+ * "Lagerantal i alt" skrives kun på første lokation, hvis kilden ikke har nogen stock_loc_*-nøgler.
+ */
+function hsg_supplier_apply_product(PDO $pdo,int $productId,array $src,array $options=[]): array {
     $st=$pdo->prepare('SELECT p.*, COALESCE((SELECT SUM(s.quantity) FROM lager_stock s JOIN lager_locations l ON l.id=s.location_id WHERE s.product_id=p.id AND l.active=1), 0) stock_quantity FROM lager_products p WHERE p.id=?');
     $st->execute([$productId]);$product=$st->fetch(PDO::FETCH_ASSOC);
     if(!$product)throw new RuntimeException('Det valgte HSG-produkt findes ikke.');
-    $locs=$pdo->query('SELECT id FROM lager_locations WHERE active=1')->fetchAll(PDO::FETCH_COLUMN);
+    $locs=$pdo->query('SELECT id FROM lager_locations WHERE active=1 ORDER BY sort_order ASC, id ASC')->fetchAll(PDO::FETCH_COLUMN);
     $stLoc=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=?');
+    $stRes=$pdo->prepare("SELECT location_id, COALESCE(SUM(quantity),0) qty FROM lager_reservations WHERE product_id=? AND status='reserved' GROUP BY location_id");
+    $stRes->execute([$productId]);
+    $reservedByLoc=[];
+    foreach($stRes->fetchAll(PDO::FETCH_ASSOC) as $r)$reservedByLoc[(int)$r['location_id']]=(int)$r['qty'];
     foreach($locs as $lid){
         $stLoc->execute([$productId,(int)$lid]);
         $product['stock_loc_'.$lid] = (int)($stLoc->fetchColumn()?:0);
+        $product['reserved_loc_'.$lid] = (int)($reservedByLoc[(int)$lid]??0);
     }
-    $changes=hsg_supplier_changes_for_product($src,$product);if(!$changes)return [];
+    $changes=hsg_supplier_changes_for_product($src,$product,['add_reserved'=>!empty($options['add_reserved'])]);if(!$changes)return [];
     $sets=[];$params=[];
     foreach($changes as $field=>$change){
         if($field==='stock_quantity' || str_starts_with($field,'stock_loc_')) continue;
@@ -547,41 +957,40 @@ function hsg_supplier_apply_product(PDO $pdo,int $productId,array $src): array {
         $params[]=$productId;
         $pdo->prepare('UPDATE lager_products SET '.implode(',',$sets).' WHERE id=?')->execute($params);
     }
-    // Per-location stock updates
+    // Lager pr. lokation (reference viser reservationstillægget, når det er > 0)
     foreach($changes as $field=>$change){
         if(str_starts_with($field,'stock_loc_')){
             $locationId=(int)substr($field,10);
             if($locationId>0){
                 $newQty=(int)$change['new'];
+                $reservedQty=(int)($change['reserved']??0);
+                $reference=$reservedQty>0?'Kims masterfil opdatering (+'.$reservedQty.' reserveret)':'Kims masterfil opdatering';
                 $stLocForUpdate=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=? FOR UPDATE');
                 $stLocForUpdate->execute([$productId,$locationId]);
                 $oldQty=(int)($stLocForUpdate->fetchColumn()?:0);
                 $changeQty=$newQty-$oldQty;
                 $pdo->prepare('INSERT INTO lager_stock(product_id,location_id,quantity) VALUES(?,?,?) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity)')->execute([$productId,$locationId,$newQty]);
                 $pdo->prepare('INSERT INTO lager_stock_movements(product_id,location_id,change_qty,balance_after,movement_type,reference,created_by,created_by_admin) VALUES(?,?,?,?,?,?,?,?)')
-                    ->execute([$productId,$locationId,$changeQty,$newQty,'import','Kims masterfil opdatering',null,current_admin_id()]);
+                    ->execute([$productId,$locationId,$changeQty,$newQty,'import',$reference,null,current_admin_id()]);
             }
         }
     }
-    // Default stock_quantity field (if generic stock_quantity mapped and no location-specific mapped)
-    if(isset($changes['stock_quantity'])){
-        $hasLocMapped = false;
-        foreach(array_keys($changes) as $ck){
-            if(str_starts_with($ck,'stock_loc_')){$hasLocMapped=true;break;}
-        }
-        if(!$hasLocMapped){
-            $newQty=(int)$changes['stock_quantity']['new'];
-            $locSt=$pdo->query('SELECT id FROM lager_locations WHERE active=1 ORDER BY sort_order ASC, id ASC LIMIT 1');
-            $locationId=(int)($locSt->fetchColumn()?:0);
-            if($locationId>0){
-                $stLocForUpdate=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=? FOR UPDATE');
-                $stLocForUpdate->execute([$productId,$locationId]);
-                $oldQty=(int)($stLocForUpdate->fetchColumn()?:0);
-                $changeQty=$newQty-$oldQty;
-                $pdo->prepare('INSERT INTO lager_stock(product_id,location_id,quantity) VALUES(?,?,?) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity)')->execute([$productId,$locationId,$newQty]);
-                $pdo->prepare('INSERT INTO lager_stock_movements(product_id,location_id,change_qty,balance_after,movement_type,reference,created_by,created_by_admin) VALUES(?,?,?,?,?,?,?,?)')
-                    ->execute([$productId,$locationId,$changeQty,$newQty,'import','Kims masterfil opdatering',null,current_admin_id()]);
-            }
+    // Ældre kilde med kun stock_quantity: skrives på første lokation – men kun når kilden ikke har nogen stock_loc_*-nøgler.
+    $srcHasLocations=false;
+    foreach(array_keys($src) as $sk){
+        if(str_starts_with((string)$sk,'stock_loc_')){$srcHasLocations=true;break;}
+    }
+    if(isset($changes['stock_quantity']) && !$srcHasLocations){
+        $newQty=(int)$changes['stock_quantity']['new'];
+        $locationId=(int)($locs[0]??0);
+        if($locationId>0){
+            $stLocForUpdate=$pdo->prepare('SELECT quantity FROM lager_stock WHERE product_id=? AND location_id=? FOR UPDATE');
+            $stLocForUpdate->execute([$productId,$locationId]);
+            $oldQty=(int)($stLocForUpdate->fetchColumn()?:0);
+            $changeQty=$newQty-$oldQty;
+            $pdo->prepare('INSERT INTO lager_stock(product_id,location_id,quantity) VALUES(?,?,?) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity)')->execute([$productId,$locationId,$newQty]);
+            $pdo->prepare('INSERT INTO lager_stock_movements(product_id,location_id,change_qty,balance_after,movement_type,reference,created_by,created_by_admin) VALUES(?,?,?,?,?,?,?,?)')
+                ->execute([$productId,$locationId,$changeQty,$newQty,'import','Kims masterfil opdatering',null,current_admin_id()]);
         }
     }
     hsg_sync_product_stock_status($pdo,$productId);
@@ -646,7 +1055,6 @@ function hsg_supplier_create_product(PDO $pdo, array $src): int {
 
     // Insert stock quantities for mapped locations
     $locs = $pdo->query('SELECT id FROM lager_locations WHERE active=1 ORDER BY sort_order, id')->fetchAll(PDO::FETCH_COLUMN);
-    $totalAddedStock = 0;
 
     foreach ($locs as $lid) {
         $locKey = 'stock_loc_' . $lid;
@@ -657,13 +1065,16 @@ function hsg_supplier_create_product(PDO $pdo, array $src): int {
                     ->execute([$newPid, $lid, $qty]);
                 $pdo->prepare('INSERT INTO lager_stock_movements (product_id, location_id, change_qty, balance_after, movement_type, reference, created_by_admin) VALUES (?, ?, ?, ?, "import", "Oprettet via Kims uploadfil", ?)')
                     ->execute([$newPid, $lid, $qty, $qty, current_admin_id()]);
-                $totalAddedStock += $qty;
             }
         }
     }
 
-    // Default stock if general stock_quantity mapped and no location stock mapped
-    if ($totalAddedStock === 0 && isset($src['stock_quantity'])) {
+    // Ældre kilde med kun stock_quantity: skrives på første lokation – men kun når kilden ikke har nogen stock_loc_*-nøgler.
+    $srcHasLocations = false;
+    foreach (array_keys($src) as $sk) {
+        if (str_starts_with((string)$sk, 'stock_loc_')) { $srcHasLocations = true; break; }
+    }
+    if (!$srcHasLocations && isset($src['stock_quantity'])) {
         $genQty = max(0, (int)$src['stock_quantity']);
         if ($genQty > 0 && !empty($locs[0])) {
             $firstLid = (int)$locs[0];

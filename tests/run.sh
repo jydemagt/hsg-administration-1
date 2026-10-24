@@ -29,6 +29,17 @@ if out=$(php tests/newsletter_test.php 2>&1); then
 else
   echo "$out"; bad "Enhedstest af nyhedsbrevet fejlede"
 fi
+info "Enhedstest: Kims uploadfil og fadnummer-udledning (ingen ZipArchive)"
+if php tests/supplier_import_test.php; then
+  ok "Enhedstest: Kims uploadfil bestået"
+else
+  bad "Enhedstest: Kims uploadfil fejlede"
+fi
+if php tests/product_enrichment_test.php; then
+  ok "Enhedstest: fadnummer-udledning bestået"
+else
+  bad "Enhedstest: fadnummer-udledning fejlede"
+fi
 
 # 3. Release-bygger: negativtest (forbudte filer må aldrig komme med)
 info "3/4 Release-bygger negativtest"
@@ -73,9 +84,10 @@ else
     PAGES="admin.php status.php products.php brands.php stock.php reservations.php locations.php
            catalog.php reports.php quality.php users.php system.php backup.php import_center.php
            supplier_upload.php image_check.php update.php admin-account.php
-           newsletter.php newsletter_recipients.php newsletter_import.php"
+           newsletter.php newsletter_recipients.php newsletter_import.php
+           products.php?status=all&filter=cask_no_digit"
     for p in $PAGES; do
-      [ -f "$p" ] || continue
+      [ -f "${p%%\?*}" ] || continue
       code=$(curl -s -b "$JAR" -o /tmp/hsg-page.html -w '%{http_code}' "$BASE/$p")
       if [ "$code" -ge 500 ] || grep -qiE 'Fatal error|Parse error|Uncaught|Warning:' /tmp/hsg-page.html; then
         bad "$p → HTTP $code / PHP-fejl i output"
@@ -88,6 +100,30 @@ else
     # Sikkerhed: POST uden CSRF skal afvises
     code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' -d 'x=1' "$BASE/locations.php")
     [ "$code" = "419" ] || [ "$code" = "403" ] && ok "POST uden CSRF afvist (HTTP $code)" || bad "POST uden CSRF gav HTTP $code"
+    # Sikkerhed: status fra URL'en må ikke kunne bryde ud af href i Produkter (XSS-regression)
+    code=$(curl -s -g -b "$JAR" -o /tmp/hsg-page.html -w '%{http_code}' "$BASE/products.php?status=%22%3E%3Cscript%3Ealert(1)%3C/script%3E")
+    if [ "$code" != "200" ] || grep -qiE 'Fatal error|Parse error|Uncaught|Warning:' /tmp/hsg-page.html; then
+      bad "products.php med manipuleret status → HTTP $code / PHP-fejl i output"
+    elif grep -qF '"><script>alert(1)' /tmp/hsg-page.html; then
+      bad "products.php med manipuleret status skriver status uescapet (XSS)"
+    else ok "products.php med manipuleret status er escapet (HTTP $code)"; fi
+
+    # Kims uploadfil: de nye POST-handlinger skal afvises uden CSRF (419) og uden login (401)
+    for act in reservation_mode reguess; do
+      code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' -d "action=$act&preview_token=x" "$BASE/supplier_upload.php")
+      [ "$code" = "419" ] && ok "supplier_upload.php $act uden CSRF afvist (HTTP 419)" || bad "supplier_upload.php $act uden CSRF gav HTTP $code"
+      code=$(curl -s -o /dev/null -w '%{http_code}' -d "action=$act&preview_token=x" "$BASE/supplier_upload.php")
+      [ "$code" = "401" ] && ok "supplier_upload.php $act uden login afvist (HTTP 401)" || bad "supplier_upload.php $act uden login gav HTTP $code"
+    done
+
+    # Kims uploadfil: preview, apply og create mod den installerede testdatabase (rydder selv op)
+    if php tests/supplier_import_db_test.php; then ok "Databasetest: Kims uploadfil bestået"; else bad "Databasetest: Kims uploadfil fejlede"; fi
+
+    # Fadnummer uden ciffer: modulmigrationen products 1.5.1 på den friske installation og oprydningen (rydder selv op)
+    if php tests/cask_number_cleanup_db_test.php; then ok "Databasetest: fadnummer-oprydning bestået"; else bad "Databasetest: fadnummer-oprydning fejlede"; fi
+
+    # Kims uploadfil: hele flowet via HTTP (upload, kolonnegæt, reservationsvalg, anvend, audit-log). Rydder selv op.
+    if php tests/supplier_upload_flow_test.php "$BASE" testadmin 'Test-Pass-12345!'; then ok "Flowtest: Kims uploadfil bestået"; else bad "Flowtest: Kims uploadfil fejlede"; fi
 
     # Nyhedsbrev: administrationssider kræver login og CSRF
     for p in newsletter.php newsletter_recipients.php newsletter_import.php; do
