@@ -96,22 +96,40 @@ Hvordan lageret skrives, afgøres af kolonnevalget:
 | **Total** | Kun "Lagerantal i alt" er valgt | Tallet skrives på første aktive lokation (laveste sortering). Previewet viser det som en ændring af den lokation og advarer, hvis produktet også har lager andre steder. |
 | **Intet** | Ingen lagerkolonner | Lageret ændres ikke. |
 
-**Tomme lokationsceller:** Har en række et tal i mindst én lokationskolonne, tæller tomme lokationsceller i samme række som 0 (som i Kims egen formel). Er alle lokationsceller tomme, ændres lageret ikke for rækken. Tekst, der ikke er ét tal (fx "?"), ændrer aldrig lokationen og giver en bemærkning.
+**Tomme lokationsceller:** Har en række et tal i mindst én lokationskolonne, tæller tomme lokationsceller i samme række som 0 (som i Kims egen formel). En celle med kun mellemrum, også hårde mellemrum, er tom. Er alle lokationsceller tomme, ændres lageret ikke for rækken. Tekst, der ikke er ét tal (fx "?"), ændrer aldrig lokationen og giver en bemærkning.
 
-**Hvad er et tal i en lokationscelle?** Cellen skal være præcis ét tal: valgfrit minus (`-`), cifre og højst ét decimaltegn (`.` eller `,`) med cifre efter. Mellemrum (også hårde mellemrum) før og efter tallet ignoreres. Et komma er altid decimaltegnet. Decimaler afrundes (,5 rundes op), og negative tal bliver 0.
+**Hvad er et tal i en lagercelle?** Reglen gælder både lokationscellerne og "Lagerantal i alt". Cellen skal være præcis ét tal: valgfrit minus (`-`), cifre og højst ét decimaltegn (`.` eller `,`) med cifre efter. Et komma er altid decimaltegnet.
+
+- Mellemrum (også hårde mellemrum) før og efter tallet ignoreres. En celle med kun mellemrum er tom.
+- Der må højst være **5 cifre før decimaltegnet** (så højst 100.000 efter afrunding), og foranstillede nuller tæller med. Så bliver EAN-numre, lange varenumre og meget store tal ugyldige. Decimaldelen må være så lang, den vil.
+- Decimaler afrundes **én gang** til nærmeste hele tal (,5 rundes væk fra 0), så `0.4999` bliver 0. Negative tal bliver 0.
+- Ugyldig tekst vises i bemærkningen og på "Fil:"-linjen, afkortet til 40 tegn + "…".
 
 | Celle | Tolkes som |
 |---|---|
 | `41`, `0`, `41.0` | 41, 0, 41 |
 | `2,4`, `2.6`, `-2` | 2, 3, 0 |
-| `0,5`, `2,5000` | 1, 3 |
+| `0.4999`, `2,4999` | 0, 2 |
+| `0.5`, `0,5`, `2,5`, `2,5000` | 1, 1, 3, 3 |
+| `99999` | 99999 |
 | `40.999999999999993` (formelresultat) | 41 |
-| `3 + 2`, `2 (1 i bil)`, `1/2`, `ca. 5`, `se note 2`, `3 2`, `?`, `−2` (typografisk minus) | Ugyldig – lokationen ændres ikke |
-| `1.234`, `1,234`, `1 234`, `1.875` | Ugyldig – lokationen ændres ikke |
+| `5` efterfulgt af et hårdt mellemrum | 5 |
+| Kun hårde mellemrum (evt. blandet med almindelige mellemrum) | Tom |
+| `3 + 2`, `53 stk.`, `2 (1 i bil)`, `1/2`, `ca. 5`, `se note 2`, `3 2`, `?`, `-`, `−2` (typografisk minus) | Ugyldig |
+| `1.234`, `1,234`, `1 234`, `1.875` | Ugyldig |
+| `100000`, `000041`, `5010494560018` (EAN), `9223372036854775808` | Ugyldig (mere end 5 cifre) |
+| Ugyldig tekst på over 40 tegn | Ugyldig, vises med de første 40 tegn + "…" |
 
-**Tusindtalsformater er ugyldige:** præcis tre cifre efter `.` eller `,`, mellemrum inde i tallet eller både `.` og `,`. Læsningen ville ellers være tvetydig ("1.234" som 1 eller 1234). Ingen lokation har så mange flasker. Reglen rammer tekstceller og CSV, men også en Excel-talcelle med præcis tre decimaler (fx 1,875, typisk et formelresultat): Den er ugyldig, og lokationen ændres ikke.
+**Tusindtalsformater er ugyldige:** præcis tre cifre efter `.` eller `,`, mellemrum inde i tallet eller både `.` og `,`. Læsningen ville ellers være tvetydig ("1.234" som 1 eller 1234). Ingen lokation har så mange flasker. Reglen rammer tekstceller og CSV, men også en Excel-talcelle med præcis tre decimaler (fx 1,875, typisk et formelresultat): Den er ugyldig.
 
-**Kontroltal:** Er både lokationer og "Lagerantal i alt" valgt, sammenlignes summen af lokationstallene med totalen (før reservationer). Afviger de, får varen en bemærkning og er ikke valgt på forhånd. Previewet viser desuden "Lager i filen" og "Sum af lokationskolonner" for hele filen.
+**En ugyldig celle skrives aldrig som lager:**
+
+- **Lokationscelle:** Lokationen ændres ikke, og varen får en bemærkning.
+- **"Lagerantal i alt" i tilstand Lokationer:** Totalen bruges ikke som kontroltal, så der er ingen kontrol og ingen afvigelse. Lokationerne skrives som normalt. Bemærkningen er "Ugyldig værdi „…“ for lagerantal i alt – bruges ikke som kontroltal."
+- **"Lagerantal i alt" i tilstand Total:** Lageret ændres ikke for rækken. Bemærkningen er "Ugyldig værdi „…“ for lagerantal i alt – lageret ændres ikke."
+- Rækken er valgt på forhånd efter de normale regler. Flettes flere rækker, og har én af dem en ugyldig total, er hele varens total ugyldig. Der bruges aldrig en delsum.
+
+**Kontroltal:** Er både lokationer og "Lagerantal i alt" valgt, sammenlignes summen af lokationstallene med totalen (før reservationer). Afviger de, får varen en bemærkning og er ikke valgt på forhånd. Previewet viser desuden "Lager i filen" og "Sum af lokationskolonner" for hele filen. "Lager i filen" tæller kun gyldige totaler.
 
 **Nye produkter** får kun lager på de lokationer, der har et tal over 0. Badget "Nyt produkt oprettes (Lager: N)" viser summen af lokationstallene.
 

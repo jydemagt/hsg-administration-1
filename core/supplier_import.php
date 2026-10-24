@@ -109,30 +109,47 @@ function hsg_supplier_map_has_locations(array $map): bool {
     return false;
 }
 
+/** Rå celletekst afkortet til $max tegn + "…" (tegn, ikke bytes – æ, ø og å klippes ikke over). Ugyldig UTF-8 returneres uændret. */
+function hsg_supplier_short_text(string $s, int $max = 40): string {
+    if(preg_match('/^.{0,'.max(0,$max).'}/us',$s,$m)!==1)return $s;
+    return strlen($m[0])<strlen($s)?$m[0].'…':$s;
+}
+
 /**
- * Kims lokationstal for én række (tilstand L). Tal (også 0) bruges, decimaler afrundes og negative tal bliver 0.
- * Tomme celler tæller som 0, hvis mindst én anden valgt lokationscelle i rækken har et tal – ellers bidrager rækken
- * ikke med lager. Tekst, der ikke er ét tal, er ukendt og ændrer ikke lokationen.
- * Et tal er (efter mellemrum/NBSP i begyndelsen og slutningen): valgfrit minus, cifre og højst én decimal-separator
- * (. eller ,) med cifre efter – men ikke præcis tre cifre efter separatoren. "3 + 2", "3 2", "ca. 5", "1/2" og
- * tusindtalsformater som "1.234", "1,234" og "1 234" er derfor ugyldige.
- * Returnerer ['values'=>[stock_loc_x=>int], 'blank'=>[stock_loc_x, …], 'invalid'=>[stock_loc_x=>rå tekst]].
+ * Én lagercelle (lokationscelle eller "Lagerantal i alt"): ['state'=>'blank'|'number'|'invalid', 'value'=>?int, 'text'=>string].
+ * - Mellemrum (også hårde mellemrum U+00A0/U+202F) i begyndelsen og slutningen fjernes. Er der intet tilbage, er cellen tom.
+ * - Et tal er valgfrit minus, 1–5 cifre (0–9, også foranstillede nuller) og højst én decimal-separator (. eller ,) med
+ *   cifre efter – men ikke præcis tre cifre efter separatoren. Værdien afrundes én gang (,5 væk fra 0), og negative
+ *   tal bliver 0.
+ * - Alt andet er ugyldigt ("3 + 2", "53 stk.", "?", "1.234", "000041", EAN …), og text er den afkortede tekst.
+ *   Ugyldig UTF-8 er altid ugyldig (aldrig tom), og teksten afkortes da ikke.
+ */
+function hsg_supplier_stock_cell(mixed $v): array {
+    $t=preg_replace('/^[\s\x{00A0}\x{202F}]+|[\s\x{00A0}\x{202F}]+$/u','',(string)$v);
+    if($t===null)return ['state'=>'invalid','value'=>null,'text'=>trim((string)$v)];
+    if($t==='')return ['state'=>'blank','value'=>null,'text'=>''];
+    if(preg_match('/^-?[0-9]{1,5}(?:[.,]([0-9]+))?$/',$t,$m)===1&&strlen($m[1]??'')!==3){
+        // Højst én separator, så den er altid decimaltegnet (også "40,999999999999993").
+        return ['state'=>'number','value'=>max(0,(int)round((float)str_replace(',','.',$t))),'text'=>$t];
+    }
+    return ['state'=>'invalid','value'=>null,'text'=>hsg_supplier_short_text($t)];
+}
+
+/**
+ * Kims lokationstal for én række (tilstand L). Hver celle vurderes med hsg_supplier_stock_cell: tal (også 0) bruges,
+ * tomme celler tæller som 0, hvis mindst én anden valgt lokationscelle i rækken har et tal – ellers bidrager rækken
+ * ikke med lager. Ugyldig tekst ændrer ikke lokationen.
+ * Returnerer ['values'=>[stock_loc_x=>int], 'blank'=>[stock_loc_x, …], 'invalid'=>[stock_loc_x=>afkortet tekst]].
  */
 function hsg_supplier_location_cells(array $row, array $map): array {
     $numbers=[];$blank=[];$invalid=[];
     foreach($map as $fieldKey=>$colIdx){
         $fieldKey=(string)$fieldKey;
         if(!str_starts_with($fieldKey,'stock_loc_'))continue;
-        $raw=trim((string)($row[$colIdx]??''));
-        if($raw===''){$blank[]=$fieldKey;continue;}
-        $s=preg_replace('/^[\s\x{00A0}\x{202F}]+|[\s\x{00A0}\x{202F}]+$/u','',$raw)??'';
-        $num=null;
-        if(preg_match('/^-?\d+(?:[.,](\d+))?$/',$s,$m)===1&&strlen($m[1]??'')!==3){
-            // Højst én separator, så den er altid decimaltegnet (også "40,999999999999993").
-            $num=hsg_supplier_parse_decimal(str_replace(',','.',$s));
-        }
-        if($num===null){$invalid[$fieldKey]=$raw;continue;}
-        $numbers[$fieldKey]=(int)max(0,round($num));
+        $cell=hsg_supplier_stock_cell(trim((string)($row[$colIdx]??'')));
+        if($cell['state']==='blank')$blank[]=$fieldKey;
+        elseif($cell['state']==='invalid')$invalid[$fieldKey]=$cell['text'];
+        else $numbers[$fieldKey]=(int)$cell['value'];
     }
     $values=[];
     if($numbers){
@@ -151,6 +168,9 @@ function hsg_supplier_location_cells(array $row, array $map): array {
  *   (kun kontroltal). Aldrig stock_quantity.
  * - Tilstand T (kun "Lagerantal i alt"): med $fallbackLocationId skrives totalen som stock_loc_<første lokation> og
  *   stock_file_total. Uden fallback-id som stock_quantity (som før).
+ * "Lagerantal i alt" følger samme celleregel som lokationscellerne (hsg_supplier_stock_cell). Er cellen ugyldig, skrives
+ * intet lager og intet kontroltal; den afkortede tekst lægges i den interne nøgle stock_file_total_invalid, som
+ * hsg_supplier_merge_raw_items fjerner fra source igen.
  */
 function hsg_supplier_source_fields(array $row,array $map,?int $fallbackLocationId=null): array {
     $name=hsg_supplier_row_value($row,$map,'name');$fields=[];
@@ -158,10 +178,10 @@ function hsg_supplier_source_fields(array $row,array $map,?int $fallbackLocation
     foreach(['wholesale_price','retail_price','abv','bottle_size_cl'] as $f){$v=hsg_supplier_row_value($row,$map,$f);$n=hsg_supplier_parse_decimal($v);if($n!==null)$fields[$f]=$n;}
     $vy=hsg_supplier_row_value($row,$map,'vintage_year');if(preg_match('/\b(19|20)\d{2}\b/',$vy,$m))$fields['vintage_year']=(int)$m[0];
     $total=null;
-    $sq=hsg_supplier_row_value($row,$map,'stock_quantity');
-    if($sq!==''){
-        $sqNum=hsg_supplier_parse_decimal($sq);
-        if($sqNum!==null)$total=(int)max(0,round($sqNum));
+    if(isset($map['stock_quantity'])){
+        $cell=hsg_supplier_stock_cell(hsg_supplier_row_value($row,$map,'stock_quantity'));
+        if($cell['state']==='number')$total=(int)$cell['value'];
+        elseif($cell['state']==='invalid')$fields['stock_file_total_invalid']=$cell['text'];
     }
     if(hsg_supplier_map_has_locations($map)){
         foreach(hsg_supplier_location_cells($row,$map)['values'] as $fieldKey=>$qty)$fields[$fieldKey]=$qty;
@@ -374,7 +394,11 @@ function hsg_supplier_base_sku(string $sku): string {
     return $s;
 }
 
-/** Lægger en ekstra filrække oven i en primær række: lagerfelter summeres, øvrige felter udfylder kun tomme felter. */
+/**
+ * Lægger en ekstra filrække oven i en primær række: lagerfelter summeres, øvrige felter udfylder kun tomme felter.
+ * Den interne nøgle stock_file_total_invalid er ikke et lagerfelt: den første ikke-tomme værdi bevares (den primære
+ * række først), og hsg_supplier_merge_raw_items gør så hele gruppens total ugyldig.
+ */
 function hsg_supplier_merge_source(array $primary, array $extra): array {
     foreach($extra as $k=>$v){
         if($k==='stock_quantity'||$k==='stock_file_total'||str_starts_with($k,'stock_loc_')){$primary[$k]=(int)($primary[$k]??0)+(int)$v;continue;}
@@ -619,7 +643,15 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
             foreach((array)$c['values'] as $k => $v) if(!in_array($k, (array)$c['blank'], true)) $numeric[$k] = true;
         }
         foreach(array_keys($invalid) as $k) unset($src[$k]);
-        $stockFile = ['mode' => $stockMode, 'locations' => [], 'blank' => [], 'invalid' => $invalid, 'total' => isset($src['stock_file_total']) ? (int)$src['stock_file_total'] : null, 'sum' => 0];
+        // Ugyldig "Lagerantal i alt" i blot én af de flettede rækker gør gruppens total ugyldig: ingen delsum skrives eller
+        // bruges som kontroltal. I tilstand T kommer stock_loc_* kun fra totalen og fjernes også. Nøglen når aldrig changes.
+        $totalInvalid = isset($src['stock_file_total_invalid']) ? (string)$src['stock_file_total_invalid'] : null;
+        unset($src['stock_file_total_invalid']);
+        if($totalInvalid !== null) {
+            unset($src['stock_file_total'], $src['stock_quantity']);
+            if($stockMode === 'total') foreach(array_keys($src) as $k) if(str_starts_with((string)$k, 'stock_loc_')) unset($src[$k]);
+        }
+        $stockFile = ['mode' => $stockMode, 'locations' => [], 'blank' => [], 'invalid' => $invalid, 'total' => isset($src['stock_file_total']) ? (int)$src['stock_file_total'] : null, 'total_invalid' => $totalInvalid, 'sum' => 0];
         if($stockMode === 'locations') {
             foreach($locKeys as $k) {
                 if(array_key_exists($k, $src)) $stockFile['locations'][$k] = (int)$src[$k];
@@ -642,10 +674,13 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
         if($stockMode === 'locations') {
             if(!$stockFile['locations']) $notes[] = 'Bemærk: Ingen tal i lokationskolonnerne – lageret ændres ikke.';
             foreach($invalid as $k => $raw) $notes[] = 'Bemærk: Ugyldig værdi „'.$raw.'“ for '.$locLabel($k).' – lokationen ændres ikke.';
+            if($totalInvalid !== null) $notes[] = 'Bemærk: Ugyldig værdi „'.$totalInvalid.'“ for lagerantal i alt – bruges ikke som kontroltal.';
             if($stockFile['total'] !== null && $stockFile['locations'] && $stockFile['sum'] !== $stockFile['total']) {
                 $notes[] = 'Bemærk: Summen af lokationskolonnerne ('.$stockFile['sum'].') passer ikke med lagerantal i alt ('.$stockFile['total'].'). Tjek kolonnevalget og rækken i Kims fil. Rækken er ikke valgt på forhånd.';
                 $flags[] = 'stock_mismatch';
             }
+        } elseif($stockMode === 'total' && $totalInvalid !== null) {
+            $notes[] = 'Bemærk: Ugyldig værdi „'.$totalInvalid.'“ for lagerantal i alt – lageret ændres ikke.';
         } elseif($stockMode === 'total' && $product && $fallbackLid !== null && isset($src['stock_loc_'.$fallbackLid])) {
             $fallbackKey = 'stock_loc_'.$fallbackLid;
             $other = 0;

@@ -193,11 +193,12 @@ $missingCask=(int)$pdo->query("SELECT COUNT(*) FROM lager_products WHERE status<
 
 function supfmt(mixed $v,string $field): string {if($v===null||$v==='')return '—';if(in_array($field,['wholesale_price','retail_price'],true))return number_format((float)$v,2,',','.').' kr.';if($field==='abv')return rtrim(rtrim(number_format((float)$v,2,',',''),'0'),',').' %';if($field==='bottle_size_cl')return rtrim(rtrim(number_format((float)$v,2,',',''),'0'),',').' cl';return (string)$v;}
 
-/** Linjen "Fil: …" med Kims lagertal for varen (før reservationstillæg). */
+/** Linjen "Fil: …" med Kims lagertal for varen (før reservationstillæg). En ugyldig total vises med den afkortede tekst. */
 function supplier_upload_file_line(array $item, array $mappedLocKeys, array $locationNames): string {
     $stockFile=(array)($item['stock_file']??[]);
     $mode=(string)($stockFile['mode']??'');
     $locations=(array)($stockFile['locations']??[]);
+    $totalInvalid=$stockFile['total_invalid']??null; // Ældre previews har ikke nøglen.
     if($mode==='locations'){
         $blank=array_map('strval',(array)($stockFile['blank']??[]));$invalid=(array)($stockFile['invalid']??[]);$parts=[];
         foreach($mappedLocKeys as $key){
@@ -207,8 +208,10 @@ function supplier_upload_file_line(array $item, array $mappedLocKeys, array $loc
             else $parts[]=$name.' (tom)';
         }
         if(isset($stockFile['total']))$parts[]='i alt '.(int)$stockFile['total'];
+        elseif($totalInvalid!==null)$parts[]='i alt „'.(string)$totalInvalid.'“ (ugyldig)';
         return 'Fil: '.implode(' · ',$parts);
     }
+    if($mode==='total'&&$totalInvalid!==null)return 'Fil: lagerantal i alt „'.(string)$totalInvalid.'“ (ugyldig)';
     if($mode==='total'&&$locations){
         $key=(string)array_key_first($locations);
         return 'Fil: lagerantal i alt '.(int)($stockFile['total']??$locations[$key]).' → skrives på '.($locationNames[$key]??$key);
