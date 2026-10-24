@@ -32,7 +32,8 @@ tk_start() {
   local ini="$1" port="$2" root="$3" log="$4" args i
   args=(-d opcache.enable=0 -d display_errors=1 -d error_reporting=-1 -d upload_max_filesize=16M -d post_max_size=24M)
   [ -n "$ini" ] && args=(-c "$ini" "${args[@]}")
-  php "${args[@]}" -S 127.0.0.1:$port -t "$root" >"$log" 2>&1 & TKPIDS+=($!)
+  if [ -n "$ini" ]; then PHP_INI_SCAN_DIR= php "${args[@]}" -S 127.0.0.1:$port -t "$root" >"$log" 2>&1 & TKPIDS+=($!)
+  else php "${args[@]}" -S 127.0.0.1:$port -t "$root" >"$log" 2>&1 & TKPIDS+=($!); fi
   for i in $(seq 1 40); do curl -s -o /dev/null --max-time 1 "http://127.0.0.1:$port/assets/style.css" && return 0; sleep 0.25; done
   return 1
 }
@@ -46,9 +47,11 @@ tk_copy() {
   [ -f "$1/install.php" ] && [ ! -e "$1/config.php" ]
 }
 TKADM="pkkrav-tester-adm"
-TKFIELDS=(--data-urlencode "db_host=${HSG_TEST_DB_HOST:-127.0.0.1}" --data-urlencode "db_name=${HSG_TEST_DB_NAME:-}" --data-urlencode "db_user=${HSG_TEST_DB_USER:-root}"
+# Alle installationsfelter, men med en database, der ikke findes, og uden seed_stock: går manglesiden eller CSRF-tjekket
+# i stykker, fejler install.php på forbindelsen (og 419-tjekket/cmp fanger det) i stedet for at overskrive testdatabasen.
+TKFIELDS=(--data-urlencode "db_host=${HSG_TEST_DB_HOST:-127.0.0.1}" --data-urlencode "db_name=hsg_pkkrav_findes_ikke" --data-urlencode "db_user=${HSG_TEST_DB_USER:-root}"
           --data-urlencode "db_pass=${HSG_TEST_DB_PASS:-}" --data-urlencode "admin_name=Tester Admin" --data-urlencode "admin_username=$TKADM"
-          --data-urlencode "admin_password=Test-Pass-12345!" --data-urlencode "admin_password_confirm=Test-Pass-12345!" --data-urlencode "seed_stock=1")
+          --data-urlencode "admin_password=Test-Pass-12345!" --data-urlencode "admin_password_confirm=Test-Pass-12345!")
 
 # --- 120 (alle udvidelser): Systemstatus
 curl -s -b "$JAR" -o "$TK/admin.html" "$BASE/admin.php"
@@ -80,7 +83,7 @@ if [ -z "${HSG_TEST_PHP_INI_UDEN_MBSTRING:-}" ]; then
 else
   info "PHP-krav (tester): server uden mbstring (kriterie 116-120)"
   TKINI="$HSG_TEST_PHP_INI_UDEN_MBSTRING"
-  tkenv=$(php -c "$TKINI" -r 'foreach(["mbstring","pdo_mysql","zip","gd","curl","openssl"] as $e) echo $e,"=",extension_loaded($e)?1:0," ";' 2>/dev/null)
+  tkenv=$(PHP_INI_SCAN_DIR= php -c "$TKINI" -r 'foreach(["mbstring","pdo_mysql","zip","gd","curl","openssl"] as $e) echo $e,"=",extension_loaded($e)?1:0," ";' 2>/dev/null)
   if [ "$tkenv" != "mbstring=0 pdo_mysql=1 zip=1 gd=1 curl=1 openssl=1 " ]; then
     bad "PHP-krav (tester): ini-filen uden mbstring er ugyldig (fik '$tkenv')"
   else
@@ -157,7 +160,7 @@ else
     tk_stop
     # --- Flere udvidelser mangler på én gang (mbstring og openssl): listen og den fælles besked bruger alle krævede udvidelser
     sed -E '/^[[:space:]]*extension[[:space:]]*=[[:space:]]*"?(php_)?openssl(\.dll|\.so)?"?[[:space:]]*$/d' "$TKINI" > "$TK/uden-mb-openssl.ini"
-    tkenv2=$(php -c "$TK/uden-mb-openssl.ini" -r 'foreach(["mbstring","openssl","pdo_mysql","zip","gd","curl"] as $e) echo $e,"=",extension_loaded($e)?1:0," ";' 2>/dev/null)
+    tkenv2=$(PHP_INI_SCAN_DIR= php -c "$TK/uden-mb-openssl.ini" -r 'foreach(["mbstring","openssl","pdo_mysql","zip","gd","curl"] as $e) echo $e,"=",extension_loaded($e)?1:0," ";' 2>/dev/null)
     if [ "$tkenv2" != "mbstring=0 openssl=0 pdo_mysql=1 zip=1 gd=1 curl=1 " ]; then
       info "PHP-krav (tester): test uden både mbstring og openssl sprunget over (kunne ikke afledes en ini-fil uden openssl; fik '$tkenv2')"
     elif tk_copy "$TK/rent-2" && tk_start "$TK/uden-mb-openssl.ini" $((TKPORT + 4)) "$TK/rent-2" "$TK/rent-2.log"; then

@@ -27,7 +27,7 @@ pkempty() { # navn beskrivelse
   else bad "$2 giver ikke præcis {\"results\":[]} ($(head -c 200 "$PK/$1.json"))"; fi
 }
 # pkhas <navn> <forventet resultat som JSON> <beskrivelse>: et resultat har alle de forventede felter.
-# Det forventede skrives med \u-escapes, så kommandolinjen kun indeholder ASCII (også på Windows).
+# Det forventede er JSON i UTF-8 og sammenlignes felt for felt efter json_decode.
 pkhas() {
   local res
   res=$(php -r '$j=json_decode((string)file_get_contents($argv[1]),true); $e=json_decode($argv[2],true); if(!is_array($j)||!is_array($j["results"]??null)||!is_array($e)){echo "ugyldig JSON";exit;} foreach($j["results"] as $r){if(!is_array($r))continue; $m=true; foreach($e as $k=>$v){if(($r[$k]??null)!==$v){$m=false;break;}} if($m){echo "fundet";exit;}} echo "ikke fundet";' "$PK/$1.json" "$2")

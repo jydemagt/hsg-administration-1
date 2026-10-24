@@ -34,7 +34,7 @@ fi
 if out=$(php tests/php_requirements_test.php 2>&1); then ok "$out"; else echo "$out"; bad "Enhedstest af PHP-kravene fejlede"; fi
 # Samme enhedstest uden mbstring, hvis der er angivet en ini-fil uden mbstring (spec afsnit 7.1)
 if [ -n "${HSG_TEST_PHP_INI_UDEN_MBSTRING:-}" ]; then
-  if out=$(php -c "$HSG_TEST_PHP_INI_UDEN_MBSTRING" tests/php_requirements_test.php --uden-mbstring 2>&1); then ok "Uden mbstring: $out"; else echo "$out"; bad "Enhedstest af PHP-kravene uden mbstring fejlede"; fi
+  if out=$(PHP_INI_SCAN_DIR= php -c "$HSG_TEST_PHP_INI_UDEN_MBSTRING" tests/php_requirements_test.php --uden-mbstring 2>&1); then ok "Uden mbstring: $out"; else echo "$out"; bad "Enhedstest af PHP-kravene uden mbstring fejlede"; fi
 else info "Test uden mbstring sprunget over (HSG_TEST_PHP_INI_UDEN_MBSTRING ikke sat)"; fi
 
 # 3. Release-bygger: negativtest (forbudte filer må aldrig komme med)
