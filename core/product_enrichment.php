@@ -9,12 +9,10 @@ require_once __DIR__.'/groq.php';
  */
 
 /**
- * Alle værdier, som fadnummer-mønstrene finder i teksten, i den rækkefølge de prøves:
- * først alle match efter cask/fad/barrel, derefter alle match efter #, hver i tekstens rækkefølge.
- * Samme batch/bottle/flaske- og årstalsfilter som altid; værdierne er trimmet og med store bogstaver.
- * Det første element er præcis det, udledningen gav før cifferreglen (bruges af oprydningen).
+ * Intern. Brug hsg_cask_number_candidates (den gamle udledning) eller hsg_extract_cask_number (den nye).
+ * $legacy=true er den gamle udledning med fejlen i batch/bottle/flaske-filteret, $legacy=false den nye.
  */
-function hsg_cask_number_candidates(string $text): array {
+function hsg_cask_number_scan(string $text, bool $legacy): array {
     $text=trim($text);if($text==='')return [];
     $patterns=[
       '/\b(?:cask|fad|barrel)\s*(?:no\.?|nr\.?|number)?\s*#?\s*([A-Z0-9][A-Z0-9.\-\/]{1,30})\b/iu',
@@ -25,8 +23,16 @@ function hsg_cask_number_candidates(string $text): array {
         if(!preg_match_all($rx,$text,$mm,PREG_SET_ORDER|PREG_OFFSET_CAPTURE))continue;
         foreach($mm as $m){
             $value=trim((string)$m[1][0]);$offset=(int)$m[0][1];
-            $before=function_exists('mb_substr')?mb_substr($text,0,$offset,'UTF-8'):substr($text,0,$offset);
-            $tail=function_exists('mb_substr')?mb_substr($before,max(0,mb_strlen($before,'UTF-8')-18),null,'UTF-8'):substr($before,-18);
+            if($legacy){
+                $before=function_exists('mb_substr')?mb_substr($text,0,$offset,'UTF-8'):substr($text,0,$offset);
+                $tail=function_exists('mb_substr')?mb_substr($before,max(0,mb_strlen($before,'UTF-8')-18),null,'UTF-8'):substr($before,-18);
+            }else{
+                // $text er gyldig UTF-8 (preg_match_all med /u har tjekket den), og /u giver offsets på tegngrænser.
+                // Halen er de sidste højst 18 TEGN før matchet: gå baglæns og tæl tegnenes første byte. Den bruges kun for #-mønstret.
+                $i=$offset;$n=0;
+                while($i>0 && $n<18){$i--; if((ord($text[$i])&0xC0)!==0x80)$n++;}
+                $tail=substr($text,$i,$offset-$i);
+            }
             if($pi===1 && preg_match('/\b(?:batch|bottle|flaske)\s*$/iu',$tail))continue;
             if(preg_match('/^(?:19|20)\d{2}$/',$value))continue;
             $out[]=strtoupper($value);
@@ -35,9 +41,28 @@ function hsg_cask_number_candidates(string $text): array {
     return $out;
 }
 
-/** Fadnummer: den første kandidat med mindst ét ciffer. Ord som STRENGTH, FINISH og CRAFT er ikke et fadnummer. */
+/**
+ * Den GAMLE udledning. Den bruges kun som bevis i oprydningen (hsg_cask_number_cleanup).
+ * Alle værdier, som fadnummer-mønstrene finder i teksten, i den rækkefølge de prøves:
+ * først alle match efter cask/fad/barrel, derefter alle match efter #, hver i tekstens rækkefølge.
+ * Årstal filtreres fra; værdierne er trimmet og med store bogstaver.
+ * Batch/bottle/flaske-filteret er bevidst det gamle, også med fejlen: Med mbstring bruges byte-offsettet som
+ * tegn-offset, så filteret ser for langt frem, når der står æ, ø, å eller – før #. Uden mbstring er halen 18 bytes og
+ * kan skære et tegn over, så filteret svigter (fx 'Kløver Whisky Batch #12').
+ * Ret det ikke, for så passer beviset ikke længere med de værdier, som den gamle kode har gemt.
+ * Det første element er præcis det, udledningen gav før cifferreglen. Den nye udledning er hsg_extract_cask_number.
+ */
+function hsg_cask_number_candidates(string $text): array {
+    return hsg_cask_number_scan($text,true);
+}
+
+/**
+ * Fadnummer (den nye udledning): den første kandidat med mindst ét ciffer. Batch/bottle/flaske-filteret ser på
+ * de sidste 18 tegn lige før # (rigtigt byte-offset, samme resultat med og uden mbstring).
+ * Ord som STRENGTH, FINISH og CRAFT er ikke et fadnummer.
+ */
 function hsg_extract_cask_number(string $text): ?string {
-    foreach(hsg_cask_number_candidates($text) as $value){
+    foreach(hsg_cask_number_scan($text,false) as $value){
         if(preg_match('/\d/',$value))return $value;
     }
     return null;

@@ -439,7 +439,7 @@ Seed-kortet til kørsel 2 og 3 er `['TSTCASK-3' => ['Royal Brackla, 11yo, 2013 -
   - "Barrel 1st Fill" giver `1ST`, fordi et ordenstal med ciffer efter cask/fad/barrel læses som fadnummer.
   - "Fadnummer 12" giver `null` (i dag NUMMER), fordi "nummer" ikke er med i mønstret. "Fad nr. 12" virker.
   - #-mønstret skelner ikke mellem et fadnummer og fx "Release #12" eller "Chapter #2". Kun batch, bottle og flaske filtreres fra (se også F1, Konsekvens).
-  - Batch-filteret bruger et byte-offset fra `PREG_OFFSET_CAPTURE` som tegn-offset i `mb_substr` (`core/product_enrichment.php:19-21`). Står der æ, ø, å eller "–" før `#`, kan "Batch #12" derfor blive læst som fadnummer 12. **Anbefales som separat opfølgning.**
+  - Batch-filteret bruger et byte-offset fra `PREG_OFFSET_CAPTURE` som tegn-offset i `mb_substr` (`core/product_enrichment.php:19-21`). Står der æ, ø, å eller "–" før `#`, kan "Batch #12" derfor blive læst som fadnummer 12. **Anbefales som separat opfølgning.** Rettet i `2026-10-22-fadnummer-batch-byteoffset.md`.
 - **Excel-import** skriver altid `cask_number` på eksisterende produkter, også tomt, når filen ikke har kolonnen Fadnummer (`import.php:14`, `:55`). Det er uændret.
 - **Navnestandardiseringen** (`migrations.php:265-275`) bruger navnet som destilleri, når destilleri er tomt. Det ser ud til at kunne forlænge sådanne navne ved hver opgradering. Det er observeret under undersøgelsen, men ikke verificeret, og bør undersøges separat.
 - **Preview-formatet** i Kims uploadfil (Q3).
