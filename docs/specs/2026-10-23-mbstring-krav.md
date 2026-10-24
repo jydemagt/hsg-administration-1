@@ -185,7 +185,7 @@ Rettighederne er uændrede, og der kommer ingen nye capabilities.
 | Fil | Ændring |
 |---|---|
 | `core/php_requirements.php` | **Ny.** Funktionerne i 3.4. |
-| `tools/build-release.php` | `require_once HSG_ROOT.'/core/php_requirements.php'`, og `required_extensions` sættes til `hsg_required_extensions()`. Listen må ikke længere stå hårdkodet. |
+| `tools/build-release.php` | `require_once HSG_ROOT.'/core/php_requirements.php'`, og `required_extensions` sættes til `hsg_required_extensions()`. Listen må ikke længere stå hårdkodet. `required_files` får også `core/php_requirements.php` og `core/updater.php` (afsnit 11). |
 | `core/updater.php` | Tjekket og beskeden i 3.3. Filen får `require_once __DIR__.'/php_requirements.php'`. |
 | `install.php` | Tjekket og siden i 3.1. |
 | `admin.php` | Kortet og advarslen i 3.2. |
@@ -329,3 +329,14 @@ Hurtigsøgningens to forespørgsler i `is_admin()`-blokken brugte kolonner, der 
 - **Linkbrugere:** `SELECT id, name FROM lager_users WHERE name LIKE ?`. Undertitlen er altid "Personligt link-adgang".
 - **Ordrer:** `order_number`, `customer_name` og `customer_email` søges, og titlen og undertitlen bruger `customer_name` og `total_amount`.
 - Rettigheder, JSON-format og resten af filen er uændrede. Der kommer ingen nye kriterier, for 115 dækker det. Røgtesten søger desuden efter en testbruger og en testordre og kræver, at de findes uden `Uncaught`.
+
+---
+
+## 11. Rettelser efter review (2026-10-24)
+
+Revieweren godkendte uden SKAL- og BØR-fund. Brugeren ville have disse fire KAN-fund rettet før PR'en:
+
+1. **KAN 1, `tools/build-release.php`:** `required_files` i `hsg-package.json` har nu også `core/php_requirements.php` og `core/updater.php`. `core/updater.php` kræver `php_requirements.php` med `require_once`, og den installerede updater læser `required_files` fra den nye pakkes manifest. Derfor virker værnet allerede ved første release.
+2. **KAN 3, `tests/php_krav_tester.sh`:** Installationsfelterne i testerens POST'er bruger en database, der ikke findes (`hsg_pkkrav_findes_ikke`), og har ikke længere `seed_stock`. Går manglesiden eller CSRF-tjekket i stykker, fejler `install.php` på forbindelsen og kan ikke overskrive testdatabasen. 419-tjekket og `cmp` mod manglesiden fanger stadig fejlene, og det er bekræftet med to mutanter: `verify_csrf()` fjernet, og tjekket af udvidelser fjernet.
+3. **KAN 4, `tests/php_krav_smoke.sh`:** Kommentaren ved `pkhas` passer nu til koden. Det forventede er JSON i UTF-8, ikke `\u`-escapes.
+4. **KAN 5, `tests/run.sh` og `tests/php_krav_tester.sh`:** Alle `php -c <ini-uden-mbstring>`-kald har `PHP_INI_SCAN_DIR=` foran, også servere og kontrollen af miljøet. Så indlæser Linux ikke mbstring fra `conf.d`.
