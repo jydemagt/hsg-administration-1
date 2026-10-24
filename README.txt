@@ -1,4 +1,25 @@
-HSG ADMINISTRATION v1.3.5
+HSG ADMINISTRATION v11.2.0
+
+Version 11.2.0 – Kims uploadfil, fadnumre, nyhedsbrev og PHP-krav
+------------------------------------------------------------------
+FØR OPDATERING: Webhotellet skal have PHP-udvidelserne mbstring og openssl slået til (se
+"KRAV / ANBEFALET PHP"). Mangler en af dem, afviser Opgradering pakken med en dansk besked,
+og intet ændres. Slå udvidelsen til i webhotellets kontrolpanel, og prøv igen.
+
+- Kims uploadfil (Leverandør-upload 1.1.2): Lagerfejlene er rettet. Kolonnegættet tager ikke
+  længere beløbskolonner som lagerantal, "Lagerantal i alt" skal være ét tal, tomme
+  lokationsceller tæller som 0, og varenumre med bogstav flettes kun, når det er samme whisky.
+  Aktive reservationer vises pr. lokation i preview, og valget huskes. Lav et nyt preview efter
+  opdateringen.
+- Fadnummer kræver mindst ét ciffer (Produkter 1.5.1). Opdateringen rydder én gang værdier som
+  STRENGTH, FINISH og CRAFT, der er læst automatisk. Resten vises under Produkter →
+  "Fadnr. uden ciffer". Numre efter Batch, Bottle og Flaske læses heller ikke som fadnummer,
+  når navnet har æ, ø, å eller en tankestreg.
+- Nyhedsbrev (nyt modul, trin 1): Modtagerliste, import fra Kims Excel-fil og afmeldingslink.
+  Der sendes endnu ingen mails. Se docs/NEWSLETTER.md.
+- PHP-krav: mbstring og openssl er nu krævede. Installationen stopper, og Systemstatus advarer,
+  hvis en krævet udvidelse mangler.
+- Sikkerhed: Status fra URL'en i Produkter kan ikke længere give XSS.
 
 Version 1.4.1 – katalogbilleder uden automatisk søgning
 --------------------------------------------------------
