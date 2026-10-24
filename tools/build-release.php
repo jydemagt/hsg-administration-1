@@ -212,7 +212,10 @@ function hsg_build_generate_manifest(string $buildDir, string $version, string $
             'app_version.php',
             'auth.php',
             'migrations.php',
-            'core/modules.php'
+            'core/modules.php',
+            // core/updater.php kræver core/php_requirements.php med require_once
+            'core/php_requirements.php',
+            'core/updater.php'
         ],
         'release_notes' => "HSG Administration version {$version} release package.",
         'commit' => $commitHash,
