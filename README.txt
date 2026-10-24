@@ -251,7 +251,7 @@ Leverandør-kildekrav (v1.3.7)
 NYT I V1.4.0 – FADNUMMER OG LEVERANDØR-UPLOAD
 ------------------------------------------------
 - Produkter har nu et selvstændigt felt til Fadnummer samt det eksisterende felt Fadtype.
-- Fadnummer aflæses sikkert fra varetekst efter #, Cask No. eller Fad nr.; batchnumre ignoreres.
+- Fadnummer aflæses sikkert fra varetekst efter #, Cask No. eller Fad nr.; batchnumre ignoreres, og et fadnummer skal indeholde mindst ét ciffer.
 - Produktsiden viser hvor mange aktive produkter der mangler fadnummer og kan filtrere dem frem.
 - Fadnummer bruges som stærkt signal i billedsøgning og produktmatch.
 - Nyt modul: Leverandør-upload. Upload forskellige XLSX/CSV pris-, outturn- og produktfiler.
@@ -316,3 +316,8 @@ Version 1.6.1
 - Katalogtabeller tegnes med en sammenhængende ydre ramme på alle fire sider, inkl. nederste kant.
 - Katalogbilleder beskæres automatisk i en separat cache, så flasken fylder højden bedre og store hvide baggrundsmargener fjernes uden at ændre originalbilledet.
 - Datakvalitet viser fysisk lager og giver en direkte Slet produkt-knap ved fysisk lager 0 eller lavere. Aktive reservationer blokerer sletning.
+
+
+Fadnummer kræver mindst ét ciffer (Produkter 1.5.1)
+- Fadnummer kræver nu mindst ét ciffer. Ord som STRENGTH, FINISH og CRAFT, der før blev læst ud af navne som "Cask Strength", gemmes ikke længere som fadnummer. Opdateringen rydder sådanne værdier, når det kan ses, at de er læst automatisk, og retter dem til det rigtige fadnummer, hvis navnet har et. Resten vises under Produkter → "Fadnr. uden ciffer". Lav et nyt preview i Kims uploadfil efter opdateringen.
+- Numre efter Batch, Bottle og Flaske (fx "Blåbær Batch #12") læses heller ikke som fadnummer, når der står fx æ, ø, å, ’ eller en tankestreg tidligere i navnet. Et rigtigt fadnummer før "Batch #…" bliver nu fundet.
