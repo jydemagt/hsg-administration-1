@@ -12,14 +12,14 @@ require_once __DIR__.'/settings.php';
 if (isset($_GET['action']) && $_GET['action'] === 'quick_search') {
     header('Content-Type: application/json; charset=utf-8');
     $q = trim((string)($_GET['q'] ?? ''));
-    if (mb_strlen($q) < 2) {
+    if ((function_exists('mb_strlen') ? mb_strlen($q, 'UTF-8') : strlen($q)) < 2) {
         echo json_encode(['results' => []]);
         exit;
     }
 
     $results = [];
     $like = '%' . $q . '%';
-    $lowerQ = mb_strtolower($q);
+    $lowerQ = function_exists('mb_strtolower') ? mb_strtolower($q, 'UTF-8') : strtolower($q);
 
     // Command Palette Action Shortcuts (Filtered by Server-Side Permissions)
     $actions = [
@@ -102,14 +102,14 @@ if (isset($_GET['action']) && $_GET['action'] === 'quick_search') {
 
     if (is_admin()) {
         if (db_table_exists($pdo, 'lager_users') && (is_superadmin() || can('users.manage'))) {
-            $stU = $pdo->prepare("SELECT id, name, email FROM lager_users WHERE name LIKE ? OR email LIKE ? ORDER BY name ASC LIMIT 3");
-            $stU->execute([$like, $like]);
+            $stU = $pdo->prepare("SELECT id, name FROM lager_users WHERE name LIKE ? ORDER BY name ASC LIMIT 3");
+            $stU->execute([$like]);
             $users = $stU->fetchAll(PDO::FETCH_ASSOC);
             foreach ($users as $u) {
                 $results[] = [
                     'type' => 'Bruger (Link)',
                     'title' => $u['name'],
-                    'subtitle' => $u['email'] ?: 'Personligt link-adgang',
+                    'subtitle' => 'Personligt link-adgang',
                     'url' => 'users.php?q=' . urlencode($u['name']),
                 ];
             }
@@ -117,19 +117,19 @@ if (isset($_GET['action']) && $_GET['action'] === 'quick_search') {
 
         if (db_table_exists($pdo, 'hsg_woocommerce_orders') && can('reports.view')) {
             $stO = $pdo->prepare("
-                SELECT id, order_number, billing_first_name, billing_last_name, status, total
+                SELECT id, order_number, customer_name, status, total_amount
                 FROM hsg_woocommerce_orders
-                WHERE order_number LIKE ? OR billing_first_name LIKE ? OR billing_last_name LIKE ? OR billing_email LIKE ?
+                WHERE order_number LIKE ? OR customer_name LIKE ? OR customer_email LIKE ?
                 ORDER BY id DESC LIMIT 3
             ");
-            $stO->execute([$like, $like, $like, $like]);
+            $stO->execute([$like, $like, $like]);
             $orders = $stO->fetchAll(PDO::FETCH_ASSOC);
             foreach ($orders as $o) {
-                $name = trim($o['billing_first_name'] . ' ' . $o['billing_last_name']);
+                $name = trim((string)$o['customer_name']);
                 $results[] = [
                     'type' => 'Ordre',
                     'title' => 'Ordre #' . ($o['order_number'] ?: $o['id']) . ($name ? ' - ' . $name : ''),
-                    'subtitle' => 'Status: ' . $o['status'] . ' · Total: ' . $o['total'] . ' kr.',
+                    'subtitle' => 'Status: ' . $o['status'] . ' · Total: ' . $o['total_amount'] . ' kr.',
                     'url' => 'reports.php?q=' . urlencode((string)($o['order_number'] ?: $o['id'])),
                 ];
             }

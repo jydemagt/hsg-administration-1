@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/auth.php';require_admin();
+require_once __DIR__.'/core/php_requirements.php';
 
 $activeLinks=(int)$pdo->query('SELECT COUNT(*) FROM lager_users WHERE active=1')->fetchColumn();
 $pendingImages=(int)$pdo->query("SELECT COUNT(*) FROM lager_products WHERE image_path IS NOT NULL AND image_path<>'' AND COALESCE(image_approval_status,'pending')<>'approved'")->fetchColumn();
@@ -16,9 +17,7 @@ try {
 $phpOk = version_compare(PHP_VERSION, '8.1.0', '>=');
 $storageDir = __DIR__ . '/storage/tmp';
 $storageWritable = is_dir($storageDir) && is_writable($storageDir);
-$extZip = extension_loaded('zip');
-$extGd = extension_loaded('gd');
-$extPdo = extension_loaded('pdo');
+$missingExt = hsg_missing_extensions();
 
 $wcConfigured = trim((string)setting_get($pdo, 'woocommerce_shop_url', '')) !== '';
 $wcLastStatus = setting_get($pdo, 'wc_last_sync_status', 'not_configured');
@@ -71,9 +70,9 @@ if(hsg_module_is_enabled('newsletter') && can('newsletter.send')){
       <small class="muted">storage/tmp/</small>
     </div>
     <div class="card metric" style="padding:10px;">
-      <span class="badge <?=($extZip&&$extGd&&$extPdo)?'green':'red'?>"><?=($extZip&&$extGd&&$extPdo)?'✓ Alle aktiveret':'🔴 Mangler moduler'?></span>
-      <strong>PHP Udvidelser</strong>
-      <small class="muted">Zip, GD, PDO</small>
+      <span class="badge <?=$missingExt?'red':'green'?>"><?=$missingExt?h('🔴 Mangler: '.implode(', ',$missingExt)):'✓ Alle aktiveret'?></span>
+      <strong>PHP-udvidelser</strong>
+      <small class="muted"><?=h(implode(', ',hsg_required_extensions()))?></small>
     </div>
     <div class="card metric" style="padding:10px;">
       <span class="badge <?=$wcConfigured?'green':'blue'?>"><?=$wcConfigured?($wcLastStatus==='error'?'⚠ Fejl':'✓ Klar'):'Ej oprettet'?></span>
@@ -81,6 +80,7 @@ if(hsg_module_is_enabled('newsletter') && can('newsletter.send')){
       <small class="muted"><?=$wcConfigured?'Webshop opsat':'Konfigurér i rapporter'?></small>
     </div>
   </div>
+  <?php if($missingExt):?><div class="flash error" role="alert"><?=h(hsg_missing_extensions_message($missingExt).' Næste opgradering kan ikke installeres, før det er gjort.')?></div><?php endif;?>
 </div>
 
 <p class="muted admin-intro">De daglige funktioner ligger i hovedmenuen. Her er de funktioner, du normalt kun bruger ved opsætning, kontrol eller vedligeholdelse.</p>

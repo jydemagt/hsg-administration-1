@@ -45,13 +45,18 @@ INSTALLATION
 KRAV / ANBEFALET PHP
 --------------------
 - PHP 8.1 eller nyere.
-- PDO MySQL.
-- ZipArchive (XLSX + ZIP-backup).
-- SimpleXML (XLSX-import).
-- XMLReader (XLSX-import i Nyhedsbrev). Følger normalt med SimpleXML (samme libxml-pakke).
-- GD anbefales til billedbehandling.
-- cURL kræves til automatisk internetbilledhentning og OneDrive.
+- Krævede PHP-udvidelser: pdo, pdo_mysql, zip, json, gd, curl, mbstring og openssl.
+  zip bruges til XLSX og backup, gd til billeder, curl til OneDrive og GitHub-opdatering,
+  mbstring til tekst med æ, ø og å (fx fadnumre og navnematch ved import),
+  og openssl til personlige adgangslinks.
+  Mangler en af dem, stopper installationen og opgraderingen med en dansk besked, før noget ændres.
+- SimpleXML og XMLReader (XLSX-import, også i Nyhedsbrev). Følger normalt med libxml.
 - HTTPS anbefales stærkt.
+
+Mangler en udvidelse: slå den til i webhotellets kontrolpanel under PHP-indstillinger,
+eller bed webhotellets support om det. Prøv derefter igen (Opgradering > Kontrollér pakke,
+eller genindlæs install.php). Systemstatus under Administration viser, om alle krævede
+udvidelser er slået til.
 
 MODULRETTIGHEDER
 ----------------
