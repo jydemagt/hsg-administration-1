@@ -10,6 +10,8 @@ declare(strict_types=1);
  *  - Q5  linkbrugere: ingen knapper på arkiverede reservationer, ingen adgang til supplier_upload.php (kriterie 160)
  *  - Q6  samme "Anvend" to gange med samme token gør intet den anden gang
  *  - Q7  tilstand T: kun reservationer på første lokation arkiveres (2.3, kriterie 138)
+ *  - Q8/Q9 review-fund B1: "– Intet match –" (product_<i> sendt tomt) springer rækken over i begge tilstande –
+ *        intet lager, ingen produktdata og ingen arkivering. Tom værdi + "Opret nyt" virker stadig i full (2.7 trin 1)
  *
  * KØRES af tests/run.sh, mens røgtestens server kører:
  *     php tests/supplier_archive_qa_test.php http://127.0.0.1:8787 testadmin 'Test-Pass-12345!'
@@ -342,6 +344,63 @@ try {
         $apply($t, [$i], [$i => $p], [$r1, $r3]);
         t_eq('archived', res_status($pdo, $r1), 'T1 arkiveret'); t_eq('reserved', res_status($pdo, $r3), 'T3 (Gert) uændret');
         t_eq([$L1 => 0, $L3 => 1], db_stock($pdo, $p), 'kun første lokation skrives');
+    });
+
+    // ------------------------------------------------------------------------------------------
+    // Review-fund B1: "– Intet match (springes over) –" har værdien '' og må aldrig falde tilbage til previewets match.
+    $selectOf = static function (string $body, int $i): string {
+        return preg_match('#<select name="product_'.$i.'"[^>]*>((?:(?!</select>).)*)</select>#s', $body, $m) ? $m[1] : '';
+    };
+    $applyAudit = static function (int $afterId) use ($pdo): array {
+        return json_decode((string)q1($pdo, "SELECT details_json FROM hsg_audit_log WHERE action='supplier_import.apply' AND id>? ORDER BY id DESC LIMIT 1", [$afterId]), true) ?: [];
+    };
+
+    t_case('Q8 B1: "– Intet match –" springer rækken over i Kun lagerantal', function () use ($pdo, $L3, $http, $upload, $apply, $selectOf, $applyAudit) {
+        $p = db_product($pdo, 'TSTKIM-9601', 'TSTKIM Intet Match Lager', [$L3 => 2]);
+        $r1 = db_reserve($pdo, $p, $L3, 1, 'TSTKIM M1'); $r2 = db_reserve($pdo, $p, $L3, 1, 'TSTKIM M2');
+        [$t, $pv] = $upload([['TSTKIM-9601', 'TSTKIM Intet Match Lager', 'TSTKIM Dist', '0', '0', '', '0']], 'stock_only', $GLOBALS['lMap']);
+        $i = item_index($pv, 'TSTKIM-9601');
+        t_eq($p, (int)($pv['items'][$i]['match']['id'] ?? 0), 'forudsætning: previewet har et match');
+        t_eq(true, $pv['items'][$i]['archive']['default'] ?? null, 'forudsætning: arkiveringen er forvalgt');
+        // En uændret dropdown sender matchets id (det er valgt), ikke ''.
+        $select = $selectOf($http->get('supplier_upload.php?preview='.$t)['body'], $i);
+        t_true(str_contains($select, '<option value="'.$p.'" selected>'), 'uændret dropdown har matchet valgt');
+        t_true(str_contains($select, '<option value="">– Intet match (springes over) –</option>'), 'dropdown har "– Intet match (springes over) –" med værdien \'\'');
+        $events = count_of($pdo, "SELECT COUNT(*) FROM hsg_audit_log WHERE action='reservation.archive'");
+        $lastAudit = (int)q1($pdo, 'SELECT COALESCE(MAX(id),0) FROM hsg_audit_log');
+        $page = $apply($t, [$i], [$i => ''], [$r1, $r2]);
+        t_eq([$L3 => 2], db_stock($pdo, $p), 'lageret er uændret');
+        t_eq([], db_movements($pdo, $p), 'ingen lagerbevægelse');
+        t_eq(['reserved', 'reserved'], [res_status($pdo, $r1), res_status($pdo, $r2)], 'begge reservationer er stadig reserveret');
+        t_eq($events, count_of($pdo, "SELECT COUNT(*) FROM hsg_audit_log WHERE action='reservation.archive'"), 'ingen reservation.archive');
+        $audit = $applyAudit($lastAudit);
+        t_eq([1, 0, 0], [$audit['rows_skipped'] ?? null, $audit['reservations_archived'] ?? null, $audit['products_updated'] ?? null], 'audit: rows_skipped 1, intet arkiveret, intet opdateret');
+        t_true(has_flash($page['body'], 'success', '1 række uden match er sprunget over.'), 'success-flash nævner den oversprungne række', json_encode(flashes($page['body']), JSON_UNESCAPED_UNICODE));
+    });
+
+    t_case('Q9 B1: "– Intet match –" springer rækken over i Produktdata og lager – tom værdi + "Opret nyt" virker stadig', function () use ($pdo, $L1, $L3, $upload, $apply, $applyAudit) {
+        $p = db_product($pdo, 'TSTKIM-9602', 'TSTKIM Intet Match Fuld', [$L3 => 2]);
+        $pdo->prepare('UPDATE lager_products SET distillery=NULL WHERE id=?')->execute([$p]);
+        $r1 = db_reserve($pdo, $p, $L3, 1, 'TSTKIM F1'); $r2 = db_reserve($pdo, $p, $L3, 1, 'TSTKIM F2');
+        [$t, $pv] = $upload([['TSTKIM-9602', 'TSTKIM Intet Match Fuld', 'TSTKIM Ny Dist', '0', '0', '', '0'], ['TSTKIM-9699', 'TSTKIM Helt Ny Opret B1', 'TSTKIM Dist', '3', '3', '', '']], 'full', $GLOBALS['lMap']);
+        $i = item_index($pv, 'TSTKIM-9602'); $n = item_index($pv, 'TSTKIM-9699');
+        t_eq($p, (int)($pv['items'][$i]['match']['id'] ?? 0), 'forudsætning: previewet har et match');
+        t_eq(true, $pv['items'][$i]['archive']['default'] ?? null, 'forudsætning: arkiveringen er forvalgt');
+        t_true(isset($pv['items'][$i]['changes']['distillery']), 'forudsætning: filen ville skrive destilleriet');
+        t_eq(true, $pv['items'][$n]['is_create_new'] ?? null, 'forudsætning: TSTKIM-9699 tilbydes som nyt produkt');
+        $events = count_of($pdo, "SELECT COUNT(*) FROM hsg_audit_log WHERE action='reservation.archive'");
+        $lastAudit = (int)q1($pdo, 'SELECT COALESCE(MAX(id),0) FROM hsg_audit_log');
+        $apply($t, [$i, $n], [$i => '', $n => ''], [$r1, $r2]);
+        t_eq(null, q1($pdo, 'SELECT distillery FROM lager_products WHERE id=?', [$p]), 'produktdata er uændret (destilleri stadig NULL)');
+        t_eq([$L3 => 2], db_stock($pdo, $p), 'lageret er uændret');
+        t_eq([], db_movements($pdo, $p), 'ingen lagerbevægelse');
+        t_eq(['reserved', 'reserved'], [res_status($pdo, $r1), res_status($pdo, $r2)], 'begge reservationer er stadig reserveret');
+        t_eq($events, count_of($pdo, "SELECT COUNT(*) FROM hsg_audit_log WHERE action='reservation.archive'"), 'ingen reservation.archive');
+        $newId = (int)q1($pdo, "SELECT id FROM lager_products WHERE sku='TSTKIM-9699'");
+        t_true($newId > 0, 'tom værdi + intet match + "Opret nyt" opretter stadig produktet');
+        t_eq([$L1 => 3], $newId > 0 ? db_stock($pdo, $newId) : [], 'det nye produkt har lager 3 på første lokation');
+        $audit = $applyAudit($lastAudit);
+        t_eq([0, 1, 0, 0], [$audit['products_updated'] ?? null, $audit['products_created'] ?? null, $audit['rows_skipped'] ?? null, $audit['reservations_archived'] ?? null], 'audit: intet opdateret, ét oprettet, rows_skipped 0, intet arkiveret');
     });
 } finally {
     db_cleanup($pdo);

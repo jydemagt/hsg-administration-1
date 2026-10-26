@@ -165,7 +165,10 @@ if($postAction==='apply'){
             if(!isset($preview['items'][$idx]))continue;
             $item=$preview['items'][$idx];
             $mergedSkus=array_values(array_filter(array_map('strval',(array)($item['merged_skus']??[])),static fn($s)=>trim($s)!==''));
-            $postedVal=trim((string)($_POST['product_'.$idx]??''));
+            // Produktvalget for rækken. Et felt, der er sendt, men ikke er tekst (fx en liste), er ugyldigt: rækken springes over.
+            $postedRaw=$_POST['product_'.$idx]??null;
+            if($postedRaw!==null&&!is_string($postedRaw)){if($stockOnly)$rowsSkipped++;continue;}
+            $postedVal=trim((string)($postedRaw??''));
             $wantsCreate=$postedVal==='create_new' || ($postedVal==='' && empty($item['match']['id']) && !empty($item['is_create_new']));
             if($stockOnly && $wantsCreate){$rowsSkipped++;continue;} // Kun lagerantal opretter aldrig nye produkter.
             if($wantsCreate){
@@ -177,6 +180,9 @@ if($postAction==='apply'){
                 $created++;
                 $details[]=['product_id'=>$newPid,'action'=>'created','source_row'=>$item['row']]+($mergedSkus?['merged_skus'=>$mergedSkus]:[]);
             } else {
+                // "– Intet match –" (feltet er sendt tomt) springer altid rækken over – også når previewet har et match.
+                // Mangler feltet helt i POST'en, bruges previewets match.
+                if($postedRaw!==null&&$postedVal===''){if($stockOnly)$rowsSkipped++;continue;}
                 $pid=(int)($postedVal ?: ($item['match']['id']??0));
                 if(!$pid||!isset($byId[$pid])){if($stockOnly)$rowsSkipped++;continue;}
                 // Reservationer til arkivering: afkrydset ∩ previewets kandidater – og kun når produktet er previewets match.

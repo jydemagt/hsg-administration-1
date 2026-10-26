@@ -216,6 +216,7 @@ Lagerbevægelsen er importens egen (`movement_type='import'`), som i dag. Der sk
 I den eksisterende transaktion (`supplier_upload.php` ca. :131) gøres følgende for hver markeret række i rækkefølge:
 
 1. **Produktet** findes som i dag (`product_<idx>` eller previewets match). I `stock_only` springes rækken over (tælles i `rows_skipped`), hvis den ikke har et produkt eller er sendt som `create_new`.
+   - *Tillæg efter review (B1):* "– Intet match –" (feltet `product_<idx>` er sendt tomt) springer altid rækken over i begge tilstande, også når previewet har et match – intet skrives, og intet arkiveres. Kun når feltet mangler helt i POST'en, bruges previewets match. Undtagelsen er uændret: i `full` opretter en tom værdi på en række uden match med `is_create_new` et nyt produkt.
 2. **Reservationer til arkivering:** Hvis det valgte produkt er lig `item.match.id`, og `item.archive` ikke er `null`:
    - `ids` = de postede `archive_res[]` ∩ id'erne i `item.archive.reservations`.
 
