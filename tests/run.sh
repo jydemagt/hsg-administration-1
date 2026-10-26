@@ -134,6 +134,9 @@ else
     # Kims uploadfil: hele flowet via HTTP (upload, kolonnegæt, reservationsvalg, anvend, audit-log). Rydder selv op.
     if php tests/supplier_upload_flow_test.php "$BASE" testadmin 'Test-Pass-12345!'; then ok "Flowtest: Kims uploadfil bestået"; else bad "Flowtest: Kims uploadfil fejlede"; fi
 
+    # Kun lagerantal og arkivering: testerens supplement (race, ukendte tal, forfalskede id'er, vagt med tilbagerulning, linkbrugere, tilstand T). Rydder selv op.
+    if php tests/supplier_archive_qa_test.php "$BASE" testadmin 'Test-Pass-12345!'; then ok "Flowtest: arkivering (testerens supplement) bestået"; else bad "Flowtest: arkivering (testerens supplement) fejlede"; fi
+
     # Nyhedsbrev: administrationssider kræver login og CSRF
     for p in newsletter.php newsletter_recipients.php newsletter_import.php; do
       code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/$p")
