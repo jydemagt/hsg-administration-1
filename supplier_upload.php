@@ -183,9 +183,9 @@ if($postAction==='apply'){
                 $details[]=['product_id'=>$newPid,'action'=>'created','source_row'=>$item['row']]+($mergedSkus?['merged_skus'=>$mergedSkus]:[]);
             } else {
                 // "– Intet match –" (feltet er sendt tomt) springer altid rækken over – også når previewet har et match.
-                // Mangler feltet helt i POST'en, bruges previewets match.
+                // En sendt værdi bruges altid, som den er (også '0'). Mangler feltet helt i POST'en, bruges previewets match.
                 if($postedRaw!==null&&$postedVal===''){if($stockOnly)$rowsSkipped++;continue;}
-                $pid=(int)($postedVal ?: ($item['match']['id']??0));
+                $pid=$postedRaw===null?(int)($item['match']['id']??0):(int)$postedVal;
                 if(!$pid||!isset($byId[$pid])){if($stockOnly)$rowsSkipped++;continue;}
                 // Reservationer til arkivering: afkrydset ∩ previewets kandidater – og kun når produktet er previewets match.
                 $archivedRows=[];
