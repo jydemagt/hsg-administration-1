@@ -90,7 +90,7 @@ else
     else ok "Admin-login lykkedes"; fi
 
     # Hver side skal svare uden 500 og uden PHP-fejl i output
-    PAGES="admin.php status.php products.php brands.php stock.php reservations.php locations.php
+    PAGES="admin.php status.php products.php brands.php stock.php reservations.php reservations.php?status=archived locations.php
            catalog.php reports.php quality.php users.php system.php backup.php import_center.php
            supplier_upload.php image_check.php update.php admin-account.php
            newsletter.php newsletter_recipients.php newsletter_import.php
@@ -118,7 +118,7 @@ else
     else ok "products.php med manipuleret status er escapet (HTTP $code)"; fi
 
     # Kims uploadfil: de nye POST-handlinger skal afvises uden CSRF (419) og uden login (401)
-    for act in reservation_mode reguess; do
+    for act in reservation_mode reguess import_scope; do
       code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' -d "action=$act&preview_token=x" "$BASE/supplier_upload.php")
       [ "$code" = "419" ] && ok "supplier_upload.php $act uden CSRF afvist (HTTP 419)" || bad "supplier_upload.php $act uden CSRF gav HTTP $code"
       code=$(curl -s -o /dev/null -w '%{http_code}' -d "action=$act&preview_token=x" "$BASE/supplier_upload.php")

@@ -1055,6 +1055,198 @@ t_case('74u "Fil:"-linjen med en ugyldig "Lagerantal i alt" (kriterie 74, enhed 
     t_eq('Fil: lagerantal i alt „3 + 2“ (ugyldig)', supplier_upload_file_line($items[0], [], $names), 'fra celle til linje, tilstand T');
 });
 
+/* ---------- H. "Kun lagerantal" og arkivering af reservationer (spec 2026-10-26-kims-upload-kun-lagerantal, kriterie 128–140) ----------
+ * Lokations-id: 1 = Christiansfeld, 2 = Michael og 3 = Gert. "Lagerændringerne" er nøglerne stock_* i changes.
+ */
+
+/** Fixture "Spøgelse" (eksempel A): Gert fysisk 2 og to reservationer på 1 stk. hos Gert. */
+function spog(array $override = []): array {
+    return hsg_product(array_merge(['id' => 501, 'sku' => '50-1', 'name' => 'Spøgelse Whisky', 'distillery' => 'Testdestilleri',
+        'stock_loc_3' => 2, 'reserved_loc_3' => 2, 'active_reservations' => [
+            ['id' => 9001, 'location_id' => 3, 'quantity' => 1, 'customer_name' => 'Hansen', 'reference' => 'Ordre 1047', 'created_at' => '2026-10-01 12:00:00'],
+            ['id' => 9002, 'location_id' => 3, 'quantity' => 1, 'customer_name' => 'Jensen', 'reference' => '', 'created_at' => '2026-10-03 09:00:00'],
+        ]], $override));
+}
+function spog_row(): array { return kim_row(['sku' => '50-1', 'name' => 'Spøgelse Whisky', 'dist' => 'Testdestilleri', 'R' => 0, 'S' => '', 'T' => 0, 'Q' => 0]); }
+/** Kun lagerændringerne (navneparseren kan give afledte felter; dem ser lagertjekkene bort fra). */
+function stock_changes(array $changes): array { return array_filter($changes, static fn($k) => str_starts_with((string)$k, 'stock_'), ARRAY_FILTER_USE_KEY); }
+function spog_archive(): array {
+    return ['default' => true, 'quantity' => 2, 'reservations' => [
+        ['id' => 9001, 'location' => 'stock_loc_3', 'quantity' => 1, 'customer_name' => 'Hansen', 'reference' => 'Ordre 1047', 'created_at' => '2026-10-01 12:00:00'],
+        ['id' => 9002, 'location' => 'stock_loc_3', 'quantity' => 1, 'customer_name' => 'Jensen', 'reference' => '', 'created_at' => '2026-10-03 09:00:00'],
+    ]];
+}
+function pris_product(): array { return hsg_product(['id' => 503, 'sku' => '50-3', 'name' => 'Pris Whisky', 'distillery' => '', 'stock_loc_1' => 1]); }
+/** items[].archive – eller 'MANGLER', hvis varen eller nøglen ikke findes (?? kan ikke skelne null fra en manglende nøgle). */
+function archive_of(?array $item): mixed { return $item !== null && array_key_exists('archive', $item) ? $item['archive'] : 'MANGLER'; }
+
+t_case('128 Standard er uændret: merge_options uden tredje parameter', function () {
+    t_eq(false, hsg_supplier_merge_options([1 => 'Christiansfeld'], 'add')['stock_only'] ?? null, 'uden tredje parameter er stock_only falsk');
+    t_eq(true, hsg_supplier_merge_options([1 => 'Christiansfeld'], 'add', 'stock_only')['stock_only'] ?? null, "med 'stock_only' er stock_only sand");
+    t_eq(false, hsg_supplier_merge_options([1 => 'Christiansfeld'], 'add', 'full')['stock_only'] ?? null, "med 'full' er stock_only falsk");
+});
+
+t_case('129 Kun lager skrives', function () {
+    $row = kim_row(['sku' => '50-3', 'name' => 'Pris Whisky', 'dist' => 'Testdestilleri', 'R' => 3, 'S' => '', 'T' => '']);
+    $full = item_by_sku(hsg_supplier_merge_raw_items([$row], kim_map(), [pris_product()], null, 1, null, merge_opts()), '50-3');
+    t_true(isset($full['changes']['distillery']) && isset($full['changes']['stock_loc_1']), 'Produktdata og lager: både distillery og stock_loc_1');
+    $only = item_by_sku(hsg_supplier_merge_raw_items([$row], kim_map(), [pris_product()], null, 1, null, merge_opts() + ['stock_only' => true]), '50-3');
+    t_eq(['stock_loc_1' => ['old' => 1, 'new' => 3, 'file' => 3]], $only['changes'] ?? null, 'Kun lagerantal: changes er præcis lagerændringen');
+    t_eq(true, $only['selected'] ?? null, 'valgt på forhånd');
+    t_eq(false, $only['skipped'] ?? null, 'ikke sprunget over');
+    t_eq(null, archive_of($only), 'archive er null');
+});
+
+t_case('130 changes_for_product med stock_only', function () {
+    t_eq(['stock_loc_1' => ['old' => 1, 'new' => 3, 'file' => 3]], hsg_supplier_changes_for_product(['distillery' => 'X', 'retail_price' => 99.0, 'cask_number' => '123', 'stock_loc_1' => 3], hsg_product(['stock_loc_1' => 1]), ['stock_only' => true]), 'kun stock_loc_1');
+    t_eq(['stock_quantity'], array_keys(hsg_supplier_changes_for_product(['stock_quantity' => 5, 'distillery' => 'X'], hsg_product(['stock_loc_1' => 1]), ['stock_only' => true])), 'kun stock_quantity');
+    $without = hsg_supplier_changes_for_product(['distillery' => 'X', 'retail_price' => 99.0, 'cask_number' => '123', 'stock_loc_1' => 3], hsg_product(['stock_loc_1' => 1]));
+    t_eq(['cask_number', 'retail_price', 'distillery', 'stock_loc_1'], array_keys($without), 'uden optionen som i dag');
+});
+
+t_case('131 Ny vare i Kun lagerantal springes over', function () {
+    $row = kim_row(['sku' => '50-9', 'name' => 'Ny Whisky', 'R' => 4, 'S' => '', 'T' => '']);
+    $full = item_by_sku(hsg_supplier_merge_raw_items([$row], kim_map(), [pris_product()], null, 1, null, merge_opts()), '50-9');
+    t_eq(true, $full['is_create_new'] ?? null, 'Produktdata og lager: is_create_new');
+    t_eq(true, $full['selected'] ?? null, 'Produktdata og lager: valgt');
+    t_eq(false, $full['skipped'] ?? null, 'Produktdata og lager: ikke sprunget over');
+    $only = item_by_sku(hsg_supplier_merge_raw_items([$row], kim_map(), [pris_product()], null, 1, null, merge_opts() + ['stock_only' => true]), '50-9');
+    t_eq(false, $only['is_create_new'] ?? null, 'Kun lagerantal: is_create_new falsk');
+    t_eq(true, $only['skipped'] ?? null, 'Kun lagerantal: skipped');
+    t_eq(false, $only['selected'] ?? null, 'Kun lagerantal: ikke valgt');
+    t_eq([], $only['changes'] ?? null, 'Kun lagerantal: ingen ændringer');
+    t_eq(4, $only['total_stock'] ?? null, 'Kun lagerantal: total_stock 4');
+    t_eq(['Bemærk: Springes over – varen findes ikke i HSG, og Kun lagerantal opretter ikke nye produkter. Vælg et HSG-produkt manuelt, hvis varen findes under et andet varenummer.'], $only['notes'] ?? null, 'præcis bemærkningen fra 4.4');
+});
+
+t_case('132 hsg_supplier_stock_file_is_zero', function () {
+    $zeros = ['mode' => 'locations', 'locations' => ['stock_loc_1' => 0, 'stock_loc_2' => 0, 'stock_loc_3' => 0], 'blank' => ['stock_loc_2'], 'invalid' => [], 'total' => 0, 'total_invalid' => null, 'sum' => 0];
+    $cases = [
+        'L: nuller, total 0' => [$zeros, true],
+        'L: nuller, total null' => [['total' => null] + $zeros, true],
+        'L: alle tomme' => [['locations' => [], 'blank' => ['stock_loc_1', 'stock_loc_2', 'stock_loc_3']] + $zeros, false],
+        'L: ugyldig celle' => [['locations' => ['stock_loc_1' => 0, 'stock_loc_3' => 0], 'invalid' => ['stock_loc_2' => '?'], 'blank' => []] + $zeros, false],
+        'L: ugyldig total' => [['total' => null, 'total_invalid' => '3 + 2'] + $zeros, false],
+        'L: kontrolafvigelse (total 2)' => [['total' => 2] + $zeros, false],
+        'L: lager på en anden lokation' => [['locations' => ['stock_loc_1' => 5, 'stock_loc_2' => 0, 'stock_loc_3' => 0], 'sum' => 5, 'total' => 5] + $zeros, false],
+        'L: delvist lager (Q2b)' => [['locations' => ['stock_loc_1' => 1, 'stock_loc_2' => 0, 'stock_loc_3' => 0], 'sum' => 1, 'total' => 1] + $zeros, false],
+        'T: første lokation 0' => [['mode' => 'total', 'locations' => ['stock_loc_1' => 0], 'blank' => [], 'invalid' => [], 'total' => 0, 'total_invalid' => null, 'sum' => 0], true],
+        'T: ugyldig total' => [['mode' => 'total', 'locations' => [], 'blank' => [], 'invalid' => [], 'total' => null, 'total_invalid' => '?', 'sum' => 0], false],
+        'T: uden fallback-lokation' => [['mode' => 'total', 'locations' => [], 'blank' => [], 'invalid' => [], 'total' => 0, 'total_invalid' => null, 'sum' => 0], false],
+        'none' => [['mode' => 'none', 'locations' => [], 'blank' => [], 'invalid' => [], 'total' => null, 'total_invalid' => null, 'sum' => 0], false],
+        'ældre preview ([])' => [[], false],
+    ];
+    foreach ($cases as $label => [$sf, $expected]) t_eq($expected, hsg_supplier_stock_file_is_zero($sf), $label);
+});
+
+t_case('133 Eksempel A med add', function () {
+    $it = item_by_sku(hsg_supplier_merge_raw_items([spog_row()], kim_map(), [spog()], null, 1, null, merge_opts()), '50-1');
+    t_eq(['stock_loc_3' => ['old' => 2, 'new' => 0, 'file' => 0, 'archived' => 2]], stock_changes($it['changes'] ?? []), 'lagerændringerne');
+    t_eq(spog_archive(), $it['archive'] ?? null, 'archive');
+    t_eq(['stock_loc_3' => 2], $it['reserved'] ?? null, 'Reserveret i HSG viser stadig alle aktive reservationer');
+    t_eq([], $it['flags'] ?? null, 'ingen flag');
+    t_eq(true, $it['selected'] ?? null, 'valgt på forhånd');
+    t_eq(false, $it['skipped'] ?? null, 'ikke sprunget over');
+});
+
+t_case('134 Eksempel A med none', function () {
+    $it = item_by_sku(hsg_supplier_merge_raw_items([spog_row()], kim_map(), [spog()], null, 1, null, merge_opts(false)), '50-1');
+    t_eq(['stock_loc_3' => ['old' => 2, 'new' => 0, 'file' => 0, 'archived' => 2]], stock_changes($it['changes'] ?? []), 'lagerændringerne');
+    t_eq(true, $it['archive']['default'] ?? null, 'archive.default');
+    t_eq([], notes_with($it ?? [], 'er reserveret. Disponibelt bliver'), 'ingen advarsel om negativt disponibelt');
+});
+
+t_case('135 Ikke sikkert match: arkiveringen er ikke forvalgt', function () {
+    $row = kim_row(['name' => 'Spøgelse Testab', 'R' => 0, 'S' => '', 'T' => 0, 'Q' => 0]);
+    $items = hsg_supplier_merge_raw_items([$row], kim_map(), [spog(['name' => 'Spøgelse Testaa'])], null, 1, null, merge_opts());
+    $it = $items[0] ?? [];
+    t_eq(501, (int)($it['match']['id'] ?? 0), 'forudsætning: match 501');
+    $score = (int)($it['match']['score'] ?? 0);
+    t_true($score >= 70 && $score <= 89, 'forudsætning: 70 ≤ score ≤ 89 (fik '.$score.')');
+    t_eq(false, $it['archive']['default'] ?? null, 'archive.default er falsk');
+    t_eq([9001, 9002], array_column((array)($it['archive']['reservations'] ?? []), 'id'), 'kandidaterne er 9001 og 9002');
+    t_true(!isset($it['changes']['stock_loc_3']), 'ingen ændring hos Gert (0 + 2 = 2)');
+    t_eq(false, $it['selected'] ?? null, 'ikke valgt');
+});
+
+t_case('136 Eksempel B og C: der er stadig lager', function () {
+    $b = hsg_product(['id' => 502, 'sku' => '50-2', 'name' => 'Halv Whisky', 'distillery' => 'Testdestilleri', 'stock_loc_1' => 5, 'stock_loc_3' => 1, 'reserved_loc_3' => 1,
+        'active_reservations' => [['id' => 9003, 'location_id' => 3, 'quantity' => 1, 'customer_name' => 'Gert-kunde', 'reference' => '', 'created_at' => '2026-10-02 10:00:00']]]);
+    $bRow = kim_row(['sku' => '50-2', 'name' => 'Halv Whisky', 'dist' => 'Testdestilleri', 'R' => 5, 'S' => '', 'T' => 0, 'Q' => 5]);
+    $add = item_by_sku(hsg_supplier_merge_raw_items([$bRow], kim_map(), [$b], null, 1, null, merge_opts()), '50-2');
+    t_eq(null, archive_of($add), 'B add: archive null');
+    t_eq([], stock_changes($add['changes'] ?? ['x' => 1]), 'B add: ingen lagerændringer');
+    $none = item_by_sku(hsg_supplier_merge_raw_items([$bRow], kim_map(), [$b], null, 1, null, merge_opts(false)), '50-2');
+    t_eq(null, archive_of($none), 'B none: archive null');
+    t_eq(['stock_loc_3' => ['old' => 1, 'new' => 0, 'file' => 0]], stock_changes($none['changes'] ?? []), 'B none: Gert 1 → 0');
+    t_has_note($none ?? [], 'Gert får 0 fysisk efter import, men 1 er reserveret', 'B none: advarsel som i dag');
+
+    $c = hsg_product(['id' => 505, 'sku' => '50-5', 'name' => 'Delvis Whisky', 'distillery' => 'Testdestilleri', 'stock_loc_1' => 4, 'reserved_loc_1' => 3, 'active_reservations' => [
+        ['id' => 9006, 'location_id' => 1, 'quantity' => 1, 'customer_name' => 'A', 'reference' => '', 'created_at' => '2026-10-01 10:00:00'],
+        ['id' => 9007, 'location_id' => 1, 'quantity' => 1, 'customer_name' => 'B', 'reference' => '', 'created_at' => '2026-10-05 10:00:00'],
+        ['id' => 9008, 'location_id' => 1, 'quantity' => 1, 'customer_name' => 'C', 'reference' => '', 'created_at' => '2026-10-20 10:00:00'],
+    ]]);
+    $cRow = kim_row(['sku' => '50-5', 'name' => 'Delvis Whisky', 'dist' => 'Testdestilleri', 'R' => 1, 'S' => '', 'T' => '', 'Q' => 1]);
+    $cAdd = item_by_sku(hsg_supplier_merge_raw_items([$cRow], kim_map(), [$c], null, 1, null, merge_opts()), '50-5');
+    t_eq(null, archive_of($cAdd), 'C add: archive null');
+    t_true(!isset($cAdd['changes']['stock_loc_1']), 'C add: ingen ændring hos Christiansfeld (1 + 3 = 4)');
+    $cNone = item_by_sku(hsg_supplier_merge_raw_items([$cRow], kim_map(), [$c], null, 1, null, merge_opts(false)), '50-5');
+    t_eq(null, archive_of($cNone), 'C none: archive null');
+    t_eq(['stock_loc_1' => ['old' => 4, 'new' => 1, 'file' => 1]], stock_changes($cNone['changes'] ?? []), 'C none: Christiansfeld 4 → 1');
+    t_has_note($cNone ?? [], 'Christiansfeld får 1 fysisk efter import, men 3 er reserveret', 'C none: advarsel som i dag');
+});
+
+t_case('137 Ukendt 0 giver ingen arkivering', function () {
+    $rows = [
+        'alle tomme' => ['R' => '', 'S' => '', 'T' => '', 'Q' => ''],
+        'ugyldig lokationscelle' => ['R' => 0, 'S' => '?', 'T' => 0],
+        'ugyldig total' => ['R' => 0, 'S' => '', 'T' => 0, 'Q' => '3 + 2'],
+        'kontrolafvigelse' => ['R' => 0, 'S' => '', 'T' => 0, 'Q' => 2],
+    ];
+    foreach ($rows as $label => $cells) {
+        $it = item_by_sku(hsg_supplier_merge_raw_items([kim_row(['sku' => '50-1', 'name' => 'Spøgelse Whisky', 'dist' => 'Testdestilleri'] + $cells)], kim_map(), [spog()], null, 1, null, merge_opts()), '50-1');
+        t_eq(null, archive_of($it), $label.': archive null');
+        if ($label === 'kontrolafvigelse') t_true(in_array('stock_mismatch', (array)($it['flags'] ?? []), true), 'kontrolafvigelse: flag stock_mismatch som i dag');
+    }
+    $it = item_by_sku(hsg_supplier_merge_raw_items([spog_row()], kim_map(), [], null, 1, null, merge_opts()), '50-1');
+    t_eq(null, archive_of($it), 'varen findes ikke i HSG: archive null');
+});
+
+t_case('138 Kun lokationer med et tal fra filen', function () {
+    $t = hsg_product(['id' => 504, 'sku' => '50-4', 'name' => 'Total Spøgelse', 'distillery' => 'Testdestilleri', 'stock_loc_1' => 1, 'stock_loc_3' => 1, 'reserved_loc_1' => 1, 'reserved_loc_3' => 1, 'active_reservations' => [
+        ['id' => 9004, 'location_id' => 1, 'quantity' => 1, 'customer_name' => 'A', 'reference' => '', 'created_at' => '2026-10-01 08:00:00'],
+        ['id' => 9005, 'location_id' => 3, 'quantity' => 1, 'customer_name' => 'B', 'reference' => '', 'created_at' => '2026-10-01 09:00:00'],
+    ]]);
+    $it = item_by_sku(hsg_supplier_merge_raw_items([kim_row(['sku' => '50-4', 'name' => 'Total Spøgelse', 'dist' => 'Testdestilleri', 'Q' => 0])], kim_map(true, false), [$t], null, 1, null, merge_opts()), '50-4');
+    t_eq([9004], array_column((array)($it['archive']['reservations'] ?? []), 'id'), 'T: kun 9004 er kandidat');
+    t_eq(['stock_loc_1' => ['old' => 1, 'new' => 0, 'file' => 0, 'archived' => 1]], stock_changes($it['changes'] ?? []), 'T: lagerændringerne');
+    t_has_note($it ?? [], 'Bemærk: 1 reservation på Gert arkiveres ikke, fordi lokationen ikke får et tal fra filen.', 'T: bemærkning om Gert');
+
+    $m = hsg_product(['id' => 506, 'sku' => '50-6', 'name' => 'Michael Spøgelse', 'distillery' => 'Testdestilleri', 'stock_loc_2' => 2, 'stock_loc_3' => 1, 'reserved_loc_2' => 2, 'reserved_loc_3' => 1, 'active_reservations' => [
+        ['id' => 9010, 'location_id' => 2, 'quantity' => 1, 'customer_name' => 'M1', 'reference' => '', 'created_at' => '2026-10-01 10:00:00'],
+        ['id' => 9011, 'location_id' => 3, 'quantity' => 1, 'customer_name' => 'G', 'reference' => '', 'created_at' => '2026-10-01 11:00:00'],
+        ['id' => 9012, 'location_id' => 2, 'quantity' => 1, 'customer_name' => 'M2', 'reference' => '', 'created_at' => '2026-10-01 12:00:00'],
+    ]]);
+    $mapNoMichael = ['sku' => 4, 'name' => 5, 'distillery' => 7, 'stock_quantity' => 16, 'stock_loc_1' => 17, 'stock_loc_3' => 19];
+    $it = item_by_sku(hsg_supplier_merge_raw_items([kim_row(['sku' => '50-6', 'name' => 'Michael Spøgelse', 'dist' => 'Testdestilleri', 'R' => 0, 'T' => 0, 'Q' => 0])], $mapNoMichael, [$m], null, 1, null, merge_opts()), '50-6');
+    t_eq([9011], array_column((array)($it['archive']['reservations'] ?? []), 'id'), 'L uden Michael: reservationerne hos Michael er ikke kandidater');
+    t_has_note($it ?? [], 'Bemærk: 2 reservationer på Michael arkiveres ikke, fordi lokationen ikke får et tal fra filen.', 'L uden Michael: bemærkningen nævner Michael (flertal)');
+});
+
+t_case('139 Arkivering i Kun lagerantal (Q1 = altid)', function () {
+    $it = item_by_sku(hsg_supplier_merge_raw_items([spog_row()], kim_map(), [spog()], null, 1, null, merge_opts() + ['stock_only' => true]), '50-1');
+    t_eq(spog_archive(), $it['archive'] ?? null, 'archive som i 133');
+    t_eq(['stock_loc_3' => ['old' => 2, 'new' => 0, 'file' => 0, 'archived' => 2]], $it['changes'] ?? null, 'changes er kun lagerændringen fra 133');
+    t_eq(true, $it['selected'] ?? null, 'valgt på forhånd');
+});
+
+t_case('140 Ældre fixtures uden active_reservations', function () {
+    foreach ([true, false] as $add) {
+        $items = hsg_supplier_merge_raw_items([octomore_row()], kim_map(), [octomore()], null, 1, null, merge_opts($add));
+        t_true(array_key_exists('archive', $items[0] ?? []) && $items[0]['archive'] === null, 'octomore (add='.var_export($add, true).'): archive null');
+    }
+});
+
 /* ---------- Resultat ---------- */
 
 $fails = $GLOBALS['t_fail'];

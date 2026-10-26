@@ -3,7 +3,8 @@ declare(strict_types=1);
 /*
  * Databasetest af Kims uploadfil (core/supplier_import.php): previewet (merge_raw_items med alias-tabellen) samt
  * hsg_supplier_apply_product / create_product / remember_alias mod en rigtig MySQL-database
- * (spec 2026-10-19, kriterie 13, 16, 17, 21-24, 27, 28, 29, 31, 33).
+ * (spec 2026-10-19, kriterie 13, 16, 17, 21-24, 27, 28, 29, 31, 33) samt arkiveringen af reservationer, statusvagten,
+ * reservations-migrationen 1.3.0 og labelen "Arkiveret" (spec 2026-10-26-kims-upload-kun-lagerantal, kriterie 141-147, 161 og 162).
  *
  * KØRES KUN mod testdatabasen, som tests/run.sh har installeret (config.php + HSG_TEST_DB_NAME):
  *     php tests/supplier_import_db_test.php
@@ -105,6 +106,17 @@ function db_item_by_sku(array $items, string $sku): ?array {
     foreach ($items as $it) if (strcasecmp((string)($it['source']['sku'] ?? ''), $sku) === 0) return $it;
     return null;
 }
+/** Reservation med kunde, reference og status. Returnerer id'et. */
+function db_reserve_named(PDO $pdo, int $pid, int $lid, int $qty, ?string $customer, ?string $reference, string $status = 'reserved'): int {
+    $pdo->prepare('INSERT INTO lager_reservations(product_id,location_id,quantity,customer_name,reference,status) VALUES(?,?,?,?,?,?)')->execute([$pid, $lid, $qty, $customer, $reference, $status]);
+    return (int)$pdo->lastInsertId();
+}
+function db_res_status(PDO $pdo, int $id): string { $st = $pdo->prepare('SELECT status FROM lager_reservations WHERE id=?'); $st->execute([$id]); return (string)$st->fetchColumn(); }
+function db_status_column_type(PDO $pdo): string {
+    $st = $pdo->prepare('SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?');
+    $st->execute(['lager_reservations', 'status']);
+    return (string)$st->fetchColumn();
+}
 
 db_cleanup($pdo);
 try {
@@ -191,18 +203,31 @@ try {
         t_eq('Kims masterfil opdatering (+2 reserveret)', end($mv)['reference'] ?? null, 'lagerbevægelsens reference');
     });
 
-    t_case('27p Previewet (mod databasen) viser tillægget og "Reserveret i HSG"', function () use ($pdo, $map, $row, $L1) {
+    // Ændret bevidst af spec 2026-10-26-kims-upload-kun-lagerantal (kriterie 162): Octomore med Kims tal 0 foreslås nu
+    // arkiveret. Tillægget og advarslen testes i stedet på TSTKIM-3008, hvor Kims tal er 1.
+    t_case('27p Previewet (mod databasen): Octomore foreslås arkiveret, tillæg og advarsel på TSTKIM-3008', function () use ($pdo, $map, $row, $L1) {
         $pid = db_product($pdo, 'TSTKIM-3007', 'TSTKIM Octomore Preview', [$L1 => 0], 'inactive');
         db_reserve($pdo, $pid, $L1, 2);
         $r = $row(['sku' => 'TSTKIM-3007', 'name' => 'TSTKIM Octomore Preview', 'R' => 0, 'S' => '', 'T' => '', 'Q' => 0]);
         $it = db_item_by_sku(db_preview_items($pdo, $map, [$r], 'add'), 'TSTKIM-3007');
         t_true($it !== null, 'varen findes i previewet');
         if ($it === null) return;
-        t_eq(['old' => 0, 'new' => 2, 'file' => 0, 'reserved' => 2], $it['changes']['stock_loc_'.$L1] ?? null, 'add: 0 → 2 (fil 0 + 2 reserveret)');
+        t_true(!array_key_exists('stock_loc_'.$L1, $it['changes']), 'add: ingen ændring (0 → 0 med forvalgt arkivering)');
+        t_eq(2, $it['archive']['quantity'] ?? null, 'add: archive.quantity = 2');
+        t_eq(true, $it['archive']['default'] ?? null, 'add: archive.default');
         t_eq(['stock_loc_'.$L1 => 2], $it['reserved'], 'Reserveret i HSG');
         $none = db_item_by_sku(db_preview_items($pdo, $map, [$r], 'none'), 'TSTKIM-3007');
         t_eq([], stock_only($none['changes'] ?? ['x' => 1]), 'none: ingen lagerændring');
-        t_has_note($none ?? [], 'får 0 fysisk efter import, men 2 er reserveret', 'none: advarsel om negativt disponibelt');
+        t_true(!str_contains(json_encode($none['notes'] ?? [], JSON_UNESCAPED_UNICODE), 'er reserveret'), 'none: ingen advarsel om negativt disponibelt');
+
+        $pid8 = db_product($pdo, 'TSTKIM-3008', 'TSTKIM Octomore Tillæg', [$L1 => 0], 'inactive');
+        db_reserve($pdo, $pid8, $L1, 2);
+        $r8 = $row(['sku' => 'TSTKIM-3008', 'name' => 'TSTKIM Octomore Tillæg', 'R' => 1, 'S' => '', 'T' => '', 'Q' => 1]);
+        $add8 = db_item_by_sku(db_preview_items($pdo, $map, [$r8], 'add'), 'TSTKIM-3008');
+        t_eq(['old' => 0, 'new' => 3, 'file' => 1, 'reserved' => 2], $add8['changes']['stock_loc_'.$L1] ?? null, 'TSTKIM-3008 add: 0 → 3 (fil 1 + 2 reserveret)');
+        $none8 = db_item_by_sku(db_preview_items($pdo, $map, [$r8], 'none'), 'TSTKIM-3008');
+        t_eq(['old' => 0, 'new' => 1, 'file' => 1], $none8['changes']['stock_loc_'.$L1] ?? null, 'TSTKIM-3008 none: 0 → 1');
+        t_has_note($none8 ?? [], 'får 1 fysisk efter import, men 2 er reserveret', 'TSTKIM-3008 none: advarsel om negativt disponibelt');
     });
 
     t_case('28 none: ingen ændring når Kims tal er 0', function () use ($pdo, $map, $row, $L1) {
@@ -289,6 +314,132 @@ try {
         $v2 = db_item_by_sku(db_preview_items($pdo, $map, $rows), 'TSTKIM-5123a');
         t_eq($new, (int)($v2['match']['id'] ?? 0), 'næste upload: varianten matcher sit nye produkt via aliaset');
         t_true($v2 !== null && !$v2['selected'], 'varianten er stadig ikke forvalgt (variant_split)');
+    });
+
+    /* ---- Arkivering af reservationer, der ikke længere har lager (spec 2026-10-26-kims-upload-kun-lagerantal, kriterie 141–147 og 161) ----
+     * Fælles data: lager [L1 0, L2 0, L3 2], r1 og r2 hos L3 på hver 1 stk. Kilden er rækken R=0, S='', T=0, Q=0. */
+    $archiveFixture = static function (string $sku) use ($pdo, $map, $row, $L1, $L2, $L3): array {
+        $pid = db_product($pdo, $sku, 'TSTKIM Spøgelse '.$sku, [$L1 => 0, $L2 => 0, $L3 => 2]);
+        $r1 = db_reserve_named($pdo, $pid, $L3, 1, 'TSTKIM Hansen', 'Ordre 1047');
+        $r2 = db_reserve_named($pdo, $pid, $L3, 1, 'TSTKIM Jensen', null);
+        $src = hsg_supplier_source_fields($row(['sku' => $sku, 'name' => 'TSTKIM Spøgelse '.$sku, 'R' => 0, 'S' => '', 'T' => 0, 'Q' => 0]), $map, $L1);
+        return [$pid, $r1, $r2, $src];
+    };
+    $movementRows = static fn(PDO $pdo, int $pid): array => db_movements($pdo, $pid);
+
+    t_case('141 Begge arkiveres (add)', function () use ($pdo, $archiveFixture, $movementRows, $L1, $L2, $L3) {
+        [$pid, $r1, $r2, $src] = $archiveFixture('TSTKIM-8001');
+        $rows = hsg_supplier_archive_reservations($pdo, $pid, [$r1, $r2], [$L1, $L2, $L3]);
+        t_eq(2, count($rows), 'to arkiverede rækker');
+        t_eq(['id', 'product_id', 'location_id', 'quantity', 'customer_name', 'reference'], array_keys($rows[0] ?? []), 'nøglerne i en arkiveret række');
+        t_eq(['id' => $r1, 'product_id' => $pid, 'location_id' => $L3, 'quantity' => 1, 'customer_name' => 'TSTKIM Hansen', 'reference' => 'Ordre 1047'], $rows[0] ?? null, 'første række er r1');
+        hsg_supplier_apply_product($pdo, $pid, $src, ['add_reserved' => true, 'archived_by_location' => [$L3 => 2]]);
+        t_eq('archived', db_res_status($pdo, $r1), 'r1 er arkiveret');
+        t_eq('archived', db_res_status($pdo, $r2), 'r2 er arkiveret');
+        t_eq([$L1 => 0, $L2 => 0, $L3 => 0], db_stock($pdo, $pid), 'lager 0/0/0');
+        t_eq([['location_id' => $L3, 'change_qty' => -2, 'balance_after' => 0, 'movement_type' => 'import', 'reference' => 'Kims masterfil opdatering (2 arkiveret)']], $movementRows($pdo, $pid), 'præcis én lagerbevægelse (import, ingen sale)');
+        t_eq(0, available_for($pdo, $pid, $L3), 'available_for(L3) = 0');
+        t_eq(0, total_available_for($pdo, $pid), 'total_available_for = 0');
+        t_eq('inactive', db_status($pdo, $pid), 'produktet er inaktivt');
+    });
+
+    t_case('142 Kun den ene arkiveres', function () use ($pdo, $archiveFixture, $movementRows, $L1, $L2, $L3) {
+        [$pid, $r1, $r2, $src] = $archiveFixture('TSTKIM-8002');
+        t_eq(1, count(hsg_supplier_archive_reservations($pdo, $pid, [$r1], [$L1, $L2, $L3])), 'én arkiveret række');
+        hsg_supplier_apply_product($pdo, $pid, $src, ['add_reserved' => true, 'archived_by_location' => [$L3 => 1]]);
+        t_eq(1, db_stock($pdo, $pid)[$L3] ?? null, 'L3 = 1');
+        t_eq([['location_id' => $L3, 'change_qty' => -1, 'balance_after' => 1, 'movement_type' => 'import', 'reference' => 'Kims masterfil opdatering (+1 reserveret, 1 arkiveret)']], $movementRows($pdo, $pid), 'lagerbevægelsen');
+        t_eq('reserved', db_res_status($pdo, $r2), 'r2 er stadig reserveret');
+        t_eq(0, available_for($pdo, $pid, $L3), 'available_for(L3) = 0');
+    });
+
+    t_case('143 Ingen arkiveres (fravalgt, som i dag)', function () use ($pdo, $archiveFixture, $movementRows, $L1, $L2, $L3) {
+        [$pid, $r1, $r2, $src] = $archiveFixture('TSTKIM-8003');
+        t_eq([], stock_only(hsg_supplier_apply_product($pdo, $pid, $src, ['add_reserved' => true])), 'ingen lagerændring (0 + 2 = 2)');
+        t_eq([$L1 => 0, $L2 => 0, $L3 => 2], db_stock($pdo, $pid), 'lageret er uændret');
+        t_eq([], $movementRows($pdo, $pid), 'ingen lagerbevægelse');
+        t_eq('reserved', db_res_status($pdo, $r1), 'r1 er reserveret');
+        t_eq('reserved', db_res_status($pdo, $r2), 'r2 er reserveret');
+    });
+
+    t_case('144 none med arkivering', function () use ($pdo, $archiveFixture, $movementRows, $L1, $L2, $L3) {
+        [$pid, $r1, $r2, $src] = $archiveFixture('TSTKIM-8004');
+        t_eq(2, count(hsg_supplier_archive_reservations($pdo, $pid, [$r1, $r2], [$L1, $L2, $L3])), 'to arkiverede rækker');
+        hsg_supplier_apply_product($pdo, $pid, $src, ['add_reserved' => false, 'archived_by_location' => [$L3 => 2]]);
+        t_eq(0, db_stock($pdo, $pid)[$L3] ?? null, 'L3 = 0');
+        $mv = $movementRows($pdo, $pid);
+        t_eq('Kims masterfil opdatering (2 arkiveret)', $mv[0]['reference'] ?? null, 'referencen');
+        t_eq(0, available_for($pdo, $pid, $L3), 'available_for(L3) = 0');
+    });
+
+    t_case('145 Fremmede og inaktive id\'er arkiveres ikke', function () use ($pdo, $archiveFixture, $L1, $L2, $L3) {
+        [$pid, $r1, $r2] = $archiveFixture('TSTKIM-8005');
+        $other = db_product($pdo, 'TSTKIM-8015', 'TSTKIM Andet produkt', [$L3 => 1]);
+        $foreign = db_reserve_named($pdo, $other, $L3, 1, 'TSTKIM Fremmed', null);
+        $cancelled = db_reserve_named($pdo, $pid, $L3, 1, 'TSTKIM Annulleret', null, 'cancelled');
+        $atL2 = db_reserve_named($pdo, $pid, $L2, 1, 'TSTKIM Michael', null);
+        $result = 'ingen';
+        try { $result = hsg_supplier_archive_reservations($pdo, $pid, [$foreign, $cancelled, $atL2, 999999999], [$L1, $L3]); }
+        catch (Throwable $e) { $result = get_class($e).': '.$e->getMessage(); }
+        t_eq([], $result, 'returnerer [] uden undtagelse');
+        t_eq('reserved', db_res_status($pdo, $foreign), 'reservationen på et andet produkt er uændret');
+        t_eq('cancelled', db_res_status($pdo, $cancelled), 'den annullerede er uændret');
+        t_eq('reserved', db_res_status($pdo, $atL2), 'reservationen hos L2 er uændret');
+        t_eq('reserved', db_res_status($pdo, $r1), 'r1 er uændret (ikke i listen)');
+    });
+
+    t_case('161 Label', function () {
+        t_eq('Arkiveret', reservation_status_label('archived'), "reservation_status_label('archived')");
+        t_eq('Reserveret', reservation_status_label('reserved'), 'reserved er uændret');
+        t_eq('Solgt/afsluttet', reservation_status_label('completed'), 'completed er uændret');
+        t_eq('Annulleret', reservation_status_label('cancelled'), 'cancelled er uændret');
+    });
+
+    t_case('147 Migration: frisk installation og to indlæsninger', function () use ($pdo, $root) {
+        $newType = "enum('reserved','completed','cancelled','archived')";
+        t_eq($newType, db_status_column_type($pdo), 'COLUMN_TYPE på den friske installation');
+        $ver = $pdo->prepare('SELECT version FROM hsg_module_versions WHERE module_id=?');
+        $ver->execute(['reservations']); t_eq('1.3.0', $ver->fetchColumn(), 'hsg_module_versions.reservations = 1.3.0');
+        $ver->execute(['supplier_upload']); t_eq('1.2.0', $ver->fetchColumn(), 'hsg_module_versions.supplier_upload = 1.2.0');
+        $file = $root.'/modules/reservations/migrations.php';
+        $before = get_defined_functions()['user'];
+        ob_start();
+        $first = require $file;
+        $second = require $file;
+        $out = ob_get_clean();
+        t_eq('', $out, 'intet output');
+        t_eq($before, get_defined_functions()['user'], 'ingen nye funktioner ved to indlæsninger');
+        t_true(is_array($first) && is_array($second), 'returnerer et array');
+        t_eq(['1.3.0'], array_map('strval', array_keys((array)$first)), "præcis nøglen '1.3.0'");
+        t_true(is_callable($first['1.3.0'] ?? null), '1.3.0 er callable');
+        $first['1.3.0']($pdo);
+        t_eq($newType, db_status_column_type($pdo), 'COLUMN_TYPE er uændret, når callable\'en kaldes igen');
+    });
+
+    // 146 (vagten) og opgraderingen fra 147: kolonnetypen sættes midlertidigt tilbage til v11.2.0's ENUM. Testens arkiverede
+    // rækker ryddes først, og typen genskabes altid i finally (med migrationen, ellers direkte).
+    t_case('146/147 Vagt uden \'archived\' og opgradering med migrationen', function () use ($pdo, $root, $archiveFixture, $L1, $L2, $L3) {
+        $pdo->exec("DELETE r FROM lager_reservations r JOIN lager_products p ON p.id=r.product_id WHERE p.sku LIKE 'TSTKIM-%' AND r.status='archived'");
+        $foreignArchived = (int)$pdo->query("SELECT COUNT(*) FROM lager_reservations WHERE status='archived'")->fetchColumn();
+        if ($foreignArchived > 0) { fwrite(STDOUT, "  INFO: 146/147 springes over – databasen har $foreignArchived arkiverede reservationer, der ikke er testens.\n"); return; }
+        [$pid, $r1] = $archiveFixture('TSTKIM-8006');
+        $completed = db_reserve_named($pdo, $pid, $L3, 1, 'TSTKIM Solgt', null, 'completed');
+        $cancelled = db_reserve_named($pdo, $pid, $L3, 1, 'TSTKIM Annulleret', null, 'cancelled');
+        $migration = (require $root.'/modules/reservations/migrations.php')['1.3.0'];
+        $pdo->exec("ALTER TABLE lager_reservations MODIFY status ENUM('reserved','completed','cancelled') NOT NULL DEFAULT 'reserved'");
+        try {
+            $message = 'ingen undtagelse';
+            try { hsg_supplier_archive_reservations($pdo, $pid, [$r1], [$L1, $L2, $L3]); }
+            catch (RuntimeException $e) { $message = $e->getMessage(); }
+            t_eq('Databasen kan ikke gemme status „Arkiveret“ endnu. Genindlæs siden, så opdateringen kan køre, og prøv igen.', $message, '146: RuntimeException med teksten fra 2.4');
+            t_eq('reserved', db_res_status($pdo, $r1), '146: reservationen er uændret reserveret');
+            $migration($pdo);
+            t_eq("enum('reserved','completed','cancelled','archived')", db_status_column_type($pdo), '147: migrationen tilføjer archived');
+            t_eq(['reserved', 'completed', 'cancelled'], [db_res_status($pdo, $r1), db_res_status($pdo, $completed), db_res_status($pdo, $cancelled)], '147: eksisterende reservationer har samme status som før');
+        } finally {
+            if (!str_contains(db_status_column_type($pdo), "'archived'")) $pdo->exec("ALTER TABLE lager_reservations MODIFY status ENUM('reserved','completed','cancelled','archived') NOT NULL DEFAULT 'reserved'");
+        }
+        t_eq(1, count(hsg_supplier_archive_reservations($pdo, $pid, [$r1], [$L1, $L2, $L3])), 'efter migrationen kan reservationen arkiveres');
     });
 } finally {
     db_cleanup($pdo);
