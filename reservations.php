@@ -122,7 +122,7 @@ if($q !== ''){
   $params = array_merge($params, [$like, $like, $like, $like, $like]);
 }
 
-if(in_array($showStatus, ['reserved','completed','cancelled'], true)){
+if(in_array($showStatus, ['reserved','completed','cancelled','archived'], true)){
   $conditions[] = "r.status = ?";
   $params[] = $showStatus;
 }
@@ -151,7 +151,9 @@ page_header('Reservationer');
     <a class="button <?=$showStatus==='reserved'?'':'secondary'?>" href="reservations.php?status=reserved<?= $q ? '&q='.urlencode($q) : '' ?>">Reserverede</a>
     <a class="button <?=$showStatus==='completed'?'':'secondary'?>" href="reservations.php?status=completed<?= $q ? '&q='.urlencode($q) : '' ?>">Solgt / Afsluttet</a>
     <a class="button <?=$showStatus==='cancelled'?'':'secondary'?>" href="reservations.php?status=cancelled<?= $q ? '&q='.urlencode($q) : '' ?>">Annulleret</a>
+    <a class="button <?=$showStatus==='archived'?'':'secondary'?>" href="reservations.php?status=archived<?= $q ? '&q='.urlencode($q) : '' ?>">Arkiveret</a>
   </div>
+  <?php if($showStatus==='archived'):?><p class="muted">Arkiverede reservationer er afsluttet ved upload af Kims fil, fordi varen ikke længere havde lager i filen. Lageret blev ikke nedskrevet ved arkiveringen. Detaljer står i audit-loggen.</p><?php endif;?>
 </div>
 
 <?php if(can('reservations.create')):?>
