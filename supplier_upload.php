@@ -153,7 +153,8 @@ if($postAction==='apply'){
         $preview=supplier_upload_preview_for_action($token,$oldPreviewMessage);
         // Et tomt preview kan ikke anvendes – intet gemmes, heller ikke kolonnevalget.
         if(!(array)($preview['items']??[]))throw new RuntimeException('Previewet har ingen rækker, der kan anvendes.');
-        $selected=array_map('intval',(array)($_POST['apply_rows']??[]));if(!$selected)throw new RuntimeException('Vælg mindst én række, der skal opdateres.');
+        // Samme række to gange i POST'en behandles kun én gang.
+        $selected=array_values(array_unique(array_map('intval',(array)($_POST['apply_rows']??[]))));if(!$selected)throw new RuntimeException('Vælg mindst én række, der skal opdateres.');
         $reservationMode=(string)($preview['reservation_mode']??'');
         if(!isset($reservationModes[$reservationMode]))$reservationMode=hsg_supplier_reservation_mode($pdo);
         // "Anvend" bruger previewets valg – aldrig en værdi fra POST. Ældre previews uden nøglen er "Produktdata og lager".
@@ -248,8 +249,10 @@ if($postAction==='apply'){
             audit_log($pdo,'reservation.archive','reservation',(string)$ar['id'],['product_id'=>(int)$ar['product_id'],'location_id'=>(int)$ar['location_id'],'quantity'=>(int)$ar['quantity'],'customer_name'=>$ar['customer_name'],'reference'=>$ar['reference'],'status_before'=>'reserved','status_after'=>'archived','source'=>'supplier_import','import_run_id'=>$runId]);
         }
         $pdo->commit();hsg_supplier_preview_delete($token);
+        // Importen er gemt: en fejlende hook må ikke vælte den eller skjule success-beskeden.
         foreach($archivedAll as $ar){
-            hsg_do_action('reservation.archived',['reservation_id'=>(int)$ar['id'],'product_id'=>(int)$ar['product_id'],'location_id'=>(int)$ar['location_id'],'quantity'=>(int)$ar['quantity'],'source'=>'supplier_import']);
+            try{hsg_do_action('reservation.archived',['reservation_id'=>(int)$ar['id'],'product_id'=>(int)$ar['product_id'],'location_id'=>(int)$ar['location_id'],'quantity'=>(int)$ar['quantity'],'source'=>'supplier_import']);}
+            catch(Throwable $hookError){error_log('HSG: hooken reservation.archived fejlede for reservation #'.(int)$ar['id'].': '.$hookError->getMessage());}
         }
         $msg = "$updated produkter blev opdateret";
         if($created > 0) $msg .= " og $created nye produkter blev oprettet i HSG Administration";

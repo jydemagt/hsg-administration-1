@@ -101,8 +101,9 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 }
 
 $pid=(int)($_GET['product']??0);
-$q=trim((string)($_GET['q']??''));
-$showStatus=trim((string)($_GET['status']??''));
+// Kun tekst bruges (status[]=… eller q[]=… i adressen giver standardvisningen uden PHP-advarsler).
+$q=is_string($_GET['q']??null)?trim($_GET['q']):'';
+$showStatus=is_string($_GET['status']??null)?trim($_GET['status']):'';
 
 $products=$pdo->query("SELECT p.id,p.sku,p.name FROM lager_products p LEFT JOIN (SELECT product_id,SUM(quantity) physical FROM lager_stock GROUP BY product_id) st ON st.product_id=p.id LEFT JOIN (SELECT product_id,SUM(quantity) reserved FROM lager_reservations WHERE status='reserved' GROUP BY product_id) rs ON rs.product_id=p.id WHERE p.status='active' AND COALESCE(st.physical,0)-COALESCE(rs.reserved,0)>0 ORDER BY p.name")->fetchAll();
 $locs=get_locations($pdo,true);
