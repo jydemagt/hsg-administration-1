@@ -566,23 +566,25 @@ t_case('46 match_score: "fadnummer er identisk" kræver et ciffer', function () 
 // R3 – lokationsceller
 
 t_case('47 En lokationscelle skal være ét tal', function () {
+    // Ændret bevidst af spec 2026-10-26-kims-upload-opfoelgning-review (kriterie 189): 'negative' står sidst, og '-2' står i den.
     $map = ['stock_loc_1' => 17];
     foreach (['3 + 2', '2 (1 i bil)', '1/2', 'ca. 5', 'se note 2', '3 2', '1.234', '1,234', '1 234', '?'] as $x) {
-        t_eq(['values' => [], 'blank' => [], 'invalid' => ['stock_loc_1' => $x]], hsg_supplier_location_cells(kim_row(['R' => $x]), $map), 'ugyldig: '.$x);
+        t_eq(['values' => [], 'blank' => [], 'invalid' => ['stock_loc_1' => $x], 'negative' => []], hsg_supplier_location_cells(kim_row(['R' => $x]), $map), 'ugyldig: '.$x);
     }
     $numbers = ['41' => 41, '0' => 0, '41.0' => 41, '2,4' => 2, '2.6' => 3, '-2' => 0, "5\u{00A0}" => 5, "\u{202F}7" => 7, '40.999999999999993' => 41,
         // Ikke i spec'ens tabel: komma med mange decimaler læses også som decimaltegn (ikke som 40999999999999993).
         '40,999999999999993' => 41];
     foreach ($numbers as $x => $n) {
-        t_eq(['values' => ['stock_loc_1' => $n], 'blank' => [], 'invalid' => []], hsg_supplier_location_cells(kim_row(['R' => (string)$x]), $map), 'tal: '.json_encode((string)$x, JSON_UNESCAPED_UNICODE));
+        $negative = (string)$x === '-2' ? ['stock_loc_1' => '-2'] : [];
+        t_eq(['values' => ['stock_loc_1' => $n], 'blank' => [], 'invalid' => [], 'negative' => $negative], hsg_supplier_location_cells(kim_row(['R' => (string)$x]), $map), 'tal: '.json_encode((string)$x, JSON_UNESCAPED_UNICODE));
     }
     // Kriterie 62: komma er decimaltegn, og ,5 afrundes væk fra 0 (PHP round): 2,5000 → 3 og 0,5 → 1.
     foreach (['2,5000' => 3, '0,5' => 1] as $x => $n) {
-        t_eq(['values' => ['stock_loc_1' => $n], 'blank' => [], 'invalid' => []], hsg_supplier_location_cells(kim_row(['R' => $x]), $map), '62 tal: '.$x);
+        t_eq(['values' => ['stock_loc_1' => $n], 'blank' => [], 'invalid' => [], 'negative' => []], hsg_supplier_location_cells(kim_row(['R' => $x]), $map), '62 tal: '.$x);
     }
     // Præcis tre decimaler (også en Excel-talcelle som 1.875) og Unicode-minus (U+2212) er ugyldige.
     foreach (['1.875', "\u{2212}2"] as $x) {
-        t_eq(['values' => [], 'blank' => [], 'invalid' => ['stock_loc_1' => $x]], hsg_supplier_location_cells(kim_row(['R' => $x]), $map), '62 ugyldig: '.$x);
+        t_eq(['values' => [], 'blank' => [], 'invalid' => ['stock_loc_1' => $x], 'negative' => []], hsg_supplier_location_cells(kim_row(['R' => $x]), $map), '62 ugyldig: '.$x);
     }
 });
 
@@ -712,10 +714,11 @@ t_case('64 hsg_supplier_short_text afkorter til 40 tegn', function () {
 // Lokationsceller (P2, P3, P4, P5)
 
 t_case('65 Lokationsceller: hårde mellemrum er tomme, højst 5 cifre og én afrunding', function () {
-    t_eq(['values' => ['stock_loc_1' => 41, 'stock_loc_2' => 0, 'stock_loc_3' => 0], 'blank' => ['stock_loc_2', 'stock_loc_3'], 'invalid' => []],
+    // Ændret bevidst af spec 2026-10-26-kims-upload-opfoelgning-review (kriterie 189): 'negative' => [] står sidst.
+    t_eq(['values' => ['stock_loc_1' => 41, 'stock_loc_2' => 0, 'stock_loc_3' => 0], 'blank' => ['stock_loc_2', 'stock_loc_3'], 'invalid' => [], 'negative' => []],
         hsg_supplier_location_cells(kim_row(['R' => 41, 'S' => "\u{00A0}", 'T' => " \u{202F} "]), kim_map(false)), 'R=41, S=NBSP, T=smalt NBSP');
     $row = kim_row(['sku' => '62-1', 'name' => 'Hårde Mellemrum', 'R' => "\u{00A0}", 'S' => "\u{202F}", 'T' => " \u{00A0}\t "]);
-    t_eq(['values' => [], 'blank' => ['stock_loc_1', 'stock_loc_2', 'stock_loc_3'], 'invalid' => []], hsg_supplier_location_cells($row, kim_map(false)), 'kun hårde mellemrum');
+    t_eq(['values' => [], 'blank' => ['stock_loc_1', 'stock_loc_2', 'stock_loc_3'], 'invalid' => [], 'negative' => []], hsg_supplier_location_cells($row, kim_map(false)), 'kun hårde mellemrum');
     $items = hsg_supplier_merge_raw_items([$row], kim_map(false), [], null, 1, null, merge_opts());
     t_eq(1, count($items), 'én vare');
     if (count($items) !== 1) return;
@@ -1245,6 +1248,205 @@ t_case('140 Ældre fixtures uden active_reservations', function () {
         $items = hsg_supplier_merge_raw_items([octomore_row()], kim_map(), [octomore()], null, 1, null, merge_opts($add));
         t_true(array_key_exists('archive', $items[0] ?? []) && $items[0]['archive'] === null, 'octomore (add='.var_export($add, true).'): archive null');
     }
+});
+
+/* ---------- I. Opfølgning på review af PR #181 (spec 2026-10-26-kims-upload-opfoelgning-review, kriterie 167-182) ----------
+ * Beslutningen i Å1 er (a): en negativ værdi tilbyder arkiveringen, men den er ikke valgt på forhånd.
+ * 173, 175 og 178-179 og 183-187 er flowtests i tests/supplier_archive_qa_test.php (Q8-Q13).
+ */
+
+const N3A = 'Bemærk: Arkiveringen er ikke valgt på forhånd, fordi Kims fil har en negativ værdi for varen.';
+/** spog_archive() med default falsk (arkiveringen tilbydes, men er ikke forvalgt). */
+function spog_archive_not_default(): array { $a = spog_archive(); $a['default'] = false; return $a; }
+/** Rækken fra kriterie 169 med andre lagerceller. */
+function spog_row_with(array $cells): array { return kim_row(array_merge(['sku' => '50-1', 'name' => 'Spøgelse Whisky', 'dist' => 'Testdestilleri', 'R' => 0, 'S' => '', 'T' => '-1', 'Q' => 0], $cells)); }
+
+t_case('167 Lagercellen: negative tal', function () {
+    t_eq(['state' => 'number', 'value' => 0, 'text' => '-1', 'negative' => true], hsg_supplier_stock_cell('-1'), "stock_cell('-1')");
+    foreach (['-0,5', '-99999'] as $x) {
+        $c = hsg_supplier_stock_cell($x);
+        t_eq(['number', 0, true], [$c['state'], $c['value'], $c['negative'] ?? null], 'negativ: '.$x);
+    }
+    foreach ([['-0', 0], ['-0,4', 0], ['0', 0], ['41', 41]] as [$x, $n]) {
+        $c = hsg_supplier_stock_cell($x);
+        t_eq(['number', $n, false], [$c['state'], $c['value'], $c['negative'] ?? null], 'ikke negativ: '.$x);
+    }
+    // Tomme og ugyldige celler er præcis som før (ingen 'negative'-nøgle).
+    t_eq(['state' => 'blank', 'value' => null, 'text' => ''], hsg_supplier_stock_cell(" \u{00A0} "), 'tom celle uændret');
+    t_eq(['state' => 'invalid', 'value' => null, 'text' => '3 + 2'], hsg_supplier_stock_cell('3 + 2'), 'ugyldig celle uændret');
+    t_eq(['state' => 'invalid', 'value' => null, 'text' => "\u{2212}1"], hsg_supplier_stock_cell("\u{2212}1"), 'typografisk minus er stadig ugyldig');
+});
+
+t_case('168 Lokationscellerne med en negativ celle', function () {
+    t_eq(['values' => ['stock_loc_1' => 0, 'stock_loc_2' => 0, 'stock_loc_3' => 0], 'blank' => ['stock_loc_2'], 'invalid' => [], 'negative' => ['stock_loc_1' => '-1']],
+        hsg_supplier_location_cells(kim_row(['R' => '-1', 'S' => '', 'T' => 0]), kim_map(false)), 'R=-1, S tom, T=0');
+});
+
+t_case('169 Eksempel A med negativ lokation (add)', function () {
+    $it = item_by_sku(hsg_supplier_merge_raw_items([spog_row_with([])], kim_map(), [spog()], null, 1, null, merge_opts()), '50-1');
+    t_eq(spog_archive_not_default(), archive_of($it), 'archive er spog_archive() med default falsk');
+    t_true(!array_key_exists('stock_loc_3', stock_changes($it['changes'] ?? [])), 'ingen stock_loc_3 i changes (0 + 2 = 2)');
+    t_eq(count($it['changes'] ?? []) > 0, $it['selected'] ?? null, 'selected === (count(changes) > 0) – arkiveringen alene gør ikke rækken valgt');
+    t_eq([], $it['flags'] ?? null, 'ingen flag');
+    t_eq(['stock_loc_3' => '-1'], $it['stock_file']['negative'] ?? null, 'stock_file.negative');
+    t_eq(null, array_key_exists('total_negative', $it['stock_file'] ?? []) ? $it['stock_file']['total_negative'] : 'MANGLER', 'stock_file.total_negative er null');
+    t_has_note($it ?? [], 'Bemærk: Negativ værdi „-1“ for Gert behandles som 0.', 'N1 for Gert');
+    t_has_note($it ?? [], N3A, 'N3a');
+    t_eq(['Bemærk: Negativ værdi „-1“ for Gert behandles som 0.'], notes_with($it ?? [], 'Negativ værdi'), 'præcis én N1');
+});
+
+t_case('170 Eksempel A med negativ lokation (none)', function () {
+    $it = item_by_sku(hsg_supplier_merge_raw_items([spog_row_with([])], kim_map(), [spog()], null, 1, null, merge_opts(false)), '50-1');
+    t_eq(['stock_loc_3' => ['old' => 2, 'new' => 0, 'file' => 0]], stock_changes($it['changes'] ?? []), 'lagerændringerne (uden archived)');
+    t_has_note($it ?? [], 'Gert får 0 fysisk efter import, men 2 er reserveret', 'advarsel om reserveret');
+    t_eq(false, $it['archive']['default'] ?? null, 'archive.default er falsk');
+    t_has_note($it ?? [], N3A, 'N3a');
+});
+
+t_case('171 Negativ "Lagerantal i alt"', function () {
+    // Tilstand L: T=0 og Q='-1'.
+    $it = item_by_sku(hsg_supplier_merge_raw_items([spog_row_with(['T' => 0, 'Q' => '-1'])], kim_map(), [spog()], null, 1, null, merge_opts()), '50-1');
+    t_eq(0, $it['stock_file']['total'] ?? null, 'L: stock_file.total = 0');
+    t_eq('-1', $it['stock_file']['total_negative'] ?? null, 'L: total_negative');
+    t_eq([], $it['stock_file']['negative'] ?? null, 'L: ingen negative lokationer');
+    t_true(!in_array('stock_mismatch', (array)($it['flags'] ?? []), true), 'L: intet stock_mismatch');
+    t_eq(false, $it['archive']['default'] ?? null, 'L: archive.default falsk');
+    t_has_note($it ?? [], 'Bemærk: Negativ værdi „-1“ for lagerantal i alt behandles som 0.', 'L: N2');
+    t_has_note($it ?? [], N3A, 'L: N3a');
+    $leaks = [];
+    foreach (['source', 'changes'] as $part) if (array_key_exists('stock_file_total_negative', (array)($it[$part] ?? []))) $leaks[] = 'L '.$part;
+
+    // Tilstand T: kun "Lagerantal i alt" (første lokation = Christiansfeld), reservationerne ligger på Christiansfeld.
+    $p = spog(['stock_loc_1' => 2, 'reserved_loc_1' => 2, 'stock_loc_3' => 0, 'reserved_loc_3' => 0, 'active_reservations' => [
+        ['id' => 9001, 'location_id' => 1, 'quantity' => 1, 'customer_name' => 'Hansen', 'reference' => 'Ordre 1047', 'created_at' => '2026-10-01 12:00:00'],
+        ['id' => 9002, 'location_id' => 1, 'quantity' => 1, 'customer_name' => 'Jensen', 'reference' => '', 'created_at' => '2026-10-03 09:00:00'],
+    ]]);
+    $row = kim_row(['sku' => '50-1', 'name' => 'Spøgelse Whisky', 'dist' => 'Testdestilleri', 'Q' => '-1']);
+    $t = item_by_sku(hsg_supplier_merge_raw_items([$row], kim_map(true, false), [$p], null, 1, null, merge_opts()), '50-1');
+    t_eq(['stock_loc_1' => 0], $t['stock_file']['locations'] ?? null, 'T: stock_file.locations');
+    t_eq('-1', $t['stock_file']['total_negative'] ?? null, 'T: total_negative');
+    t_eq(false, $t['archive']['default'] ?? null, 'T: archive.default falsk');
+    t_eq([9001, 9002], array_column((array)($t['archive']['reservations'] ?? []), 'id'), 'T: begge reservationer tilbydes');
+    t_has_note($t ?? [], 'Bemærk: Negativ værdi „-1“ for lagerantal i alt behandles som 0.', 'T: N2');
+    t_has_note($t ?? [], N3A, 'T: N3a');
+    foreach (['source', 'changes'] as $part) if (array_key_exists('stock_file_total_negative', (array)($t[$part] ?? []))) $leaks[] = 'T '.$part;
+    // Tilstand T uden fallback-id (stock_quantity-vejen) og en ny vare: den interne nøgle forsvinder også her.
+    $noFb = ['fallback_location_id' => null, 'location_names' => [], 'add_reserved' => true];
+    foreach ([[$p], []] as $products) {
+        foreach (hsg_supplier_merge_raw_items([$row], kim_map(true, false), $products, null, 1, null, $noFb) as $x) {
+            foreach (['source', 'changes'] as $part) if (array_key_exists('stock_file_total_negative', (array)$x[$part])) $leaks[] = 'T0 '.$part;
+        }
+    }
+    t_eq([], $leaks, 'hverken source eller changes har stock_file_total_negative');
+    // source_fields lægger teksten i den interne nøgle i begge tilstande.
+    t_eq('-1', hsg_supplier_source_fields(spog_row_with(['T' => 0, 'Q' => '-1']), kim_map())['stock_file_total_negative'] ?? null, 'source_fields L');
+    t_eq('-1', hsg_supplier_source_fields($row, kim_map(true, false), 1)['stock_file_total_negative'] ?? null, 'source_fields T');
+    t_true(!array_key_exists('stock_file_total_negative', hsg_supplier_source_fields(spog_row(), kim_map())), 'source_fields uden negativ total har ingen nøgle');
+});
+
+t_case('172 Fletning og upåvirkede varer', function () {
+    $rows = [spog_row_with(['T' => '-1']), spog_row_with(['T' => 0])];
+    $items = hsg_supplier_merge_raw_items($rows, kim_map(), [spog()], null, 1, null, merge_opts());
+    t_eq(1, count($items), 'to rækker med 50-1 giver én vare');
+    $it = item_by_sku($items, '50-1');
+    t_eq(['stock_loc_3' => '-1'], $it['stock_file']['negative'] ?? null, 'fletning: stock_file.negative');
+    t_eq(false, $it['archive']['default'] ?? null, 'fletning: archive.default falsk');
+    // Den negative række sidst: første (og eneste) negative tekst bevares stadig.
+    $rev = item_by_sku(hsg_supplier_merge_raw_items(array_reverse($rows), kim_map(), [spog()], null, 1, null, merge_opts()), '50-1');
+    t_eq(['stock_loc_3' => '-1'], $rev['stock_file']['negative'] ?? null, 'omvendt rækkefølge: stock_file.negative');
+    // Uden negative celler er alt som i kriterie 133.
+    $plain = item_by_sku(hsg_supplier_merge_raw_items([spog_row()], kim_map(), [spog()], null, 1, null, merge_opts()), '50-1');
+    t_eq(['stock_loc_3' => ['old' => 2, 'new' => 0, 'file' => 0, 'archived' => 2]], stock_changes($plain['changes'] ?? []), '133: lagerændringerne');
+    t_eq(spog_archive(), archive_of($plain), '133: archive (forvalgt)');
+    t_eq(true, $plain['selected'] ?? null, '133: valgt');
+    t_eq([[], null], [$plain['stock_file']['negative'] ?? 'MANGLER', array_key_exists('total_negative', $plain['stock_file'] ?? []) ? $plain['stock_file']['total_negative'] : 'MANGLER'], '133: negative [] og total_negative null');
+    t_eq([], notes_with($plain ?? [], 'Negativ værdi'), '133: ingen N1/N2');
+    t_eq([], notes_with($plain ?? [], 'negativ værdi for varen'), '133: ingen N3a');
+    // "-0" og "-0,4" er ikke negative: arkiveringen er forvalgt som i 133.
+    foreach (['-0', '-0,4'] as $x) {
+        $z = item_by_sku(hsg_supplier_merge_raw_items([spog_row_with(['T' => $x])], kim_map(), [spog()], null, 1, null, merge_opts()), '50-1');
+        t_eq([true, []], [$z['archive']['default'] ?? null, $z['stock_file']['negative'] ?? null], $x.': forvalgt og ingen negative');
+    }
+    // En lokation, der er ugyldig i én af de flettede rækker, bruges slet ikke – så heller ingen N1 for den.
+    $mixed = item_by_sku(hsg_supplier_merge_raw_items([spog_row_with(['T' => '-1']), spog_row_with(['T' => '?'])], kim_map(), [spog()], null, 1, null, merge_opts()), '50-1');
+    t_eq([[], ['stock_loc_3' => '?'], null], [$mixed['stock_file']['negative'] ?? 'MANGLER', $mixed['stock_file']['invalid'] ?? 'MANGLER', archive_of($mixed)], 'negativ + ugyldig på samme lokation: kun ugyldig, ingen arkivering');
+});
+
+t_case('174 Oprydning af gamle previews', function () {
+    $dir = sys_get_temp_dir().'/hsg-preview-cleanup-'.bin2hex(random_bytes(6));
+    t_true(mkdir($dir), 'midlertidig mappe');
+    $old = time() - 25 * 3600; $young = time() - 23 * 3600;
+    $a = bin2hex(random_bytes(20)).'.json'; $b = bin2hex(random_bytes(20)).'.json';
+    $bak = bin2hex(random_bytes(20)).'.json.bak'; $upper = str_repeat('ABCDEF0123', 4).'.json'; $sub = bin2hex(random_bytes(20)).'.json';
+    $inner = bin2hex(random_bytes(20)).'.json';
+    try {
+        foreach ([$a => $old, $b => $young, 'notes.json' => $old, $bak => $old, $upper => $old] as $name => $mtime) { file_put_contents($dir.'/'.$name, '{}'); touch($dir.'/'.$name, $mtime); }
+        mkdir($dir.'/'.$sub); file_put_contents($dir.'/'.$sub.'/'.$inner, '{}'); touch($dir.'/'.$sub.'/'.$inner, $old); @touch($dir.'/'.$sub, $old);
+        t_eq(1, hsg_supplier_preview_cleanup(86400, $dir), 'returnerer 1');
+        t_true(!file_exists($dir.'/'.$a), 'A (25 timer) er slettet');
+        foreach (['B (23 timer)' => $b, 'notes.json' => 'notes.json', '.json.bak' => $bak, 'store bogstaver' => $upper] as $label => $name) t_true(is_file($dir.'/'.$name), $label.' findes stadig');
+        t_true(is_dir($dir.'/'.$sub) && is_file($dir.'/'.$sub.'/'.$inner), 'undermappen og filen i den findes stadig');
+        $missing = null;
+        try { $missing = hsg_supplier_preview_cleanup(86400, $dir.'/findes-ikke'); } catch (Throwable $e) { $missing = get_class($e); }
+        t_eq(0, $missing, 'en mappe, der ikke findes, giver 0 uden undtagelse');
+    } finally {
+        @unlink($dir.'/'.$sub.'/'.$inner); @rmdir($dir.'/'.$sub);
+        foreach ([$a, $b, 'notes.json', $bak, $upper] as $name) @unlink($dir.'/'.$name);
+        @rmdir($dir);
+    }
+});
+
+t_case('176 Backup tager ikke previews med', function () {
+    require_once __DIR__.'/../core/backup.php';
+    foreach (['storage/import-previews/abc.json', 'storage\\import-previews\\abc.json'] as $p) t_true(hsg_backup_excluded_relpath($p), 'udelades: '.$p);
+    foreach (['storage/data/x.key', 'uploads/a.jpg', 'storage/import-previews.txt'] as $p) t_true(!hsg_backup_excluded_relpath($p), 'kommer med: '.$p);
+});
+
+t_case('177 Git ignorerer previewmappen', function () {
+    $root = dirname(__DIR__);
+    t_true(in_array('storage/import-previews/', array_map('trim', (array)file($root.'/.gitignore')), true), '.gitignore har linjen storage/import-previews/');
+    if (!file_exists($root.'/.git')) { fwrite(STDOUT, "  (177: git check-ignore sprunget over – ikke et git-checkout)\n"); return; }
+    $out = []; $code = -1;
+    exec('git -C '.escapeshellarg($root).' check-ignore -q storage/import-previews/x.json 2>&1', $out, $code);
+    t_eq(0, $code, 'git check-ignore -q storage/import-previews/x.json returnerer 0 ('.implode(' ', $out).')');
+});
+
+t_case('180 Gæt uden blokering af varenummer og produktnavn (4a)', function () {
+    $saved = ['destilleri' => 'distillery', 'christiansfeld' => 'stock_loc_1'];
+    $map = hsg_supplier_suggest_columns(kim_headers(), $saved);
+    t_eq(['sku', 'name', 'distillery', 'stock_loc_1'], [$map[4] ?? null, $map[5] ?? null, $map[7] ?? null, $map[17] ?? null], 'map[4], map[5], map[7] og map[17]');
+    t_eq(['', ''], [$map[6] ?? null, $map[16] ?? null], 'andre felter, der ikke var valgt sidst, er stadig blokeret (Alder:, Lagerbeholdning)');
+    t_eq([], hsg_supplier_restored_key_columns(kim_headers(), $saved, $map), 'restored er []');
+    t_eq([0 => '', 1 => 'distillery'], hsg_supplier_suggest_columns(['Kundenummer', 'Destilleri'], ['destilleri' => 'distillery']), 'Kundenummer bliver ikke varenummer (delvist match er stadig blokeret)');
+    // Med de tilladte felter, som prepare_preview bruger, er resultatet det samme.
+    t_eq($map, hsg_supplier_suggest_columns(kim_headers(), $saved, hsg_supplier_allowed_fields([1, 2, 3])), 'samme resultat med allowedFields');
+    // 4a alene (uden redning, fordi produktnavnet er husket): Varenr. stod ikke i det huskede valg og gættes nu (som flowtest 5/30).
+    $nameOnly = hsg_supplier_suggest_columns(kim_headers(), ['variant' => 'name', 'destilleri' => 'distillery']);
+    t_eq(['sku', 'name', ''], [$nameOnly[4] ?? null, $nameOnly[5] ?? null, $nameOnly[16] ?? null], 'kun produktnavn husket: Varenr. gættes som varenummer, Lagerbeholdning er stadig blokeret');
+});
+
+t_case('181 Redning af husket "Ignorer" (4b, hændelsen)', function () {
+    $saved = ['varenr' => '', 'variant' => '', 'lagerbeholdning' => '', 'destilleri' => 'distillery'];
+    foreach (['uden allowedFields' => null, 'med allowedFields' => hsg_supplier_allowed_fields([1, 2, 3])] as $label => $allowed) {
+        $map = hsg_supplier_suggest_columns(kim_headers(), $saved, $allowed);
+        t_eq(['sku', 'name', 'distillery'], [$map[4] ?? null, $map[5] ?? null, $map[7] ?? null], $label.': map[4], map[5] og map[7]');
+        t_eq('', $map[16] ?? null, $label.': Lagerbeholdning forbliver ignoreret');
+        t_eq([4 => 'sku', 5 => 'name'], hsg_supplier_restored_key_columns(kim_headers(), $saved, $map), $label.': restored');
+    }
+    // Første kolonne fra venstre pr. felt vinder.
+    $headers = ['Varenr.', 'SKU', 'Variant:'];
+    $all = ['varenr' => '', 'sku' => '', 'variant' => ''];
+    $map = hsg_supplier_suggest_columns($headers, $all);
+    t_eq([0 => 'sku', 1 => '', 2 => 'name'], $map, 'første kolonne pr. felt');
+    t_eq([0 => 'sku', 2 => 'name'], hsg_supplier_restored_key_columns($headers, $all, $map), 'restored for første kolonne pr. felt');
+});
+
+t_case('182 Ingen redning, når en anden nøglekolonne er valgt', function () {
+    t_eq('', hsg_supplier_suggest_columns(kim_headers(), ['varenr' => '', 'variant' => 'name'])[4] ?? null, 'test 6: E (Varenr.) står stadig til Ignorer');
+    $headers = ['Varenr.', 'Variant:', 'Fadnr']; $saved = ['varenr' => '', 'variant' => '', 'fadnr' => 'cask_number'];
+    $map = hsg_supplier_suggest_columns($headers, $saved);
+    t_eq([0 => '', 1 => '', 2 => 'cask_number'], $map, 'fadnummer er valgt: husket "Ignorer" respekteres');
+    t_eq([], hsg_supplier_restored_key_columns($headers, $saved, $map), 'restored er []');
 });
 
 /* ---------- Resultat ---------- */
