@@ -4,6 +4,7 @@ config.local.php
 storage/backups/
 storage/data/
 storage/tmp/
+storage/import-previews/
 uploads/
 *.log
 *.zip

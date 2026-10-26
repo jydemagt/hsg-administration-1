@@ -59,6 +59,8 @@ function supplier_upload_preview_for_action(string $token, string $oldPreviewMes
 }
 
 if($postAction==='upload'){
+    // Previews, der ikke er anvendt, slettes efter 24 timer (de indeholder kundenavne). En fejl stopper aldrig uploaden.
+    try{hsg_supplier_preview_cleanup();}catch(Throwable $e){error_log('HSG: oprydning af gamle previews fejlede: '.$e->getMessage());}
     try{
         if(!isset($_FILES['file'])||$_FILES['file']['error']!==UPLOAD_ERR_OK)throw new RuntimeException('Upload af filen fejlede.');
         $name=(string)$_FILES['file']['name'];$ext=strtolower(pathinfo($name,PATHINFO_EXTENSION));if(!in_array($ext,['xlsx','csv'],true))throw new RuntimeException('Brug en Excel-fil (.xlsx) eller CSV-fil.');

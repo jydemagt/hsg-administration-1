@@ -989,6 +989,29 @@ function hsg_supplier_preview_save(array $preview, ?string $existingToken = null
 }
 function hsg_supplier_preview_load(string $token): array {if(!hsg_supplier_preview_token_valid($token))throw new RuntimeException('Ugyldigt preview-token.');$path=hsg_supplier_preview_dir().'/'.$token.'.json';if(!is_file($path))throw new RuntimeException('Previewet er udløbet eller findes ikke.');$data=json_decode((string)file_get_contents($path),true,512,JSON_THROW_ON_ERROR);return is_array($data)?$data:[];}
 function hsg_supplier_preview_delete(string $token): void {if(hsg_supplier_preview_token_valid($token))@unlink(hsg_supplier_preview_dir().'/'.$token.'.json');}
+/**
+ * Sletter previews, der ikke er anvendt, når de er ældre end $maxAgeSeconds (de indeholder kundenavne og referencer).
+ * Kun almindelige filer med navnet <token>.json (40 små hex-tegn) slettes, og der gås ikke ned i undermapper.
+ * Returnerer antallet af slettede filer. Kaster aldrig en undtagelse – fejl skrives med error_log.
+ * $dir null ⇒ hsg_supplier_preview_dir() (parameteren findes kun for testen).
+ */
+function hsg_supplier_preview_cleanup(int $maxAgeSeconds = 86400, ?string $dir = null): int {
+    $deleted=0;
+    try{
+        $dir=$dir??hsg_supplier_preview_dir();
+        if(!is_dir($dir))return 0;
+        $cutoff=time()-max(0,$maxAgeSeconds);
+        foreach(@scandir($dir)?:[] as $name){
+            if(preg_match('/^[a-f0-9]{40}\.json\z/',$name)!==1)continue;
+            $path=$dir.'/'.$name;
+            if(!is_file($path)||is_link($path))continue;
+            $mtime=@filemtime($path);
+            if($mtime===false||$mtime>=$cutoff)continue;
+            if(@unlink($path))$deleted++;else error_log('HSG: kunne ikke slette gammelt preview '.$name);
+        }
+    }catch(Throwable $e){error_log('HSG: oprydning af gamle previews fejlede: '.$e->getMessage());}
+    return $deleted;
+}
 
 function hsg_supplier_update_fields(): array {
     $fields = ['cask_number','cask_type','wholesale_price','retail_price','abv','distillery','age_text','vintage_year','category','country','bottle_size_cl','bottle_count','stock_quantity'];
