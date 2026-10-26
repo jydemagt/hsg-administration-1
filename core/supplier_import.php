@@ -313,10 +313,13 @@ function hsg_supplier_rejected_saved_columns(array $headers, array $savedHeaderM
 /**
  * Foreslår HSG-felt pr. kolonne (K1–K5):
  * 1. Husket valg fra seneste upload bruges først – også "Ignorer kolonne". En beløbskolonne, der var husket som lager, afvises.
- *    Felter, der bevidst stod uden kolonne sidst, gættes ikke igen.
+ *    Felter, der bevidst stod uden kolonne sidst, gættes ikke igen – undtagen varenummer og produktnavn ved præcise match.
  * 2. Præcise alias-match for de øvrige kolonner fra venstre mod højre (første kolonne pr. felt vinder).
  * 3. Delvise match for de kolonner, der stadig er tomme – kun til felter, der ikke er brugt. To trin: først hvor
  *    overskriften indeholder et alias, derefter hvor aliaset indeholder overskriften.
+ * 4. Redning: Er der derefter hverken varenummer, produktnavn eller fadnummer, får den første kolonne (fra venstre), der står
+ *    til "Ignorer" (også husket), varenummer eller produktnavn, når overskriften er et præcist alias for feltet. Ellers
+ *    matches ingen rækker (opfølgning på review, punkt 4).
  * Lokationskolonner gættes aldrig automatisk.
  */
 function hsg_supplier_suggest_columns(array $headers, array $savedHeaderMap = [], ?array $allowedFields = null): array {
@@ -333,7 +336,9 @@ function hsg_supplier_suggest_columns(array $headers, array $savedHeaderMap = []
     }
     $mappedLast=array_filter(array_map(static fn($f)=>trim((string)$f),$savedHeaderMap),static fn($f)=>$f!=='');
     $blocked=$savedHeaderMap?array_diff(array_keys($aliases),$mappedLast):[];
-    $available=static function(string $f) use (&$usedFields,$blocked): bool {return !in_array($f,$usedFields,true) && !in_array($f,$blocked,true);};
+    $keyFields=['sku','name'];
+    // $exactMatch: varenummer og produktnavn blokeres aldrig ved et præcist match (4a). Delvise match følger $blocked.
+    $available=static function(string $f, bool $exactMatch = false) use (&$usedFields,$blocked,$keyFields): bool {return !in_array($f,$usedFields,true) && (($exactMatch&&in_array($f,$keyFields,true)) || !in_array($f,$blocked,true));};
 
     // Gennemløb 1: præcise match.
     $pending=[];
@@ -343,7 +348,7 @@ function hsg_supplier_suggest_columns(array $headers, array $savedHeaderMap = []
         $cell=trim((string)$cell);if($cell===''){$colMap[$ci]='';continue;}
         $n=hsg_supplier_norm($cell);
         $exact=$reverse[$n]??null;
-        if($exact!==null&&$available($exact)&&hsg_supplier_guess_allowed($exact,$cell)){$colMap[$ci]=$exact;$usedFields[]=$exact;continue;}
+        if($exact!==null&&$available($exact,true)&&hsg_supplier_guess_allowed($exact,$cell)){$colMap[$ci]=$exact;$usedFields[]=$exact;continue;}
         $pending[$ci]=[$cell,$n];
     }
     // Gennemløb 2: delvise match i to trin, begge fra venstre mod højre.
@@ -365,7 +370,31 @@ function hsg_supplier_suggest_columns(array $headers, array $savedHeaderMap = []
     }
     foreach(array_keys($pending) as $ci)if(!isset($colMap[$ci]))$colMap[$ci]='';
     ksort($colMap);
+    // Redning (4b): uden varenummer, produktnavn og fadnummer kan ingen rækker matches. Så bruges et husket "Ignorer" ikke
+    // på en kolonne, hvis overskrift er et præcist alias for varenummer eller produktnavn (første kolonne pr. felt vinder).
+    if(!array_intersect(['sku','name','cask_number'],$colMap)){
+        foreach($colMap as $ci=>$field){
+            if($field!=='')continue;
+            $exact=$reverse[hsg_supplier_norm((string)($headers[$ci]??''))]??null;
+            if($exact===null||!in_array($exact,$keyFields,true)||in_array($exact,$usedFields,true)||!$isAllowed($exact))continue;
+            $colMap[$ci]=$exact;$usedFields[]=$exact;
+        }
+    }
     return $colMap;
+}
+
+/**
+ * Kolonner, hvor et husket "Ignorer kolonne" ikke er brugt, fordi varenummer eller produktnavn ellers manglede
+ * (redningen i hsg_supplier_suggest_columns): [kolonneindeks => 'sku'|'name'].
+ */
+function hsg_supplier_restored_key_columns(array $headers, array $savedHeaderMap, array $colMap): array {
+    $restored=[];
+    foreach(hsg_supplier_header_keys($headers) as $ci=>$key){
+        if($key===''||!array_key_exists($key,$savedHeaderMap)||trim((string)$savedHeaderMap[$key])!=='')continue;
+        $field=(string)($colMap[$ci]??'');
+        if(in_array($field,['sku','name'],true))$restored[(int)$ci]=$field;
+    }
+    return $restored;
 }
 
 /**
@@ -914,6 +943,7 @@ function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?i
         'col_mapping'=>$colMap,
         'col_remembered'=>$remembered,
         'col_rejected'=>$rejected,
+        'col_key_restored'=>hsg_supplier_restored_key_columns($headers,$savedColMap,$colMap),
         'reservation_mode'=>$reservationMode,
         'import_scope'=>$importScope,
         'raw_rows'=>$rawRows,
@@ -926,7 +956,8 @@ function hsg_supplier_prepare_preview(PDO $pdo,array $sheets,string $filename,?i
 /**
  * Genberegner previewet med et (manuelt) kolonnevalg og evt. et nyt reservationsvalg eller et nyt valg af, hvad filen
  * opdaterer. En beløbskolonne valgt som lager sættes til "Ignorer" (K4) og står i col_rejected_manual, så siden kan vise
- * en advarsel. $importScope null ⇒ previewets import_scope, ellers det gemte valg.
+ * en advarsel. $importScope null ⇒ previewets import_scope, ellers det gemte valg. col_remembered, col_rejected og
+ * col_key_restored nulstilles (siden bevarer dem selv ved reservations- og opdateringsvalget).
  */
 function hsg_supplier_recalculate_preview(PDO $pdo, array $preview, array $customColMap, ?string $reservationMode = null, ?string $importScope = null): array {
     $headers = (array)($preview['headers'] ?? []);
@@ -973,6 +1004,7 @@ function hsg_supplier_recalculate_preview(PDO $pdo, array $preview, array $custo
     $preview['col_mapping'] = $colMap;
     $preview['col_remembered'] = [];
     $preview['col_rejected'] = [];
+    $preview['col_key_restored'] = []; // Et manuelt valg respekteres altid (ingen redning af varenummer/produktnavn).
     $preview['col_rejected_manual'] = $manualRejected;
     $preview['items'] = $items;
     return $preview;

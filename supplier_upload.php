@@ -119,7 +119,7 @@ if($postAction==='reservation_mode'){
         $preview=supplier_upload_preview_for_action($token,$oldPreviewMessage);
         $mode=trim((string)($_POST['reservation_mode']??''));
         if(!isset($reservationModes[$mode]))throw new RuntimeException('Vælg, om Kims tal er før eller efter reservationer, før du anvender ændringerne.');
-        $keep=['col_remembered'=>(array)($preview['col_remembered']??[]),'col_rejected'=>(array)($preview['col_rejected']??[])];
+        $keep=['col_remembered'=>(array)($preview['col_remembered']??[]),'col_rejected'=>(array)($preview['col_rejected']??[]),'col_key_restored'=>(array)($preview['col_key_restored']??[])];
         $preview=hsg_supplier_recalculate_preview($pdo,$preview,(array)($preview['col_mapping']??[]),$mode);
         unset($preview['col_rejected_manual']);
         $preview=array_merge($preview,$keep);
@@ -136,7 +136,7 @@ if($postAction==='import_scope'){
         $preview=supplier_upload_preview_for_action($token,$oldPreviewMessage);
         $scope=is_string($_POST['import_scope']??null)?trim($_POST['import_scope']):'';
         if(!isset($importScopes[$scope]))throw new RuntimeException('Vælg, om filen skal opdatere produktdata og lager eller kun lagerantal.');
-        $keep=['col_remembered'=>(array)($preview['col_remembered']??[]),'col_rejected'=>(array)($preview['col_rejected']??[])];
+        $keep=['col_remembered'=>(array)($preview['col_remembered']??[]),'col_rejected'=>(array)($preview['col_rejected']??[]),'col_key_restored'=>(array)($preview['col_key_restored']??[])];
         $preview=hsg_supplier_recalculate_preview($pdo,$preview,(array)($preview['col_mapping']??[]),null,$scope);
         unset($preview['col_rejected_manual']);
         $preview=array_merge($preview,$keep);
@@ -150,7 +150,10 @@ if($postAction==='import_scope'){
 
 if($postAction==='apply'){
     try{
-        $preview=supplier_upload_preview_for_action($token,$oldPreviewMessage);$selected=array_map('intval',(array)($_POST['apply_rows']??[]));if(!$selected)throw new RuntimeException('Vælg mindst én række, der skal opdateres.');
+        $preview=supplier_upload_preview_for_action($token,$oldPreviewMessage);
+        // Et tomt preview kan ikke anvendes – intet gemmes, heller ikke kolonnevalget.
+        if(!(array)($preview['items']??[]))throw new RuntimeException('Previewet har ingen rækker, der kan anvendes.');
+        $selected=array_map('intval',(array)($_POST['apply_rows']??[]));if(!$selected)throw new RuntimeException('Vælg mindst én række, der skal opdateres.');
         $reservationMode=(string)($preview['reservation_mode']??'');
         if(!isset($reservationModes[$reservationMode]))$reservationMode=hsg_supplier_reservation_mode($pdo);
         // "Anvend" bruger previewets valg – aldrig en værdi fra POST. Ældre previews uden nøglen er "Produktdata og lager".
@@ -363,7 +366,13 @@ foreach((array)$preview['items'] as $it){
 }
 $reservationMode=(string)($preview['reservation_mode']??'add');
 $colRejected=(array)($preview['col_rejected']??[]);
+$colKeyRestored=(array)($preview['col_key_restored']??[]); // Ældre previews har ikke nøglen.
 $firstLocationName=(string)($activeLocations[0]['name']??'første lokation');
+// Et tomt preview siger altid hvorfor (T1: ingen nøglekolonne valgt, T2: filen gav ingen rækker).
+$previewItems=(array)($preview['items']??[]);
+$hasKeyColumn=(bool)array_intersect(['sku','name','cask_number'],array_map('strval',$detected));
+$emptyNotice=!$hasKeyColumn?'Bemærk: Varenummer og produktnavn er ikke valgt, så ingen rækker kan matches. Tryk "Gæt kolonner forfra", eller vælg kolonnerne under Kolonnemapping.'
+    :(!$previewItems?'Bemærk: Filen gav ingen rækker. Ingen rækker har et varenummer, et produktnavn eller et fadnummer i de valgte kolonner. Tjek kolonnerne under Kolonnemapping, eller tryk "Gæt kolonner forfra".':'');
 ?>
 <div class="card">
   <div class="page-title"><div><h2>Preview: <?=h($preview['filename'])?></h2><p class="muted">Fundet i <strong><?=h($preview['sheet'])?></strong>, overskriftsrække <?=intval($preview['header_row'])?>. Genkendte felter: <?=h(implode(', ',$detectedLabels))?>.</p></div></div>
@@ -372,6 +381,7 @@ $firstLocationName=(string)($activeLocations[0]['name']??'første lokation');
   <?php endif;?>
   <?php if($stockOnlyPreview):?><p>Kun lagerantal: <?=h(supplier_upload_count($matchedCount,'vare','varer'))?> matcher et HSG-produkt · <?=h(supplier_upload_count($skippedCount,'vare','varer'))?> springes over (findes ikke i HSG).</p><?php endif;?>
   <?php if($hasArchive):?><p>Arkiveres: <?=h(supplier_upload_count($archiveSelected['res'],'reservation','reservationer'))?> (<?=intval($archiveSelected['qty'])?> stk.) på <?=h(supplier_upload_count($archiveSelected['items'],'vare','varer'))?>, fordi Kims lager i alt er 0. Du kan fravælge dem på de enkelte varer.<?php if($archiveOther['res']>0):?> <?=h(supplier_upload_count($archiveOther['res'],'reservation','reservationer'))?> (<?=intval($archiveOther['qty'])?> stk.) på varer, der kræver din vurdering, er ikke valgt.<?php endif;?></p><?php endif;?>
+  <?php if($emptyNotice!==''):?><p style="color:var(--amber);font-weight:600"><?=h($emptyNotice)?></p><?php endif;?>
   <?php if($stockOnlyPreview&&!$hasTotalColumn&&!$mappedLocKeys):?><p style="color:var(--amber);font-weight:600">Bemærk: Der er ikke valgt nogen lagerkolonner, så Kun lagerantal ændrer intet. Vælg lagerkolonnerne under Kolonnemapping.</p><?php endif;?>
   <form method="post" class="inline"><?=csrf_field()?><input type="hidden" name="action" value="import_scope"><input type="hidden" name="preview_token" value="<?=h($token)?>">
     <label>Hvad skal opdateres?<select name="import_scope"><?php foreach($importScopes as $scopeKey=>$scopeLabel):?><option value="<?=h($scopeKey)?>" <?=$importScope===$scopeKey?'selected':''?>><?=h($scopeLabel)?></option><?php endforeach;?></select></label>
@@ -386,7 +396,7 @@ $firstLocationName=(string)($activeLocations[0]['name']??'første lokation');
   <p><span class="badge green">90–100 %</span> vælges som udgangspunkt automatisk. <span class="badge">70–89 %</span> kræver din vurdering. Usikre/umatchede rækker ændrer intet.</p>
 </div>
 
-<details class="card" <?=isset($_GET['remap'])||count($detected)===0||$colRejected?'open':''?>>
+<details class="card" <?=isset($_GET['remap'])||count($detected)===0||$colRejected||$colKeyRestored||$emptyNotice!==''?'open':''?>>
   <summary style="cursor:pointer;font-weight:600;font-size:1.1rem;">⚙️ Kolonnemapping (Tilknytning af felter)</summary>
   <?php
   $headers=(array)($preview['headers']??[]);
@@ -416,6 +426,7 @@ $firstLocationName=(string)($activeLocations[0]['name']??'første lokation');
               </select>
               <?php if(in_array((int)$ci,$colRemembered,true)):?><small class="muted">Husket fra seneste upload</small><?php endif;?>
               <?php if(isset($colRejected[$ci])):?><br><small style="color:var(--amber)">⚠ Husket valg "<?=h($fieldLabels[(string)$colRejected[$ci]]??(string)$colRejected[$ci])?>" er ikke brugt: overskriften ligner et beløb.</small><?php endif;?>
+              <?php if(isset($colKeyRestored[$ci])):?><br><small style="color:var(--amber)">⚠ Husket valg "Ignorer kolonne" er ikke brugt: uden varenummer og produktnavn kan ingen rækker matches.</small><?php endif;?>
             </td>
           </tr>
           <?php endforeach; ?>
@@ -429,6 +440,9 @@ $firstLocationName=(string)($activeLocations[0]['name']??'første lokation');
   </form>
   <p class="muted"><small>"Gæt kolonner forfra" ser bort fra det huskede valg (lokationskolonnerne beholdes). Intet gemmes, før du genberegner eller anvender.</small></p>
 </details>
+<?php if(!$previewItems):?>
+<div class="card"><p>Der er ingen rækker at anvende.</p><div class="actions"><a class="button secondary" href="supplier_upload.php">Annuller preview</a></div></div>
+<?php else:?>
 <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="apply"><input type="hidden" name="preview_token" value="<?=h($token)?>">
 <div class="table-wrap"><table><thead><tr><th>Opdatér</th><th>Filrække</th><th>Leverandørens vare</th><th>Match i HSG</th><th>Foreslåede ændringer</th></tr></thead><tbody>
 <?php foreach($preview['items'] as $i=>$item):$src=(array)$item['source'];$mid=(int)($item['match']['id']??0);$score=(int)($item['match']['score']??0);$changes=(array)$item['changes'];$fileLine=supplier_upload_file_line((array)$item,$mappedLocKeys,$locationNames);$reservedLine=supplier_upload_reserved_line((array)$item,$locationNames);?>
@@ -475,6 +489,7 @@ $firstLocationName=(string)($activeLocations[0]['name']??'første lokation');
 <?php endforeach;?></tbody></table></div>
 <div class="card"><div class="actions"><button>Anvend valgte ændringer</button><a class="button secondary" href="supplier_upload.php">Annuller preview</a></div><p class="muted"><?php if($stockOnlyPreview):?>Kun lagerantal: Kun lager pr. lokation opdateres. Produktdata ændres ikke, og der oprettes ingen nye produkter. <?php endif;?>Kun de markerede rækker opdateres. Tomme felter i Kims fil overskriver aldrig produktdata. Undtagelse: lager pr. lokation – har en række et tal i mindst én lokationskolonne, tæller tomme lokationsceller i samme række som 0. Lager og reservationer beregnes igen, når du trykker "Anvend". Markerede reservationer arkiveres kun på markerede rækker.</p></div>
 </form>
+<?php endif;?>
 <?php endif;?>
 
 <?php if($runs):?><div class="card"><h2>Seneste leverandøruploads</h2><div class="table-wrap"><table><thead><tr><th>Dato</th><th>Fil</th><th>Ark</th><th>Rækker fundet</th><th>Produkter opdateret</th></tr></thead><tbody><?php foreach($runs as $r):?><tr><td><?=h($r['created_at'])?></td><td><?=h($r['filename'])?></td><td><?=h($r['sheet_name']??'')?></td><td><?=intval($r['rows_detected'])?></td><td><?=intval($r['rows_updated'])?></td></tr><?php endforeach;?></tbody></table></div></div><?php endif;?>
