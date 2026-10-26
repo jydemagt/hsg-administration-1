@@ -142,3 +142,94 @@ Fysisk lager er `lager_stock.quantity`. Disponibelt er fysisk minus aktive reser
 Valget gemmes i `hsg_settings` (nøgle `supplier_import_reservation_mode`), når det ændres i previewet, og når ændringerne anvendes. Det gælder kun eksisterende produkter og kun lokationer, der får et tal fra filen. Previewet viser reservationerne pr. vare ("Reserveret i HSG: …").
 
 Når der trykkes "Anvend", beregnes lageret igen med de **aktuelle** reservationer. Lagerbevægelsen får referencen "Kims masterfil opdatering (+N reserveret)", når der er lagt reservationer oven i. Audit-loggen (`supplier_import.apply`) indeholder reservationsvalget, antallet af reserverede flasker, der er lagt oven i, og lagerændringerne pr. lokation. En ændring af reservationsvalget logges som `supplier_import.settings`.
+
+Har en vare ikke længere lager i Kims fil (0 i alt), foreslås dens aktive reservationer arkiveret, så de ikke lægges oven i Kims tal. Se [Arkivering af reservationer, der ikke længere har lager](#arkivering-af-reservationer-der-ikke-længere-har-lager).
+
+## Kun lagerantal
+Under "Hvad skal opdateres?" på upload-kortet og i previewet vælges, hvad filen opdaterer:
+
+| Valg | Hvad sker der |
+|---|---|
+| **Produktdata og lager** (standard) | Som beskrevet ovenfor: produktdata, lager og nye produkter. |
+| **Kun lagerantal** | Kun lager pr. lokation. Ingen produktdata ændres, og der oprettes ingen nye produkter. |
+
+I **Kun lagerantal** gælder:
+
+- **Matchning, fletning og bemærkninger er uændrede.** Varenummer, navn, destilleri, fadnummer osv. bruges stadig til at finde varen i HSG og til bogstav-fletning. De bliver bare ikke skrevet.
+- **Kun lageret ændres:** lager pr. lokation (og "Lagerantal i alt" på den ældre vej uden lokationer). Navn, priser, fadnummer, fadtype, ABV, destilleri, alder, årgang, kategori, land, flaskestørrelse, antal flasker og brand røres ikke.
+- **Lageret skrives efter de samme regler** som ellers: tilstand Lokationer/Total, lagercellen, tomme celler, kontroltal, bogstav-fletning og reservationsvalget.
+- **Ingen nye produkter.** En vare uden match er markeret "Springes over" og er ikke valgt. Dropdown'en tilbyder ikke "Opret som nyt produkt". En markeret række uden produkt springes over ved "Anvend" (også hvis "Opret som nyt" er sendt med), og flash-beskeden fortæller, hvor mange rækker der er sprunget over.
+- **Et HSG-produkt kan stadig vælges manuelt** i dropdown'en. Så skrives kun lageret på det produkt.
+- Varenummer-koblingen (alias) gemmes som ellers, og produktets status aktiv/inaktiv følger disponibelt lager.
+- Er der ikke valgt nogen lagerkolonner, ændrer Kun lagerantal intet, og previewet siger det.
+
+Valget gemmes i `hsg_settings` (nøgle `supplier_import_scope`, værdien `full` eller `stock_only`) ved upload, når det ændres i previewet ("Genberegn preview"), og når ændringerne anvendes. Upload-kortet forvælger det gemte valg. "Anvend" bruger altid previewets valg. Et preview fra en ældre version uden valget behandles som "Produktdata og lager". Et nyt valg i previewet logges som `supplier_import.settings`.
+
+## Arkivering af reservationer, der ikke længere har lager
+Er Kims lager i alt for en vare **entydigt 0**, er der ingen flasker bag varens reservationer. Så foreslås de aktive reservationer **arkiveret**. Det gælder i begge valg ("Produktdata og lager" og "Kun lagerantal"), så samme fil altid giver samme lagertal.
+
+### Hvornår er lageret entydigt 0?
+Vurderingen sker **pr. vare i alt**, ikke pr. lokation:
+
+| Tilstand | Entydigt 0, når |
+|---|---|
+| **Lokationer** | Mindst én lokationscelle har et tal, ingen lokationscelle er ugyldig, "Lagerantal i alt" er ikke ugyldig, summen af lokationerne er 0, og "Lagerantal i alt" er tom eller 0. |
+| **Total** | "Lagerantal i alt" er 0 (og gyldig) og skrives på første lokation. |
+| **Intet** | Aldrig. |
+
+Derfor giver følgende **aldrig** arkivering: varer, der ikke står i filen (eller ligger uden for brand-filteret), varer uden match, rækker hvor alle lokationsceller er tomme, ugyldige celler, en ugyldig total og en kontrolafvigelse. En tom lokationscelle tæller som 0 efter den sædvanlige regel, når rækken har et tal i en anden lokationskolonne. Flettede varer (17-1028 + 17-1028a) bruger summen af rækkerne.
+
+**Eksempler:**
+
+| | Fil | HSG før | Resultat |
+|---|---|---|---|
+| **A** | Christiansfeld 0, Michael tom, Gert 0, i alt 0 | Gert fysisk 2, to reservationer på 1 stk. hos Gert | Begge reservationer foreslås arkiveret. Gert 2 → 0. |
+| **B** | Christiansfeld 5, Michael tom, Gert 0, i alt 5 | Christiansfeld 5, Gert 1, én reservation på 1 stk. hos Gert | Intet arkiveres: Der er stadig lager, og en flaske kan flyttes til Gert. Med "læg dem oven i" forbliver Gert 1. |
+| **C** | I alt 1 (delvist lager) | Christiansfeld fysisk 4, tre reservationer på 1 stk. | Intet arkiveres. Med "læg dem oven i" forbliver fysisk 4. Med "brug dem uændret" bliver fysisk 1, og previewet advarer som altid. |
+
+### Hvilke reservationer foreslås?
+Alle aktive reservationer på det matchede produkt, **som ligger på en lokation, der får et tal fra filen** (de valgte lokationskolonner, eller første lokation i tilstand Total). Reservationer på andre lokationer røres ikke, og varen får en bemærkning, fx "Bemærk: 1 reservation på Gert arkiveres ikke, fordi lokationen ikke får et tal fra filen." Previewet viser listen "Arkivér reservationer – Kims lager i alt er 0:" med et afkrydsningsfelt pr. reservation (nummer, lokation, antal, kunde, reference og oprettelsesdato), sorteret efter oprettelse.
+
+### Forvalg
+- På en række med et **sikkert match** (90 % eller mere uden flag) er alle varens reservationer forvalgt til arkivering, og rækken er valgt, også selv om lageret ikke ændres.
+- På rækker, der kræver vurdering, er arkiveringen ikke forvalgt.
+- Previewets tal bygger på forvalget: Lagerændringen beregnes, som om de forvalgte reservationer er arkiveret, og viser fx "Gert: 2 → 0 (fil 0, 2 reserveret arkiveres)". Advarslen ved "brug dem uændret" og bemærkningen i tilstand Total bruger også tallene efter forvalget.
+- Fravælges en reservation i browseren, beregnes previewet ikke igen. "Anvend" beregner altid ud fra de reservationer, der faktisk er afkrydset. En fravalgt reservation forbliver aktiv og lægges oven i Kims tal (eller giver negativt disponibelt med "brug dem uændret").
+- "Reserveret i HSG: …" viser stadig alle aktive reservationer.
+
+### Status "Arkiveret"
+Arkiverede reservationer får status **Arkiveret** (`archived`) og tæller ikke længere som reserveret nogen steder. Arkiveringen ændrer kun status: Lageret nedskrives ikke, og der skrives ingen lagerbevægelse og intet salg, for Kims 0 er allerede efter salget. De arkiverede reservationer kan ses under **Reservationer → Arkiveret** (kun visning). En arkiveret reservation kan ikke genåbnes. Er den arkiveret ved en fejl, rettes lageret, og der oprettes en ny reservation.
+
+Statusværdien kommer med modulet Reservationer 1.3.0, som udvider kolonnen ved første sidevisning efter opdateringen. Kan databasen endnu ikke gemme status "Arkiveret", afvises "Anvend" helt med en fejlbesked, og intet ændres.
+
+### Lagerberegning ved "Anvend"
+"Anvend" sker i én transaktion. For hver markeret række arkiveres de afkrydsede reservationer **først** – men kun når rækkens produkt er previewets match, og kun reservationer, der stadig er aktive. Derefter beregnes lageret med de reservationer, der stadig er aktive:
+
+| Reservationsvalg | Fysisk på en lokation med et tal fra filen |
+|---|---|
+| "læg dem oven i" | Kims tal + aktive reservationer, som **ikke** arkiveres i samme "Anvend" |
+| "brug dem uændret" | Kims tal (uændret) |
+
+Eksempel A (Gert, Kims tal 0, to reservationer på 1 stk.):
+
+| HSG før | Valg | Uden arkivering | Begge arkiveres | Kun den ene arkiveres |
+|---|---|---|---|---|
+| Fysisk 2 | læg oven i | 2 → 2, ingen bevægelse | 2 → 0, bevægelse −2 | 2 → 1, bevægelse −1 |
+| Fysisk 2 | brug uændret | 2 → 0, disponibelt −2 og advarsel | 2 → 0, disponibelt 0 | 2 → 0, disponibelt −1 |
+| Fysisk 0 | læg oven i | 0 → 2 | 0 → 0, ingen bevægelse | 0 → 1 |
+
+Lagerbevægelsen er importens egen (`import`) og får referencen:
+
+| | Reference |
+|---|---|
+| Tillæg N og M arkiverede stk. | `Kims masterfil opdatering (+N reserveret, M arkiveret)` |
+| Kun tillæg | `Kims masterfil opdatering (+N reserveret)` |
+| Kun arkiverede | `Kims masterfil opdatering (M arkiveret)` |
+| Ingen af dem | `Kims masterfil opdatering` |
+
+Afkrydsede reservationer, der ikke er kandidater på en markeret række, ignoreres. Kunne en afkrydset reservation ikke arkiveres (den er ikke længere aktiv, eller der er valgt et andet produkt end previewets match), giver "Anvend" en advarsel. Uploades samme fil igen, er der intet at arkivere, og lageret ændres ikke.
+
+### Audit og hooks
+- `supplier_import.apply` får `import_scope`, `reservations_archived`, `reservations_archived_qty` og `rows_skipped`. Pr. produkt står de arkiverede reservationer i `archived_reservations`, og lagerændringerne har `archived`.
+- Hver arkiveret reservation logges som `reservation.archive` med kørslens id (`import_run_id`), så den kan findes i audit-loggen på sit id.
+- Efter commit kaldes hooken `reservation.archived` pr. reservation (`reservation_id`, `product_id`, `location_id`, `quantity`, `source`).
