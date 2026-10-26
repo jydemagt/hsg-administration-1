@@ -249,3 +249,24 @@ PR #179 (`feature/mbstring-krav`) kan også ændre `tests/run.sh` og versionsnum
 - Rotation af token pr. anmodning eller efter login, `SameSite=Strict` og kontrol af `Origin`/`Referer`.
 - Opdatering af `README.txt`, som ikke følger app-versionen.
 - Versionsløft og regenerering af `hsg-package.json` (hører til release-PR'en).
+
+---
+
+## Udviklerens noter (implementering 26-10-2026)
+
+Spec'en er skrevet mod main `16cd3d0` (app-version 11.1.4). Grenen bygger på main `8c822fe` (PR #179 og #180 er merget, app-version 11.2.0). `verify_csrf()` er byte-identisk i de to commits, og `auth.php`, `admin-login.php`, `session.php`, `nyhedsbrev-afmeld.php`, `status.php` og `admin-setup.php` er uændrede imellem dem. Kun `install.php` og `tests/run.sh` har flyttet sig. Tilpasningerne er:
+
+- **Linjenumre i `tests/run.sh`.** Blokkene ligger samme sted i forhold til de tjek, spec'en nævner:
+  - **Blok C** ligger stadig lige efter nyhedsbrevets enhedstest i trin 2 (efter linje 31), før Kims uploadfil-testene.
+  - **Blok A** ligger mellem `token()` og `T=$(token "$BASE/install.php")` (på main linje 74 og 76).
+  - **Blok B** ligger lige efter tjekket "POST uden CSRF afvist" mod `locations.php` (på main linje 110-111). Det er altså før XSS-tjekket, Kims uploadfil-testene og `# Nyhedsbrev: administrationssider …` (nu linje 137).
+  - Ingen eksisterende linjer er ændret, og trinene er ikke omnummereret.
+- **`install.php` har et tjek for udvidelser før POST-grenen** (linje 10-12, PR #179). Mangler en krævet udvidelse, slutter siden med manglesiden (200), før `verify_csrf()` nås. Blok A melder det som en særskilt fejl ("install.php viser manglesiden …"), så det ikke ligner en CSRF-fejl. I det tilfælde fejler den normale installation lige bagefter også. Testerens tjek i `tests/php_krav_tester.sh` (POST nr. 1 uden cookie og uden csrf på en server uden mbstring forventer manglesiden) påvirkes ikke, fordi tjekket for udvidelser kommer før `verify_csrf()`.
+- **`core/bootstrap.php`** er ikke længere helt død, fordi PR #179 røgtester hurtigsøgningen (`tests/php_krav_smoke.sh` og kriterie 116 i `tests/php_krav_tester.sh`). Filen har dog kun GET-grenen `?action=quick_search`, ingen POST-gren og intet kald af `verify_csrf()`, og den inkluderer ikke `auth.php`. Rettelsen påvirker den derfor ikke, og røgtestene bruger kun GET.
+- **Kriterie 15 og 16:** "main `16cd3d0`" læses som "main `8c822fe`". Baseline og negativkørsel er lavet mod `8c822fe`. Lokalt fejler kun "KAN afmeldingssiden ved databasefejl" (MariaDB 10.4 har ikke `RENAME COLUMN`), både på main og på grenen.
+- **Lidt strengere end spec'en (ingen ændring af adfærd):**
+  - Blok B tjekker, at referencen fra `locations.php` faktisk er 419.
+  - Tjekket for byte-identisk brødtekst bruges også i kriterie 5 og 7, hvor spec'en kun kræver 419.
+  - Kontrollen i kriterie 8 tjekker også, at et token blev fundet på `status.php`, og at svaret er uden PHP-fejl.
+  - Enhedstesten (`tests/csrf_test.php`) tjekker for hvert tilfælde også, at underprocessens svarkode er 419 ved afvisning, at exit-koden er 0, og at `verify_csrf()` ikke har ændret `$_SESSION` (kravet "skriver ikke i sessionen").
+- Versionen er ikke løftet, og `hsg-package.json` er ikke regenereret (Michaels beslutning ved godkendelsen).
