@@ -6,7 +6,7 @@ function base_url(): string { $https=!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS'
 function redirect(string $url): never { header('Location: '.$url);exit; }
 function csrf_token(): string { if(empty($_SESSION['csrf']))$_SESSION['csrf']=bin2hex(random_bytes(24));return (string)$_SESSION['csrf']; }
 function csrf_field(): string { return '<input type="hidden" name="csrf" value="'.h(csrf_token()).'">'; }
-function verify_csrf(): void { if($_SERVER['REQUEST_METHOD']==='POST'){ $t=$_POST['csrf']??'';if(!is_string($t)||!hash_equals($_SESSION['csrf']??'',$t)){http_response_code(419);exit('Ugyldig formularsession. Genindlæs siden og prøv igen.');}} }
+function verify_csrf(): void { if($_SERVER['REQUEST_METHOD']==='POST'){ $s=$_SESSION['csrf']??null;$t=$_POST['csrf']??null;if(!is_string($s)||$s===''||!is_string($t)||$t===''||!hash_equals($s,$t)){http_response_code(419);exit('Ugyldig formularsession. Genindlæs siden og prøv igen.');}} }
 function flash(string $type,string $message): void { $_SESSION['flash'][]=[$type,$message]; }
 function render_flash(): void {
     foreach($_SESSION['flash']??[] as [$t,$m]) {
