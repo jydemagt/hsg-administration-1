@@ -120,7 +120,8 @@ function hsg_supplier_short_text(string $s, int $max = 40): string {
  * - Mellemrum (også hårde mellemrum U+00A0/U+202F) i begyndelsen og slutningen fjernes. Er der intet tilbage, er cellen tom.
  * - Et tal er valgfrit minus, 1–5 cifre (0–9, også foranstillede nuller) og højst én decimal-separator (. eller ,) med
  *   cifre efter – men ikke præcis tre cifre efter separatoren. Værdien afrundes én gang (,5 væk fra 0), og negative
- *   tal bliver 0.
+ *   tal bliver 0. Et tal har også 'negative'=>bool: sand, når den afrundede værdi er under 0 ("-1", "-0,5", men ikke
+ *   "-0" eller "-0,4").
  * - Alt andet er ugyldigt ("3 + 2", "53 stk.", "?", "1.234", "000041", EAN …), og text er den afkortede tekst.
  *   Ugyldig UTF-8 er altid ugyldig (aldrig tom), og teksten afkortes da ikke.
  */
@@ -130,7 +131,8 @@ function hsg_supplier_stock_cell(mixed $v): array {
     if($t==='')return ['state'=>'blank','value'=>null,'text'=>''];
     if(preg_match('/^-?[0-9]{1,5}(?:[.,]([0-9]+))?$/',$t,$m)===1&&strlen($m[1]??'')!==3){
         // Højst én separator, så den er altid decimaltegnet (også "40,999999999999993").
-        return ['state'=>'number','value'=>max(0,(int)round((float)str_replace(',','.',$t))),'text'=>$t];
+        $n=(int)round((float)str_replace(',','.',$t));
+        return ['state'=>'number','value'=>max(0,$n),'text'=>$t,'negative'=>$n<0];
     }
     return ['state'=>'invalid','value'=>null,'text'=>hsg_supplier_short_text($t)];
 }
@@ -138,18 +140,19 @@ function hsg_supplier_stock_cell(mixed $v): array {
 /**
  * Kims lokationstal for én række (tilstand L). Hver celle vurderes med hsg_supplier_stock_cell: tal (også 0) bruges,
  * tomme celler tæller som 0, hvis mindst én anden valgt lokationscelle i rækken har et tal – ellers bidrager rækken
- * ikke med lager. Ugyldig tekst ændrer ikke lokationen.
- * Returnerer ['values'=>[stock_loc_x=>int], 'blank'=>[stock_loc_x, …], 'invalid'=>[stock_loc_x=>afkortet tekst]].
+ * ikke med lager. Ugyldig tekst ændrer ikke lokationen. Et negativt tal tæller som 0 og står også i 'negative'.
+ * Returnerer ['values'=>[stock_loc_x=>int], 'blank'=>[stock_loc_x, …], 'invalid'=>[stock_loc_x=>afkortet tekst],
+ * 'negative'=>[stock_loc_x=>afkortet tekst]].
  */
 function hsg_supplier_location_cells(array $row, array $map): array {
-    $numbers=[];$blank=[];$invalid=[];
+    $numbers=[];$blank=[];$invalid=[];$negative=[];
     foreach($map as $fieldKey=>$colIdx){
         $fieldKey=(string)$fieldKey;
         if(!str_starts_with($fieldKey,'stock_loc_'))continue;
         $cell=hsg_supplier_stock_cell(trim((string)($row[$colIdx]??'')));
         if($cell['state']==='blank')$blank[]=$fieldKey;
         elseif($cell['state']==='invalid')$invalid[$fieldKey]=$cell['text'];
-        else $numbers[$fieldKey]=(int)$cell['value'];
+        else{$numbers[$fieldKey]=(int)$cell['value'];if(!empty($cell['negative']))$negative[$fieldKey]=hsg_supplier_short_text($cell['text']);}
     }
     $values=[];
     if($numbers){
@@ -159,7 +162,7 @@ function hsg_supplier_location_cells(array $row, array $map): array {
             elseif(in_array($fieldKey,$blank,true))$values[$fieldKey]=0;
         }
     }
-    return ['values'=>$values,'blank'=>$blank,'invalid'=>$invalid];
+    return ['values'=>$values,'blank'=>$blank,'invalid'=>$invalid,'negative'=>$negative];
 }
 
 /**
@@ -170,7 +173,8 @@ function hsg_supplier_location_cells(array $row, array $map): array {
  *   stock_file_total. Uden fallback-id som stock_quantity (som før).
  * "Lagerantal i alt" følger samme celleregel som lokationscellerne (hsg_supplier_stock_cell). Er cellen ugyldig, skrives
  * intet lager og intet kontroltal; den afkortede tekst lægges i den interne nøgle stock_file_total_invalid, som
- * hsg_supplier_merge_raw_items fjerner fra source igen.
+ * hsg_supplier_merge_raw_items fjerner fra source igen. Er tallet negativt, skrives 0, og den afkortede tekst lægges på
+ * samme måde i den interne nøgle stock_file_total_negative.
  */
 function hsg_supplier_source_fields(array $row,array $map,?int $fallbackLocationId=null): array {
     $name=hsg_supplier_row_value($row,$map,'name');$fields=[];
@@ -180,7 +184,7 @@ function hsg_supplier_source_fields(array $row,array $map,?int $fallbackLocation
     $total=null;
     if(isset($map['stock_quantity'])){
         $cell=hsg_supplier_stock_cell(hsg_supplier_row_value($row,$map,'stock_quantity'));
-        if($cell['state']==='number')$total=(int)$cell['value'];
+        if($cell['state']==='number'){$total=(int)$cell['value'];if(!empty($cell['negative']))$fields['stock_file_total_negative']=hsg_supplier_short_text($cell['text']);}
         elseif($cell['state']==='invalid')$fields['stock_file_total_invalid']=$cell['text'];
     }
     if(hsg_supplier_map_has_locations($map)){
@@ -397,7 +401,8 @@ function hsg_supplier_base_sku(string $sku): string {
 /**
  * Lægger en ekstra filrække oven i en primær række: lagerfelter summeres, øvrige felter udfylder kun tomme felter.
  * Den interne nøgle stock_file_total_invalid er ikke et lagerfelt: den første ikke-tomme værdi bevares (den primære
- * række først), og hsg_supplier_merge_raw_items gør så hele gruppens total ugyldig.
+ * række først), og hsg_supplier_merge_raw_items gør så hele gruppens total ugyldig. Det samme gælder
+ * stock_file_total_negative (første negative tekst vinder).
  */
 function hsg_supplier_merge_source(array $primary, array $extra): array {
     foreach($extra as $k=>$v){
@@ -481,7 +486,8 @@ function hsg_supplier_stock_file_is_zero(array $stockFile): bool {
  * Produkterne kan have stock_loc_<id> (fysisk lager), reserved_loc_<id> (aktive reservationer) og active_reservations
  * (de aktive reservationer enkeltvis). Er Kims lager i alt entydigt 0, foreslås de aktive reservationer på lokationer med
  * et tal fra filen arkiveret (items[].archive). På et sikkert match er de forvalgt, og changes beregnes, som om de er
- * arkiveret.
+ * arkiveret. items[].stock_file har også negative ([stock_loc_x => tekst]) og total_negative (?string) for negative tal
+ * i filen. Så er arkiveringen aldrig forvalgt.
  */
 function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $products, ?int $brandId = null, int $start = 1, ?PDO $pdo = null, array $options = []): array {
     $fallbackLid = (int)($options['fallback_location_id'] ?? 0) > 0 ? (int)$options['fallback_location_id'] : null;
@@ -504,7 +510,7 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
         if($k !== '') $bySku[$k][] = (int)$p['id'];
     }
 
-    $noCells = ['values' => [], 'blank' => [], 'invalid' => []];
+    $noCells = ['values' => [], 'blank' => [], 'invalid' => [], 'negative' => []];
     $parsedRows = [];
     foreach($rawRows as $i => $row) {
         $row = (array)$row;
@@ -664,21 +670,25 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
         $flags = $g['flags'];
 
         // Kims lagertal (før reservationstillæg). Ugyldig tekst i en lokationscelle ændrer aldrig lokationen.
-        $invalid = [];$numeric = [];
+        // Negative tal (spec 2026-10-26-kims-upload-opfoelgning-review, punkt 1) tæller som 0; første tekst pr. lokation vinder.
+        $invalid = [];$numeric = [];$negative = [];
         foreach($g['cells'] as $c) {
             foreach((array)$c['invalid'] as $k => $raw) if(!isset($invalid[$k])) $invalid[$k] = (string)$raw;
+            foreach((array)($c['negative'] ?? []) as $k => $raw) if(!isset($negative[$k])) $negative[$k] = (string)$raw;
             foreach((array)$c['values'] as $k => $v) if(!in_array($k, (array)$c['blank'], true)) $numeric[$k] = true;
         }
-        foreach(array_keys($invalid) as $k) unset($src[$k]);
+        foreach(array_keys($invalid) as $k) unset($src[$k], $negative[$k]); // En ugyldig lokation bruges slet ikke.
         // Ugyldig "Lagerantal i alt" i blot én af de flettede rækker gør gruppens total ugyldig: ingen delsum skrives eller
-        // bruges som kontroltal. I tilstand T kommer stock_loc_* kun fra totalen og fjernes også. Nøglen når aldrig changes.
+        // bruges som kontroltal. I tilstand T kommer stock_loc_* kun fra totalen og fjernes også. Nøglerne når aldrig changes.
         $totalInvalid = isset($src['stock_file_total_invalid']) ? (string)$src['stock_file_total_invalid'] : null;
-        unset($src['stock_file_total_invalid']);
+        $totalNegative = isset($src['stock_file_total_negative']) ? (string)$src['stock_file_total_negative'] : null;
+        unset($src['stock_file_total_invalid'], $src['stock_file_total_negative']);
         if($totalInvalid !== null) {
+            $totalNegative = null; // Totalen bruges slet ikke.
             unset($src['stock_file_total'], $src['stock_quantity']);
             if($stockMode === 'total') foreach(array_keys($src) as $k) if(str_starts_with((string)$k, 'stock_loc_')) unset($src[$k]);
         }
-        $stockFile = ['mode' => $stockMode, 'locations' => [], 'blank' => [], 'invalid' => $invalid, 'total' => isset($src['stock_file_total']) ? (int)$src['stock_file_total'] : null, 'total_invalid' => $totalInvalid, 'sum' => 0];
+        $stockFile = ['mode' => $stockMode, 'locations' => [], 'blank' => [], 'invalid' => $invalid, 'total' => isset($src['stock_file_total']) ? (int)$src['stock_file_total'] : null, 'total_invalid' => $totalInvalid, 'sum' => 0, 'negative' => $negative, 'total_negative' => $totalNegative];
         if($stockMode === 'locations') {
             foreach($locKeys as $k) {
                 if(array_key_exists($k, $src)) $stockFile['locations'][$k] = (int)$src[$k];
@@ -700,7 +710,9 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
         $mismatch = $stockMode === 'locations' && $stockFile['total'] !== null && $stockFile['locations'] && $stockFile['sum'] !== $stockFile['total'];
 
         // Arkivering (spec 2026-10-26, 2.2–2.3 og 2.6): kun når Kims lager i alt entydigt er 0, og kun reservationer på
-        // lokationer, der får et tal fra filen. Forvalgt på et sikkert match (≥ 90 % uden flag).
+        // lokationer, der får et tal fra filen. Forvalgt på et sikkert match (≥ 90 % uden flag) – men aldrig, når filen har
+        // en negativ værdi for varen (opfølgning på review, punkt 1 (a)): så skal admin selv afkrydse.
+        $hasNegative = $negative || $totalNegative !== null;
         $archive = null;
         $archivedDefault = [];
         if($product && hsg_supplier_stock_file_is_zero($stockFile)) {
@@ -722,7 +734,7 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
             }
             foreach($outside as $key => $n) $notes[] = 'Bemærk: '.$n.' '.($n === 1 ? 'reservation' : 'reservationer').' på '.$locLabel($key).' arkiveres ikke, fordi lokationen ikke får et tal fra filen.';
             if($candidates) {
-                $safeMatch = $pid > 0 && (int)$match['score'] >= 90 && !$flags && !$mismatch;
+                $safeMatch = $pid > 0 && (int)$match['score'] >= 90 && !$flags && !$mismatch && !$hasNegative;
                 $archive = ['default' => $safeMatch, 'quantity' => array_sum(array_column($candidates, 'quantity')), 'reservations' => $candidates];
                 if($safeMatch) foreach($candidates as $c) $archivedDefault[$c['location']] = ($archivedDefault[$c['location']] ?? 0) + $c['quantity'];
             }
@@ -750,6 +762,10 @@ function hsg_supplier_merge_raw_items(array $rawRows, array $fieldMap, array $pr
                 $notes[] = 'Bemærk: Lagerantal i alt ('.(int)$src[$fallbackKey].') skrives på '.$locLabel($fallbackKey).'. Produktet har også '.$other.' stk. på andre lokationer, så lageret i alt bliver '.($written + $other).'.';
             }
         }
+        // Negative tal skrives som 0, men admin skal kunne se dem (opfølgning på review, punkt 1).
+        foreach($negative as $k => $raw) $notes[] = 'Bemærk: Negativ værdi „'.$raw.'“ for '.$locLabel($k).' behandles som 0.';
+        if($totalNegative !== null) $notes[] = 'Bemærk: Negativ værdi „'.$totalNegative.'“ for lagerantal i alt behandles som 0.';
+        if($archive !== null && $hasNegative) $notes[] = 'Bemærk: Arkiveringen er ikke valgt på forhånd, fordi Kims fil har en negativ værdi for varen.';
         if($product && !$addReserved) {
             foreach($stockFile['locations'] as $k => $fileQty) {
                 $r = (int)($reservedAfter[$k] ?? 0);
