@@ -2,7 +2,7 @@
 return [
     'id'=>'supplier_upload',
     'name'=>'Kims uploadfil',
-    'version'=>'1.2.0',
+    'version'=>'1.2.1',
     'nav'=>true,
     'href'=>'supplier_upload.php',
     'icon'=>'⇧',
