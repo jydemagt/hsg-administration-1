@@ -41,6 +41,11 @@ $reservationModes=[
  'add'=>'Kims tal er efter reservationer – læg dem oven i',
  'none'=>'Kims tal er det fysiske lager – brug dem uændret',
 ];
+$importScopes=[
+ 'full'=>'Produktdata og lager',
+ 'stock_only'=>'Kun lagerantal',
+];
+$importScopeHelp='Kun lagerantal ændrer ingen produktdata og opretter ingen nye produkter. Varer uden match springes over.';
 $oldPreviewMessage='Previewet er lavet med en ældre version af systemet. Upload filen igen.';
 $token=trim((string)($_GET['preview']??$_POST['preview_token']??''));
 if(!hsg_supplier_preview_token_valid($token))$token=''; // Ugyldigt token: ingen preview og intet token i redirects.
@@ -58,8 +63,11 @@ if($postAction==='upload'){
         if(!isset($_FILES['file'])||$_FILES['file']['error']!==UPLOAD_ERR_OK)throw new RuntimeException('Upload af filen fejlede.');
         $name=(string)$_FILES['file']['name'];$ext=strtolower(pathinfo($name,PATHINFO_EXTENSION));if(!in_array($ext,['xlsx','csv'],true))throw new RuntimeException('Brug en Excel-fil (.xlsx) eller CSV-fil.');
         $sheets=$ext==='xlsx'?hsg_supplier_read_xlsx($_FILES['file']['tmp_name']):hsg_supplier_read_csv($_FILES['file']['tmp_name']);
-        $brandId=(int)($_POST['brand_id']??0)?:null;$preview=hsg_supplier_prepare_preview($pdo,$sheets,$name,$brandId);$token=hsg_supplier_preview_save($preview);
-        audit_log($pdo,'supplier_import.preview','import',null,['filename'=>$name,'sheet'=>$preview['sheet'],'rows'=>count($preview['items']),'brand_id'=>$brandId,'reservation_mode'=>$preview['reservation_mode']]);
+        $postedScope=is_string($_POST['import_scope']??null)?trim($_POST['import_scope']):'';
+        $importScope=isset($importScopes[$postedScope])?$postedScope:hsg_supplier_import_scope($pdo);
+        $brandId=(int)($_POST['brand_id']??0)?:null;$preview=hsg_supplier_prepare_preview($pdo,$sheets,$name,$brandId,$importScope);$token=hsg_supplier_preview_save($preview);
+        setting_set($pdo,'supplier_import_scope',$preview['import_scope']);
+        audit_log($pdo,'supplier_import.preview','import',null,['filename'=>$name,'sheet'=>$preview['sheet'],'rows'=>count($preview['items']),'brand_id'=>$brandId,'reservation_mode'=>$preview['reservation_mode'],'import_scope'=>$preview['import_scope']]);
         redirect('supplier_upload.php?preview='.$token);
     }catch(Throwable $e){flash('error',$e->getMessage());redirect('supplier_upload.php');}
 }
@@ -121,20 +129,46 @@ if($postAction==='reservation_mode'){
     }catch(Throwable $e){flash('error','Kunne ikke gemme reservationsvalget: '.$e->getMessage());redirect('supplier_upload.php'.($token?'?preview='.$token:''));}
 }
 
+if($postAction==='import_scope'){
+    try{
+        $preview=supplier_upload_preview_for_action($token,$oldPreviewMessage);
+        $scope=is_string($_POST['import_scope']??null)?trim($_POST['import_scope']):'';
+        if(!isset($importScopes[$scope]))throw new RuntimeException('Vælg, om filen skal opdatere produktdata og lager eller kun lagerantal.');
+        $keep=['col_remembered'=>(array)($preview['col_remembered']??[]),'col_rejected'=>(array)($preview['col_rejected']??[])];
+        $preview=hsg_supplier_recalculate_preview($pdo,$preview,(array)($preview['col_mapping']??[]),null,$scope);
+        unset($preview['col_rejected_manual']);
+        $preview=array_merge($preview,$keep);
+        hsg_supplier_preview_save($preview,$token);
+        setting_set($pdo,'supplier_import_scope',$scope);
+        audit_log($pdo,'supplier_import.settings','import',null,['import_scope'=>$scope]);
+        flash('success','Valget er gemt, og preview er genberegnet.');
+        redirect('supplier_upload.php?preview='.$token);
+    }catch(Throwable $e){flash('error','Kunne ikke gemme valget: '.$e->getMessage());redirect('supplier_upload.php'.($token?'?preview='.$token:''));}
+}
+
 if($postAction==='apply'){
     try{
         $preview=supplier_upload_preview_for_action($token,$oldPreviewMessage);$selected=array_map('intval',(array)($_POST['apply_rows']??[]));if(!$selected)throw new RuntimeException('Vælg mindst én række, der skal opdateres.');
         $reservationMode=(string)($preview['reservation_mode']??'');
         if(!isset($reservationModes[$reservationMode]))$reservationMode=hsg_supplier_reservation_mode($pdo);
-        $applyOptions=['add_reserved'=>$reservationMode==='add'];
+        // "Anvend" bruger previewets valg – aldrig en værdi fra POST. Ældre previews uden nøglen er "Produktdata og lager".
+        $importScope=(string)($preview['import_scope']??'full');
+        if(!isset($importScopes[$importScope]))$importScope='full';
+        $stockOnly=$importScope==='stock_only';
+        $applyOptions=['add_reserved'=>$reservationMode==='add','stock_only'=>$stockOnly];
+        // Afkrydsede reservationer til arkivering. Kun kandidater fra previewet på markerede rækker bruges (se nedenfor).
+        $postedArchive=[];
+        foreach((array)($_POST['archive_res']??[]) as $rid){if(is_scalar($rid)&&(int)$rid>0)$postedArchive[(int)$rid]=true;}
         $products=$pdo->query('SELECT * FROM lager_products ORDER BY name')->fetchAll(PDO::FETCH_ASSOC);$byId=[];foreach($products as $p)$byId[(int)$p['id']]=$p;
-        $pdo->beginTransaction();$updated=0;$created=0;$changedFields=0;$details=[];$reservedAddedTotal=0;
+        $pdo->beginTransaction();$updated=0;$created=0;$changedFields=0;$details=[];$reservedAddedTotal=0;$rowsSkipped=0;$archivedAll=[];$notArchived=0;
         foreach($selected as $idx){
             if(!isset($preview['items'][$idx]))continue;
             $item=$preview['items'][$idx];
             $mergedSkus=array_values(array_filter(array_map('strval',(array)($item['merged_skus']??[])),static fn($s)=>trim($s)!==''));
             $postedVal=trim((string)($_POST['product_'.$idx]??''));
-            if($postedVal==='create_new' || ($postedVal==='' && empty($item['match']['id']) && !empty($item['is_create_new']))){
+            $wantsCreate=$postedVal==='create_new' || ($postedVal==='' && empty($item['match']['id']) && !empty($item['is_create_new']));
+            if($stockOnly && $wantsCreate){$rowsSkipped++;continue;} // Kun lagerantal opretter aldrig nye produkter.
+            if($wantsCreate){
                 $newPid=hsg_supplier_create_product($pdo,(array)$item['source']);
                 // Rækkens eget varenummer peger fremover på det nye produkt (rydder samtidig gamle, forkerte koblinger op).
                 $ownSku=trim((string)($item['source']['sku']??''));
@@ -144,37 +178,76 @@ if($postAction==='apply'){
                 $details[]=['product_id'=>$newPid,'action'=>'created','source_row'=>$item['row']]+($mergedSkus?['merged_skus'=>$mergedSkus]:[]);
             } else {
                 $pid=(int)($postedVal ?: ($item['match']['id']??0));
-                if(!$pid||!isset($byId[$pid]))continue;
-                $changes=hsg_supplier_apply_product($pdo,$pid,(array)$item['source'],$applyOptions);
+                if(!$pid||!isset($byId[$pid])){if($stockOnly)$rowsSkipped++;continue;}
+                // Reservationer til arkivering: afkrydset ∩ previewets kandidater – og kun når produktet er previewets match.
+                $archivedRows=[];
+                $archiveInfo=is_array($item['archive']??null)?$item['archive']:null;
+                if($archiveInfo!==null){
+                    $candidateIds=[];
+                    foreach((array)($archiveInfo['reservations']??[]) as $res)$candidateIds[(int)($res['id']??0)]=true;
+                    $ids=array_keys(array_intersect_key($postedArchive,$candidateIds));
+                    if($ids&&$pid===(int)($item['match']['id']??0)){
+                        $locationIds=array_map(static fn($k)=>(int)substr((string)$k,10),array_keys((array)($item['stock_file']['locations']??[])));
+                        $archivedRows=hsg_supplier_archive_reservations($pdo,$pid,$ids,$locationIds);
+                        $notArchived+=count($ids)-count($archivedRows);
+                    }elseif($ids){
+                        $notArchived+=count($ids);
+                    }
+                }
+                $archivedByLoc=[];
+                foreach($archivedRows as $ar)$archivedByLoc[(int)$ar['location_id']]=($archivedByLoc[(int)$ar['location_id']]??0)+(int)$ar['quantity'];
+                $changes=hsg_supplier_apply_product($pdo,$pid,(array)$item['source'],$applyOptions+['archived_by_location'=>$archivedByLoc]);
+                if($archivedRows)hsg_sync_product_stock_status($pdo,$pid);
                 if(!empty($item['source']['sku'])){
                     hsg_supplier_remember_alias($pdo, (string)$item['source']['sku'], $pid, $item['source']['name']??null);
                 }
                 foreach($mergedSkus as $ms)hsg_supplier_remember_alias($pdo,$ms,$pid,$item['source']['name']??null);
-                if(!$changes)continue;
+                $archivedDetails=[];
+                foreach($archivedRows as $ar){
+                    $archivedAll[]=$ar;
+                    $archivedDetails[]=['reservation_id'=>(int)$ar['id'],'location_id'=>(int)$ar['location_id'],'quantity'=>(int)$ar['quantity'],'customer_name'=>$ar['customer_name'],'reference'=>$ar['reference'],'status_before'=>'reserved','status_after'=>'archived'];
+                }
+                if(!$changes){
+                    // Kun arkiveret: produktet får en indgang i audit, men tæller ikke som opdateret.
+                    if($archivedDetails)$details[]=['product_id'=>$pid,'fields'=>[],'source_row'=>$item['row']]+($mergedSkus?['merged_skus'=>$mergedSkus]:[])+['archived_reservations'=>$archivedDetails];
+                    continue;
+                }
                 $stockDetails=[];
                 foreach($changes as $field=>$c){
                     if(!str_starts_with((string)$field,'stock_loc_'))continue;
                     $entry=['location_id'=>(int)substr((string)$field,10),'old'=>(int)($c['old']??0),'new'=>(int)$c['new'],'file'=>(int)($c['file']??$c['new'])];
                     if((int)($c['reserved']??0)>0){$entry['reserved_added']=(int)$c['reserved'];$reservedAddedTotal+=(int)$c['reserved'];}
+                    if((int)($c['archived']??0)>0)$entry['archived']=(int)$c['archived'];
                     $stockDetails[]=$entry;
                 }
                 $updated++;$changedFields+=count($changes);
-                $details[]=['product_id'=>$pid,'fields'=>array_keys($changes),'source_row'=>$item['row']]+($mergedSkus?['merged_skus'=>$mergedSkus]:[])+($stockDetails?['stock'=>$stockDetails]:[]);
+                $details[]=['product_id'=>$pid,'fields'=>array_keys($changes),'source_row'=>$item['row']]+($mergedSkus?['merged_skus'=>$mergedSkus]:[])+($stockDetails?['stock'=>$stockDetails]:[])+($archivedDetails?['archived_reservations'=>$archivedDetails]:[]);
             }
         }
         hsg_supplier_remember_columns($pdo,(array)($preview['headers']??[]),(array)($preview['col_mapping']??[]));
         setting_set($pdo,'supplier_import_reservation_mode',$reservationMode);
+        setting_set($pdo,'supplier_import_scope',$importScope);
         $pdo->prepare('INSERT INTO hsg_supplier_import_runs(filename,sheet_name,rows_detected,rows_updated,created_by_admin) VALUES(?,?,?,?,?)')->execute([
             substr((string)$preview['filename'],0,255),substr((string)$preview['sheet'],0,180),count($preview['items']),$updated+$created,(int)current_admin_id()
         ]);
         $runId=(int)$pdo->lastInsertId();
-        audit_log($pdo,'supplier_import.apply','import',(string)$runId,['filename'=>$preview['filename'],'products_updated'=>$updated,'products_created'=>$created,'fields_changed'=>$changedFields,'reservation_mode'=>$reservationMode,'reserved_added_total'=>$reservedAddedTotal,'details'=>$details]);
+        $archivedQty=0;foreach($archivedAll as $ar)$archivedQty+=(int)$ar['quantity'];
+        audit_log($pdo,'supplier_import.apply','import',(string)$runId,['filename'=>$preview['filename'],'products_updated'=>$updated,'products_created'=>$created,'fields_changed'=>$changedFields,'reservation_mode'=>$reservationMode,'reserved_added_total'=>$reservedAddedTotal,'import_scope'=>$importScope,'reservations_archived'=>count($archivedAll),'reservations_archived_qty'=>$archivedQty,'rows_skipped'=>$rowsSkipped,'details'=>$details]);
+        foreach($archivedAll as $ar){
+            audit_log($pdo,'reservation.archive','reservation',(string)$ar['id'],['product_id'=>(int)$ar['product_id'],'location_id'=>(int)$ar['location_id'],'quantity'=>(int)$ar['quantity'],'customer_name'=>$ar['customer_name'],'reference'=>$ar['reference'],'status_before'=>'reserved','status_after'=>'archived','source'=>'supplier_import','import_run_id'=>$runId]);
+        }
         $pdo->commit();hsg_supplier_preview_delete($token);
+        foreach($archivedAll as $ar){
+            hsg_do_action('reservation.archived',['reservation_id'=>(int)$ar['id'],'product_id'=>(int)$ar['product_id'],'location_id'=>(int)$ar['location_id'],'quantity'=>(int)$ar['quantity'],'source'=>'supplier_import']);
+        }
         $msg = "$updated produkter blev opdateret";
         if($created > 0) $msg .= " og $created nye produkter blev oprettet i HSG Administration";
         $msg .= " med i alt $changedFields feltændringer.";
         if($reservedAddedTotal > 0) $msg .= " $reservedAddedTotal reserverede flasker er lagt oven i Kims tal.";
+        if($archivedAll) $msg .= ' '.(count($archivedAll) === 1 ? '1 reservation' : count($archivedAll).' reservationer')." ($archivedQty stk.) er arkiveret, fordi Kims lager var 0.";
+        if($rowsSkipped > 0) $msg .= ' '.($rowsSkipped === 1 ? '1 række uden match er sprunget over.' : "$rowsSkipped rækker uden match er sprunget over.");
         flash('success',$msg);
+        if($notArchived > 0) flash('warning',($notArchived === 1 ? '1 valgt reservation' : "$notArchived valgte reservationer").' blev ikke arkiveret, fordi de ikke længere er aktive, eller fordi du valgte et andet produkt end previewets match.');
         redirect('supplier_upload.php');
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();flash('error','Kunne ikke anvende ændringer: '.$e->getMessage());redirect('supplier_upload.php'.($token?'?preview='.$token:''));}
 }
@@ -188,6 +261,7 @@ if($token!==''){
         if((int)($preview['format']??0)!==2){$preview=null;$token='';flash('error',$oldPreviewMessage);}
     }catch(Throwable $e){flash('error',$e->getMessage());$token='';}
 }
+$savedImportScope=hsg_supplier_import_scope($pdo);
 $runs=db_table_exists($pdo,'hsg_supplier_import_runs')?$pdo->query('SELECT * FROM hsg_supplier_import_runs ORDER BY id DESC LIMIT 12')->fetchAll(PDO::FETCH_ASSOC):[];
 $missingCask=(int)$pdo->query("SELECT COUNT(*) FROM lager_products WHERE status<>'discontinued' AND (cask_number IS NULL OR cask_number='')")->fetchColumn();
 
@@ -225,6 +299,18 @@ function supplier_upload_reserved_line(array $item, array $locationNames): strin
     foreach((array)($item['reserved']??[]) as $key=>$qty){if((int)$qty>0)$parts[]=($locationNames[(string)$key]??(string)$key).' '.(int)$qty;}
     return $parts?'Reserveret i HSG: '.implode(' · ',$parts):'';
 }
+
+/** "1 vare" / "2 varer". */
+function supplier_upload_count(int $n, string $one, string $many): string {return $n===1?'1 '.$one:$n.' '.$many;}
+
+/** Én linje i arkiveringslisten: "#id · lokation · antal stk. · kunde · reference · oprettet ÅÅÅÅ-MM-DD" (tomme felter udelades). */
+function supplier_upload_archive_label(array $res, array $locationNames): string {
+    $location=(string)($res['location']??'');
+    $parts=['#'.(int)($res['id']??0),$locationNames[$location]??$location,(int)($res['quantity']??0).' stk.'];
+    foreach(['customer_name','reference'] as $k){$v=trim((string)($res[$k]??''));if($v!=='')$parts[]=$v;}
+    $parts[]='oprettet '.substr((string)($res['created_at']??''),0,10);
+    return implode(' · ',$parts);
+}
 page_header('Kims uploadfil');
 ?>
 <div class="grid">
@@ -234,12 +320,14 @@ page_header('Kims uploadfil');
 
 <div class="card">
   <h2>Upload Kims masterfil</h2>
-  <p class="muted">Upload masterfil (Excel eller CSV). Filen opdaterer produktdata og lager i HSG Administration. Varenumre med et bogstav til sidst (fx 17-1028a) flettes ind i varenummeret uden bogstav (17-1028), og lagerantallet lægges sammen – men kun når navn og destilleri passer. Er det en anden whisky, står varen alene med en bemærkning. Kolonnevalg og reservationsvalg huskes fra seneste upload.</p>
+  <p class="muted">Upload masterfil (Excel eller CSV). Filen opdaterer produktdata og lager i HSG Administration – eller kun lageret, hvis du vælger "Kun lagerantal". Varenumre med et bogstav til sidst (fx 17-1028a) flettes ind i varenummeret uden bogstav (17-1028), og lagerantallet lægges sammen – men kun når navn og destilleri passer. Er det en anden whisky, står varen alene med en bemærkning. Har en vare ikke længere lager i filen (0 i alt), foreslås dens aktive reservationer arkiveret. Kolonnevalg, reservationsvalg og valget af, hvad der opdateres, huskes fra seneste upload.</p>
   <form method="post" enctype="multipart/form-data"><?=csrf_field()?><input type="hidden" name="action" value="upload">
     <div class="split">
       <label>Excel/CSV<input type="file" name="file" accept=".xlsx,.csv" required></label>
       <label>Begræns til brand/leverandør (valgfri)<select name="brand_id"><option value="">Automatisk på tværs af alle produkter</option><?php foreach($brands as $b): $bDisplayName = !empty($b['parent_id']) ? $b['parent_name'].' › '.$b['name'] : $b['name']; ?><option value="<?=$b['id']?>"><?=h($bDisplayName)?></option><?php endforeach;?></select></label>
     </div>
+    <label>Hvad skal opdateres?<select name="import_scope"><?php foreach($importScopes as $scopeKey=>$scopeLabel):?><option value="<?=h($scopeKey)?>" <?=$savedImportScope===$scopeKey?'selected':''?>><?=h($scopeLabel)?></option><?php endforeach;?></select></label>
+    <small class="muted" style="display:block;margin:-4px 0 12px"><?=h($importScopeHelp)?></small>
     <button>Analysér fil og vis preview</button>
   </form>
 </div>
@@ -249,11 +337,21 @@ $detected=array_keys((array)$preview['mapping']);$detectedLabels=[];foreach($det
 $mappedLocKeys=array_values(array_filter(array_map('strval',$detected),static fn($k)=>str_starts_with($k,'stock_loc_')));
 $hasTotalColumn=in_array('stock_quantity',$detected,true);
 $fileTotalSum=0;$locationSum=0;$reservedSum=0;
+$importScope=(string)($preview['import_scope']??'full');if(!isset($importScopes[$importScope]))$importScope='full'; // Ældre previews: "Produktdata og lager".
+$stockOnlyPreview=$importScope==='stock_only';
+$matchedCount=0;$skippedCount=0;$hasArchive=false;
+$archiveSelected=['res'=>0,'qty'=>0,'items'=>0];$archiveOther=['res'=>0,'qty'=>0];
 foreach((array)$preview['items'] as $it){
     $sf=(array)($it['stock_file']??[]);
     if(isset($sf['total']))$fileTotalSum+=(int)$sf['total'];
     if(($sf['mode']??'')==='locations')$locationSum+=(int)($sf['sum']??0);
-    if((int)($it['match']['id']??0)>0)foreach((array)($it['reserved']??[]) as $rq)$reservedSum+=(int)$rq;
+    if((int)($it['match']['id']??0)>0){$matchedCount++;foreach((array)($it['reserved']??[]) as $rq)$reservedSum+=(int)$rq;}
+    if(!empty($it['skipped']))$skippedCount++;
+    if(is_array($it['archive']??null)){
+        $hasArchive=true;$n=count((array)($it['archive']['reservations']??[]));$aq=(int)($it['archive']['quantity']??0);
+        if(!empty($it['archive']['default'])){$archiveSelected['res']+=$n;$archiveSelected['qty']+=$aq;$archiveSelected['items']++;}
+        else{$archiveOther['res']+=$n;$archiveOther['qty']+=$aq;}
+    }
 }
 $reservationMode=(string)($preview['reservation_mode']??'add');
 $colRejected=(array)($preview['col_rejected']??[]);
@@ -264,6 +362,14 @@ $firstLocationName=(string)($activeLocations[0]['name']??'første lokation');
   <?php if($hasTotalColumn||$mappedLocKeys):?>
   <p><?php if($hasTotalColumn):?>Lager i filen: <?=$fileTotalSum?> stk. i alt<?php endif;?><?php if($hasTotalColumn&&$mappedLocKeys):?> · <?php endif;?><?php if($mappedLocKeys):?>Sum af lokationskolonner: <?=$locationSum?> stk.<?php endif;?><?php if($hasTotalColumn&&$mappedLocKeys&&$fileTotalSum!==$locationSum):?> <span class="badge amber">Afviger – se bemærkningerne på de enkelte varer</span><?php endif;?><br>Aktive reservationer i HSG på matchede varer: <?=$reservedSum?> stk.</p>
   <?php endif;?>
+  <?php if($stockOnlyPreview):?><p>Kun lagerantal: <?=h(supplier_upload_count($matchedCount,'vare','varer'))?> matcher et HSG-produkt · <?=h(supplier_upload_count($skippedCount,'vare','varer'))?> springes over (findes ikke i HSG).</p><?php endif;?>
+  <?php if($hasArchive):?><p>Arkiveres: <?=h(supplier_upload_count($archiveSelected['res'],'reservation','reservationer'))?> (<?=intval($archiveSelected['qty'])?> stk.) på <?=h(supplier_upload_count($archiveSelected['items'],'vare','varer'))?>, fordi Kims lager i alt er 0. Du kan fravælge dem på de enkelte varer.<?php if($archiveOther['res']>0):?> <?=h(supplier_upload_count($archiveOther['res'],'reservation','reservationer'))?> (<?=intval($archiveOther['qty'])?> stk.) på varer, der kræver din vurdering, er ikke valgt.<?php endif;?></p><?php endif;?>
+  <?php if($stockOnlyPreview&&!$hasTotalColumn&&!$mappedLocKeys):?><p style="color:var(--amber);font-weight:600">Bemærk: Der er ikke valgt nogen lagerkolonner, så Kun lagerantal ændrer intet. Vælg lagerkolonnerne under Kolonnemapping.</p><?php endif;?>
+  <form method="post" class="inline"><?=csrf_field()?><input type="hidden" name="action" value="import_scope"><input type="hidden" name="preview_token" value="<?=h($token)?>">
+    <label>Hvad skal opdateres?<select name="import_scope"><?php foreach($importScopes as $scopeKey=>$scopeLabel):?><option value="<?=h($scopeKey)?>" <?=$importScope===$scopeKey?'selected':''?>><?=h($scopeLabel)?></option><?php endforeach;?></select></label>
+    <button class="button secondary">Genberegn preview</button>
+  </form>
+  <small class="muted" style="display:block;margin:6px 0 4px"><?=h($importScopeHelp)?></small>
   <form method="post" class="inline"><?=csrf_field()?><input type="hidden" name="action" value="reservation_mode"><input type="hidden" name="preview_token" value="<?=h($token)?>">
     <label>Reservationer<select name="reservation_mode"><?php foreach($reservationModes as $modeKey=>$modeLabel):?><option value="<?=h($modeKey)?>" <?=$reservationMode===$modeKey?'selected':''?>><?=h($modeLabel)?></option><?php endforeach;?></select></label>
     <button class="button secondary">Genberegn preview</button>
@@ -281,6 +387,7 @@ $firstLocationName=(string)($activeLocations[0]['name']??'første lokation');
   ?>
   <p class="muted" style="margin-top:8px;">Vælg hvilken kolonne fra filen der svarer til hvilken egenskab i HSG. Kolonner med samme overskrift som ved seneste upload får det valg, du brugte sidst – også "Ignorer kolonne". Kun nye overskrifter foreslås automatisk. Dit valg gemmes, når du genberegner eller anvender ændringerne.<?php if($colRemembered):?> <strong><?=count($colRemembered)?> af <?=count($headers)?> kolonner</strong> er hentet fra seneste upload.<?php endif;?></p>
   <p class="muted">Vælger du kolonner til lokationerne, skrives lageret kun på dem, og "Lagerantal i alt" bruges kun som kontroltal. Uden lokationskolonner skrives "Lagerantal i alt" på første lokation (<?=h($firstLocationName)?>).</p>
+  <?php if($stockOnlyPreview):?><p class="muted">I Kun lagerantal bruges de øvrige kolonner kun til at finde varen i HSG.</p><?php endif;?>
   <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="remap"><input type="hidden" name="preview_token" value="<?=h($token)?>">
     <div class="table-wrap" style="max-height:380px;overflow-y:auto;margin-bottom:12px;">
       <table>
@@ -322,14 +429,18 @@ $firstLocationName=(string)($activeLocations[0]['name']??'første lokation');
   <td><?=h($item['row_label'] ?? ('#'.intval($item['row'])))?></td>
   <td><strong><?=h($src['name']??'(uden navn)')?></strong><br><small class="muted"><?php if(!empty($src['sku'])):?>SKU <?=h($src['sku'])?><?php if(!empty($item['merged_skus'])):?> + <?=h(implode(', ',(array)$item['merged_skus']))?><?php endif;?> · <?php endif;?><?php if(!empty($src['cask_number'])):?>Fad #<?=h($src['cask_number'])?><?php endif;?></small></td>
   <td>
-    <?php if(!empty($item['is_create_new'])): ?>
+    <?php if(!empty($item['skipped'])): ?>
+      <span class="badge amber">Springes over</span> <small class="muted"><?=h($item['match']['reason']??'')?></small>
+    <?php elseif(!empty($item['is_create_new'])): ?>
       <span class="badge blue">Nyt produkt oprettes (Lager: <?=intval($item['total_stock']??0)?>)</span>
     <?php else: ?>
       <span class="badge <?=$score>=90?'green':($score>=70?'':'red')?>"><?=$score?> %</span> <small class="muted"><?=h($item['match']['reason']??'')?></small>
     <?php endif; ?>
     <?php foreach((array)($item['notes']??[]) as $note):?><br><small <?=str_starts_with((string)$note,'Bemærk')?'style="color:var(--amber);font-weight:600"':'class="muted"'?>><?=h((string)$note)?></small><?php endforeach;?>
     <select name="product_<?=$i?>" style="margin-top:6px">
-      <?php if(!empty($item['is_create_new'])): ?>
+      <?php if($stockOnlyPreview): ?>
+        <option value="">– Intet match (springes over) –</option>
+      <?php elseif(!empty($item['is_create_new'])): ?>
         <option value="create_new" selected>✨ Opret som nyt produkt i HSG (Lager: <?=intval($item['total_stock']??0)?> stf)</option>
       <?php else: ?>
         <option value="">– Intet match –</option>
@@ -341,13 +452,20 @@ $firstLocationName=(string)($activeLocations[0]['name']??'første lokation');
     </select>
   </td>
   <td>
-    <?php if(!$changes):?><span class="muted">Ingen ændringer fundet</span><?php else:?><ul style="margin:0;padding-left:18px"><?php foreach($changes as $field=>$c):?><li><strong><?=h($fieldLabels[$field]??$field)?>:</strong> <?=h(supfmt($c['old'],(string)$field))?> → <strong><?=h(supfmt($c['new'],(string)$field))?></strong><?php if(str_starts_with((string)$field,'stock_loc_')&&(int)($c['reserved']??0)>0):?> (fil <?=intval($c['file']??0)?> + <?=intval($c['reserved'])?> reserveret)<?php endif;?></li><?php endforeach;?></ul><?php endif;?>
+    <?php if(!$changes):?><span class="muted">Ingen ændringer fundet</span><?php else:?><ul style="margin:0;padding-left:18px"><?php foreach($changes as $field=>$c): $resQty=(int)($c['reserved']??0); $arcQty=(int)($c['archived']??0);?><li><strong><?=h($fieldLabels[$field]??$field)?>:</strong> <?=h(supfmt($c['old'],(string)$field))?> → <strong><?=h(supfmt($c['new'],(string)$field))?></strong><?php if(str_starts_with((string)$field,'stock_loc_')&&$arcQty>0&&$resQty>0):?> (fil <?=intval($c['file']??0)?> + <?=$resQty?> reserveret, <?=$arcQty?> arkiveres)<?php elseif(str_starts_with((string)$field,'stock_loc_')&&$arcQty>0):?> (fil <?=intval($c['file']??0)?>, <?=$arcQty?> reserveret arkiveres)<?php elseif(str_starts_with((string)$field,'stock_loc_')&&$resQty>0):?> (fil <?=intval($c['file']??0)?> + <?=$resQty?> reserveret)<?php endif;?></li><?php endforeach;?></ul><?php endif;?>
     <?php if($fileLine!==''):?><br><small class="muted"><?=h($fileLine)?></small><?php endif;?>
     <?php if($reservedLine!==''):?><br><small class="muted"><?=h($reservedLine)?></small><?php endif;?>
+    <?php $archive=is_array($item['archive']??null)?$item['archive']:null; if($archive):?>
+      <br><small><strong>Arkivér reservationer – Kims lager i alt er 0:</strong></small>
+      <?php foreach((array)($archive['reservations']??[]) as $res):?>
+        <br><label class="check"><input type="checkbox" name="archive_res[]" value="<?=intval($res['id']??0)?>" <?=!empty($archive['default'])?'checked':''?> style="width:auto;min-height:0;margin:0"> <?=h(supplier_upload_archive_label((array)$res,$locationNames))?></label>
+      <?php endforeach;?>
+      <br><small class="muted"><?=h($reservationMode==='none'?'Arkiveres kun, når rækken er markeret under "Opdatér". Lageret nedskrives ikke ved arkiveringen. En fravalgt reservation forbliver aktiv, og disponibelt bliver negativt.':'Arkiveres kun, når rækken er markeret under "Opdatér". Lageret nedskrives ikke ved arkiveringen. En fravalgt reservation forbliver aktiv og lægges oven i Kims tal.')?></small>
+    <?php endif;?>
   </td>
 </tr>
 <?php endforeach;?></tbody></table></div>
-<div class="card"><div class="actions"><button>Anvend valgte ændringer</button><a class="button secondary" href="supplier_upload.php">Annuller preview</a></div><p class="muted">Kun de markerede rækker opdateres. Tomme felter i Kims fil overskriver aldrig produktdata. Undtagelse: lager pr. lokation – har en række et tal i mindst én lokationskolonne, tæller tomme lokationsceller i samme række som 0. Lager og reservationer beregnes igen, når du trykker "Anvend".</p></div>
+<div class="card"><div class="actions"><button>Anvend valgte ændringer</button><a class="button secondary" href="supplier_upload.php">Annuller preview</a></div><p class="muted"><?php if($stockOnlyPreview):?>Kun lagerantal: Kun lager pr. lokation opdateres. Produktdata ændres ikke, og der oprettes ingen nye produkter. <?php endif;?>Kun de markerede rækker opdateres. Tomme felter i Kims fil overskriver aldrig produktdata. Undtagelse: lager pr. lokation – har en række et tal i mindst én lokationskolonne, tæller tomme lokationsceller i samme række som 0. Lager og reservationer beregnes igen, når du trykker "Anvend". Markerede reservationer arkiveres kun på markerede rækker.</p></div>
 </form>
 <?php endif;?>
 
