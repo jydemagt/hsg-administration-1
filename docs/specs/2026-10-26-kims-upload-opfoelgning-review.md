@@ -244,7 +244,7 @@ Kriterierne er skrevet til (a). Hvor (b) giver noget andet, står det i parentes
 ## 5. KAN-punkter (laves, hvis de er trivielle)
 
 186. **KAN-1 `reservations.php` l. 104-105.** `$q` og `$showStatus` læses kun, hvis værdien er en streng: `is_string($_GET['status']??null)?trim($_GET['status']):''`.
-     - `reservations.php?status%5B%5D=archived&q%5B%5D=x` svarer 200 uden "Warning:" og viser fanen "Aktive".
+     - `reservations.php?status%5B%5D=archived&q%5B%5D=x` svarer 200 uden "Warning:" og viser fanen "Alle reservationer" som aktiv (rettet efter test: fanen "Aktive" findes ikke).
      - Adressen kommer på røgtestens `PAGES` i `tests/run.sh`.
 187. **KAN-2 Dobbelte rækker.** `$selected` dedupliceres (`array_values(array_unique(…))`, l. 151).
      - `apply_rows=[i,i]` med `archive_res=[r]` arkiverer r én gang. Audit har `reservations_archived 1`, og der er ingen warning-flash "blev ikke arkiveret".
