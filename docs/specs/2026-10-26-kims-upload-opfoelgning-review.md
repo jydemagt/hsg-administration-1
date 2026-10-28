@@ -181,7 +181,7 @@ Kriterierne er skrevet til (a). Hvor (b) giver noget andet, står det i parentes
     - bevaret ved `reservation_mode` og `import_scope` (`$keep`),
     - nulstillet ved `remap` og `reguess`.
   - Panelet viser T3 ved hver reddet kolonne, i samme stil som beløbsadvarslen (l. 416).
-  - Næste Genberegn eller Anvend gemmer det rettede valg, så fejlen ikke bider sig fast.
+  - Næste "Genberegn preview med tilpasset kolonnemapping" eller "Anvend valgte ændringer" gemmer det rettede valg, så fejlen ikke bider sig fast. (Knapperne "Genberegn preview" ved "Hvad skal opdateres?" og "Reservationer" gemmer ikke kolonnevalget.)
 - **4c Ingen stille tomme previews.**
   - Har `mapping` hverken `sku`, `name` eller `cask_number`, viser preview-kortet T1 (amber, som l. 373).
   - Ellers vises T2, hvis `items` er tom.
@@ -296,3 +296,13 @@ Kriterierne er skrevet til (a). Hvor (b) giver noget andet, står det i parentes
 - **Genberegn** gemmer stadig et manuelt valg uden nøglekolonner. Næste upload redder det.
 - **Valg af ark** ændres ikke.
 - **Ingen databaseændringer.**
+
+## 9. Tilføjet efter review
+
+Tilføjet efter reviewet (fund O4 i testrapporten) og godkendt af brugeren 2026-10-28.
+
+192. **Oversigtslinjen "Arkiveres: …" (O4)** i `supplier_upload.php`.
+     - Er mindst én reservation forvalgt, er linjen som før, inkl. tilføjelsen om reservationer på varer, der kræver vurdering.
+     - Er ingen forvalgt, men nogle tilbudt (fx ved en negativ værdi eller et usikkert match), står der: `Ingen reservationer er valgt til arkivering. N reservationer (N stk.) på varer, der kræver din vurdering, er ikke valgt. Du kan vælge dem på de enkelte varer.`
+     - Sætningen "Arkiveres: 0 reservationer (0 stk.) på 0 varer …" vises aldrig.
+     - **Test:** Q10 (negativ værdi) i `tests/supplier_archive_qa_test.php` har den nye sætning og ikke "Arkiveres: 0 reservationer". Q8 (forvalgt) har stadig "Arkiveres: 2 reservationer (2 stk.) på 1 vare …".
