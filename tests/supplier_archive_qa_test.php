@@ -18,6 +18,12 @@ declare(strict_types=1);
  *  - Q11 upload rydder previews op, der er ældre end 24 timer (175)
  *  - Q12 husket "Ignorer" på Varenr./Variant: reddes, og et tomt preview siger hvorfor og kan ikke anvendes (183-185)
  *  - Q13 KAN-2: samme række to gange i apply_rows behandles én gang (187)
+ * Testerens supplement til opfølgningen (tilføjet af uafhængig tester, Q14-Q20):
+ *  - Q14 "Gæt kolonner forfra" nulstiller col_key_restored (183)   - Q15 ingen lækage af col_key_restored mellem uploads (183)
+ *  - Q16 bevidst "Ignorer" på begge nøglekolonner respekteres, og reguess er vejen ud (184-185)
+ *  - Q17 handlingerne afvises uden login/CSRF, og oprydningen kan ikke udløses af andre (175)   - Q18 product_<i> som liste og skæve tal (178)
+ *  - Q19 negative tal i hele flowet: decimaler, hårde mellemrum, tilstand T (173)   - Q20 KAN-3: en hook, der kaster, vælter ikke importen (188; egen server + tests/hook_throw_prepend.php)
+ *  - Q21 tomt preview med kun fadnummer valgt viser T2 og ikke T1 (184)
  *
  * KØRES af tests/run.sh, mens røgtestens server kører:
  *     php tests/supplier_archive_qa_test.php http://127.0.0.1:8787 testadmin 'Test-Pass-12345!'
@@ -582,6 +588,286 @@ try {
         t_true(!has_flash($page['body'], 'warning', 'blev ikke arkiveret'), 'ingen advarsel om "blev ikke arkiveret"', json_encode(flashes($page['body']), JSON_UNESCAPED_UNICODE));
         t_eq([$L3 => 0], db_stock($pdo, $p), 'lageret er skrevet én gang (0)');
         t_eq(1, count(db_movements($pdo, $p)), 'én lagerbevægelse');
+    });
+
+    // ==========================================================================================
+    // TESTERENS SUPPLEMENT til opfølgningen på review (spec 2026-10-26-kims-upload-opfoelgning-review, kriterie 167-191).
+    // Q14-Q16: redningen af husket "Ignorer" (punkt 4) – nulstilling, ingen lækage mellem uploads, bevidst "Ignorer" og vejen ud.
+    // Q17:     de ændrede handlinger afvises uden login og uden CSRF, og oprydningen kan ikke udløses af andre end en admin.
+    // Q18:     product_<i> som liste og skæve tal.
+    // Q19:     negative tal i hele flowet: decimaler og hårde mellemrum (tilstand L), negativ total (tilstand T).
+    // Q20:     KAN-3: en hook, der kaster efter commit, vælter ikke en gemt import (egen server med en hook, der kaster).
+    // ==========================================================================================
+    $T1 = 'Bemærk: Varenummer og produktnavn er ikke valgt, så ingen rækker kan matches. Tryk "Gæt kolonner forfra", eller vælg kolonnerne under Kolonnemapping.';
+    $T3 = '⚠ Husket valg "Ignorer kolonne" er ikke brugt: uden varenummer og produktnavn kan ingen rækker matches.';
+    $N3A = 'Bemærk: Arkiveringen er ikke valgt på forhånd, fordi Kims fil har en negativ værdi for varen.';
+    /** Husket kolonnevalg (nøglerne er de normaliserede overskrifter). $keySku/$keyName: '' = husket som "Ignorer kolonne". */
+    $remember = static function (string $keySku, string $keyName) use ($pdo, $L1, $L2, $L3): void {
+        setting_put($pdo, 'supplier_import_header_map', json_encode(['varenr' => $keySku, 'variant' => $keyName, 'lagerbeholdning' => '', 'destilleri' => 'distillery',
+            'christiansfeld' => 'stock_loc_'.$L1, 'hosmichael' => 'stock_loc_'.$L2, 'hosgert' => 'stock_loc_'.$L3], JSON_FORCE_OBJECT));
+    };
+    /** Upload uden remap (det huskede valg bruges). Returnerer [token, side-HTML uden remap-parameter]. */
+    $plainUpload = static function (array $rows, string $scope = 'full') use ($http, $csvOf, &$tokens): array {
+        $r = $http->upload('supplier_upload.php', ['csrf' => $http->csrf(), 'action' => 'upload', 'import_scope' => $scope], 'file', 'tstkim-qa.csv', $csvOf($rows));
+        $t = token_of($r['loc']);
+        if ($t === '') throw new RuntimeException('Upload gav intet preview: '.(string)$r['loc']);
+        $tokens[] = $t;
+        return [$t, $http->get('supplier_upload.php?preview='.$t)['body']];
+    };
+
+    // ------------------------------------------------------------------------------------------
+    t_case('Q14 "Gæt kolonner forfra" nulstiller col_key_restored (kriterie 183, punkt 4: nulstillet ved remap og reguess)', function () use ($pdo, $http, $remember, $plainUpload, $T3) {
+        $p = db_product($pdo, 'TSTKIM-9811', 'TSTKIM Reguess Whisky', [$GLOBALS['L3'] => 1]);
+        $remember('', '');
+        [$t, $body] = $plainUpload([['TSTKIM-9811', 'TSTKIM Reguess Whisky', 'TSTKIM Dist', '1', '0', '0', '1']]);
+        $text = page_text($body);
+        t_eq(2, substr_count($text, $T3), 'forudsætning: T3 står ved begge reddede kolonner');
+        t_true(str_contains($body, '<details class="card" open>'), 'forudsætning: panelet er åbent');
+        $page = $http->follow($http->post('supplier_upload.php', ['action' => 'reguess', 'preview_token' => $t]));
+        t_true(has_flash($page['body'], 'success', 'Kolonnerne er gættet forfra'), 'reguess lykkedes', json_encode(flashes($page['body']), JSON_UNESCAPED_UNICODE));
+        t_eq(0, substr_count(page_text($page['body']), $T3), 'efter reguess står T3 ikke længere');
+        t_eq(0, substr_count(page_text($http->get('supplier_upload.php?preview='.$t)['body']), $T3), 'og heller ikke ved næste visning (nulstillingen er gemt)');
+        t_true(str_contains(page_text($page['body']), 'Anvend valgte ændringer'), 'rækkerne er der stadig (Varenr. og Variant: er sku/name efter gættet)');
+    });
+
+    // ------------------------------------------------------------------------------------------
+    t_case('Q15 col_key_restored lækker ikke ind i en anden upload (kriterie 183)', function () use ($pdo, $http, $remember, $plainUpload, $T1, $T3) {
+        db_product($pdo, 'TSTKIM-9821', 'TSTKIM Lækage A', [$GLOBALS['L3'] => 1]);
+        db_product($pdo, 'TSTKIM-9822', 'TSTKIM Lækage B', [$GLOBALS['L3'] => 1]);
+        $remember('', '');
+        [$a, $bodyA] = $plainUpload([['TSTKIM-9821', 'TSTKIM Lækage A', 'TSTKIM Dist', '1', '0', '0', '1']]);
+        t_eq(2, substr_count(page_text($bodyA), $T3), 'upload A: T3 ved begge kolonner');
+        // Admin retter valget (Genberegn gemmer det): næste upload skal slet ikke have noget at redde.
+        $remember('sku', 'name');
+        [$b, $bodyB] = $plainUpload([['TSTKIM-9822', 'TSTKIM Lækage B', 'TSTKIM Dist', '1', '0', '0', '1']]);
+        t_eq(0, substr_count(page_text($bodyB), $T3), 'upload B: ingen T3');
+        t_true(!str_contains($bodyB, '<details class="card" open>'), 'upload B: panelet er lukket (intet at gøre opmærksom på)');
+        t_true(str_contains(page_text($bodyB), 'Anvend valgte ændringer') && !str_contains(page_text($bodyB), $T1), 'upload B: rækker og Anvend, ingen T1');
+        $http->follow($http->post('supplier_upload.php', ['action' => 'reservation_mode', 'preview_token' => $b, 'reservation_mode' => 'add']));
+        t_eq(0, substr_count(page_text($http->get('supplier_upload.php?preview='.$b)['body']), $T3), 'upload B efter reservation_mode: stadig ingen T3');
+        // A's eget preview er uberørt af B.
+        t_eq(2, substr_count(page_text($http->get('supplier_upload.php?preview='.$a)['body']), $T3), 'preview A viser stadig sin egen T3 (hvert preview har sin egen tilstand)');
+        // Et preview uden token viser ingen T3 (kun uploadformularen).
+        t_eq(0, substr_count(page_text($http->get('supplier_upload.php')['body']), $T3), 'siden uden token viser ingen T3');
+    });
+
+    // ------------------------------------------------------------------------------------------
+    t_case('Q16 Bevidst "Ignorer" på begge nøglekolonner respekteres, og "Gæt kolonner forfra" er vejen ud (kriterie 184-185)', function () use ($pdo, $http, $remember, $plainUpload, $T1, $T3) {
+        $p = db_product($pdo, 'TSTKIM-9831', 'TSTKIM Bevidst Ignorer', [$GLOBALS['L3'] => 1]);
+        $remember('sku', 'name');
+        [$t, $body] = $plainUpload([['TSTKIM-9831', 'TSTKIM Bevidst Ignorer', 'TSTKIM Dist', '1', '0', '0', '1']]);
+        t_true(str_contains(page_text($body), 'Anvend valgte ændringer'), 'forudsætning: rækken vises med det sunde valg');
+        $iV = $GLOBALS['col']['Varenr.']; $iN = $GLOBALS['col']['Variant:'];
+        $map = $GLOBALS['lMap']; $map[$iV] = ''; $map[$iN] = '';
+        $page = $http->follow($http->post('supplier_upload.php', ['action' => 'remap', 'preview_token' => $t, 'col_map' => $map]));
+        $text = page_text($page['body']);
+        t_true(str_contains($text, $T1), 'bevidst Ignorer på begge giver T1 (ikke redning)');
+        t_eq(0, substr_count($text, $T3), 'ingen T3 (valget er manuelt og respekteres)');
+        t_true(!str_contains($text, 'Anvend valgte ændringer') && str_contains($text, 'Der er ingen rækker at anvende.'), 'ingen Anvend, men "Der er ingen rækker at anvende."');
+        // Skift af reservationsvalg og af opdateringsvalg på det tomme preview redder ikke noget bagefter.
+        foreach ([['reservation_mode', ['reservation_mode' => 'none']], ['reservation_mode', ['reservation_mode' => 'add']], ['import_scope', ['import_scope' => 'stock_only']], ['import_scope', ['import_scope' => 'full']]] as [$action, $extra]) {
+            $page = $http->follow($http->post('supplier_upload.php', ['action' => $action, 'preview_token' => $t] + $extra));
+            $text = page_text($page['body']);
+            t_true(str_contains($text, $T1) && !str_contains($text, 'Anvend valgte ændringer') && substr_count($text, $T3) === 0, $action.' '.json_encode($extra).': stadig T1 og ingen redning');
+        }
+        // Det gemte valg har nu Ignorer på begge (Genberegn gemmer et manuelt valg). Næste upload redder dem igen (spec: "Næste upload redder det").
+        [$t2, $body2] = $plainUpload([['TSTKIM-9831', 'TSTKIM Bevidst Ignorer', 'TSTKIM Dist', '1', '0', '0', '1']]);
+        t_eq(2, substr_count(page_text($body2), $T3), 'næste upload: redningen virker igen (T3 ×2)');
+        t_true(str_contains(page_text($body2), 'Anvend valgte ændringer'), 'næste upload: rækken vises');
+        // Vejen ud for det tomme preview: "Gæt kolonner forfra" giver rækkerne tilbage.
+        $page = $http->follow($http->post('supplier_upload.php', ['action' => 'reguess', 'preview_token' => $t]));
+        $text = page_text($page['body']);
+        t_true(str_contains($text, 'Anvend valgte ændringer') && !str_contains($text, $T1) && !str_contains($text, 'Der er ingen rækker at anvende.'), 'reguess på det tomme preview: rækkerne er tilbage, T1 væk');
+        // Og det kan anvendes uden fejl (rækken matcher TSTKIM-9831).
+        $pv = $http->get('supplier_upload.php?preview='.$t)['body'];
+        t_true(preg_match('#name="apply_rows\[\]" value="0"#', $pv) === 1, 'række 0 kan afkrydses');
+    });
+
+    // ------------------------------------------------------------------------------------------
+    t_case('Q17 Ændrede handlinger afvises uden login og uden CSRF, og oprydningen kan ikke udløses af andre (kriterie 175, 185)', function () use ($http, $csvOf, $base, $root, $pdo) {
+        $dir = $root.'/storage/import-previews';
+        if (!is_dir($dir)) mkdir($dir, 0770, true);
+        $old = $dir.'/'.bin2hex(random_bytes(20)).'.json';
+        file_put_contents($old, '{}'); touch($old, time() - 25 * 3600);
+        // Serveren sletter filen i en anden proces: PHP's stat-cache her skal ryddes, før filen tjekkes igen (ellers kan en sletning gå ubemærket hen).
+        $exists = static function () use ($old): bool { clearstatcache(true, $old); return is_file($old); };
+        try {
+            $anon = new Http($base);
+            foreach (['upload', 'remap', 'apply', 'reguess', 'reservation_mode', 'import_scope'] as $action) {
+                $r = $anon->request('POST', 'supplier_upload.php', http_build_query(['action' => $action, 'preview_token' => str_repeat('a', 40), 'apply_rows' => [0], 'csrf' => 'x']), 'application/x-www-form-urlencoded');
+                t_true(in_array($r['code'], [401, 403, 419], true), $action.' uden login afvises (HTTP '.$r['code'].')');
+            }
+            $b = 'hsgtest'.bin2hex(random_bytes(4));
+            $body = "--$b\r\nContent-Disposition: form-data; name=\"action\"\r\n\r\nupload\r\n--$b\r\nContent-Disposition: form-data; name=\"file\"; filename=\"x.csv\"\r\nContent-Type: text/csv\r\n\r\na;b\r\n--$b--\r\n";
+            $r = $anon->request('POST', 'supplier_upload.php', $body, 'multipart/form-data; boundary='.$b);
+            t_true(in_array($r['code'], [401, 403, 419], true), 'upload uden login (multipart) afvises (HTTP '.$r['code'].')');
+            t_true($exists(), 'en anonym upload rydder ikke op i previews');
+            // Logget ind, men uden (eller med forkert) CSRF-token: 419, og oprydningen kører ikke.
+            foreach (['upload', 'remap', 'apply', 'reguess', 'reservation_mode', 'import_scope'] as $action) {
+                $r = $http->request('POST', 'supplier_upload.php', http_build_query(['action' => $action, 'preview_token' => str_repeat('a', 40), 'apply_rows' => [0]]), 'application/x-www-form-urlencoded');
+                t_eq(419, $r['code'], $action.' uden CSRF-token giver 419');
+                $r = $http->request('POST', 'supplier_upload.php', http_build_query(['action' => $action, 'preview_token' => str_repeat('a', 40), 'apply_rows' => [0], 'csrf' => 'forkert']), 'application/x-www-form-urlencoded');
+                t_eq(419, $r['code'], $action.' med forkert CSRF-token giver 419');
+            }
+            $r = $http->request('POST', 'supplier_upload.php', http_build_query(['action' => 'upload', 'csrf' => ['x']]), 'application/x-www-form-urlencoded');
+            t_eq(419, $r['code'], 'csrf som liste giver 419');
+            t_true($exists(), 'et afvist POST (419) rydder heller ikke op i previews');
+            // Kontrol: en gyldig upload rydder op (så ovenstående ikke blot skyldes, at oprydningen aldrig kører).
+            $http->upload('supplier_upload.php', ['csrf' => $http->csrf(), 'action' => 'upload', 'import_scope' => 'full'], 'file', 'tstkim-qa.csv', $csvOf([]));
+            t_true(!$exists(), 'kontrol: en gyldig upload sletter den gamle fil');
+        } finally { @unlink($old); }
+    });
+
+    // ------------------------------------------------------------------------------------------
+    t_case('Q18 product_<i> som liste og skæve tal springer rækken over uden at ændre noget (kriterie 178)', function () use ($pdo, $L3, $http, $upload, $applyAudit) {
+        $p = db_product($pdo, 'TSTKIM-9841', 'TSTKIM Skæv Produktværdi', [$L3 => 2]);
+        $r1 = db_reserve($pdo, $p, $L3, 1, 'TSTKIM P1'); $r2 = db_reserve($pdo, $p, $L3, 1, 'TSTKIM P2');
+        $other = db_product($pdo, 'TSTKIM-9842', 'TSTKIM Anden Vare Skæv', [$L3 => 7]);
+        foreach (['stock_only', 'full'] as $scope) {
+            foreach (['product_%d[]=%d' => 'liste med matchets id', 'product_%d[]=' => 'liste med tom værdi', 'product_%d[x]=%d' => 'liste med nøgle'] as $tpl => $label) {
+                [$t, $pv] = $upload([['TSTKIM-9841', 'TSTKIM Skæv Produktværdi', 'TSTKIM Dist', '0', '0', '', '0']], $scope, $GLOBALS['lMap']);
+                $i = item_index($pv, 'TSTKIM-9841');
+                $lastAudit = (int)q1($pdo, 'SELECT COALESCE(MAX(id),0) FROM hsg_audit_log');
+                $created = count_of($pdo, "SELECT COUNT(*) FROM lager_products WHERE sku LIKE 'TSTKIM-%'");
+                $raw = 'action=apply&preview_token='.$t.'&apply_rows[]='.$i.'&archive_res[]='.$r1.'&archive_res[]='.$r2.'&'.sprintf($tpl, $i, $p);
+                $page = $http->follow($http->postRaw('supplier_upload.php', $raw));
+                $tag = $scope.' / '.$label;
+                t_true(!array_filter(flashes($page['body']), static fn($f) => $f[0] === 'error'), $tag.': ingen fejl-flash', json_encode(flashes($page['body']), JSON_UNESCAPED_UNICODE));
+                t_eq(['reserved', 'reserved'], [res_status($pdo, $r1), res_status($pdo, $r2)], $tag.': reservationerne er uændrede');
+                t_eq([$L3 => 2], db_stock($pdo, $p), $tag.': lageret er uændret');
+                t_eq($created, count_of($pdo, "SELECT COUNT(*) FROM lager_products WHERE sku LIKE 'TSTKIM-%'"), $tag.': intet produkt oprettet');
+                $audit = $applyAudit($lastAudit);
+                t_eq([0, 0, 0], [$audit['products_updated'] ?? null, $audit['products_created'] ?? null, $audit['reservations_archived'] ?? null], $tag.': audit: intet opdateret, oprettet eller arkiveret');
+                if ($scope === 'stock_only') t_eq(1, $audit['rows_skipped'] ?? null, $tag.': rows_skipped 1');
+            }
+            // Skæve tal: ingen af dem peger på et produkt, så rækken springes over (ikke på matchet).
+            foreach (['-5', 'abc', '99999999999999999999', '0x1F', '0.0', '+0', "\u{00A0}0\u{00A0}"] as $val) {
+                [$t, $pv] = $upload([['TSTKIM-9841', 'TSTKIM Skæv Produktværdi', 'TSTKIM Dist', '0', '0', '', '0']], $scope, $GLOBALS['lMap']);
+                $i = item_index($pv, 'TSTKIM-9841');
+                $page = $http->follow($http->post('supplier_upload.php', ['action' => 'apply', 'preview_token' => $t, 'apply_rows' => [$i], 'product_'.$i => $val, 'archive_res' => [$r1, $r2]]));
+                t_eq(['reserved', 'reserved'], [res_status($pdo, $r1), res_status($pdo, $r2)], $scope.' product='.json_encode($val, JSON_UNESCAPED_UNICODE).': reservationerne er uændrede');
+                t_eq([$L3 => 2], db_stock($pdo, $p), $scope.' product='.json_encode($val, JSON_UNESCAPED_UNICODE).': lageret er uændret');
+            }
+            // En anden vare som produktværdi: lageret skrives på DEN vare, og previewets reservationer arkiveres aldrig (kun for previewets match).
+            [$t, $pv] = $upload([['TSTKIM-9841', 'TSTKIM Skæv Produktværdi', 'TSTKIM Dist', '0', '0', '', '0']], $scope, $GLOBALS['lMap']);
+            $i = item_index($pv, 'TSTKIM-9841');
+            $http->follow($http->post('supplier_upload.php', ['action' => 'apply', 'preview_token' => $t, 'apply_rows' => [$i], 'product_'.$i => (string)$other, 'archive_res' => [$r1, $r2]]));
+            t_eq(['reserved', 'reserved'], [res_status($pdo, $r1), res_status($pdo, $r2)], $scope.': valgt en anden vare: previewets reservationer arkiveres aldrig');
+            t_eq([$L3 => 2], db_stock($pdo, $p), $scope.': valgt en anden vare: den oprindelige vare er uændret');
+            $pdo->prepare('UPDATE lager_stock SET quantity=7 WHERE product_id=?')->execute([$other]);   // nulstil til næste runde
+        }
+    });
+
+    // ------------------------------------------------------------------------------------------
+    t_case('Q19 Negative tal i hele flowet: decimaler og hårde mellemrum (tilstand L), negativ total (tilstand T) (kriterie 173)', function () use ($pdo, $L1, $L2, $L3, $http, $upload, $apply, $N3A) {
+        // --- Tilstand L: "-0,5" i første lokation (rundes væk fra 0 til -1) og " -1 " med hårde mellemrum i anden.
+        $a = db_product($pdo, 'TSTKIM-9851', 'TSTKIM Negativ Decimal', [$L1 => 1]); $ra = db_reserve($pdo, $a, $L1, 1, 'TSTKIM ND1');
+        $b = db_product($pdo, 'TSTKIM-9852', 'TSTKIM Negativ Mellemrum', [$L2 => 1]); $rb = db_reserve($pdo, $b, $L2, 1, 'TSTKIM NM1');
+        $c = db_product($pdo, 'TSTKIM-9853', 'TSTKIM Minus Nul', [$L3 => 1]); $rc = db_reserve($pdo, $c, $L3, 1, 'TSTKIM MN1');
+        [$t, $pv] = $upload([
+            ['TSTKIM-9851', 'TSTKIM Negativ Decimal', 'TSTKIM Dist', '0', '-0,5', '0', '0'],
+            ['TSTKIM-9852', 'TSTKIM Negativ Mellemrum', 'TSTKIM Dist', '0', '0', "\u{00A0}-1\u{00A0}", '0'],
+            ['TSTKIM-9853', 'TSTKIM Minus Nul', 'TSTKIM Dist', '0', '0', '0', '-0'],
+        ], 'stock_only', $GLOBALS['lMap']);
+        $ia = item_index($pv, 'TSTKIM-9851'); $ib = item_index($pv, 'TSTKIM-9852'); $ic = item_index($pv, 'TSTKIM-9853');
+        t_eq([false, false, true], [$pv['items'][$ia]['archive']['default'] ?? null, $pv['items'][$ib]['archive']['default'] ?? null, $pv['items'][$ic]['archive']['default'] ?? null], '-0,5 og " -1 " er negative (ikke forvalgt); -0 er ikke negativ (forvalgt som før)');
+        $body = $http->get('supplier_upload.php?preview='.$t)['body'];
+        $text = page_text($body);
+        t_true(str_contains($text, 'Negativ værdi „-0,5“ for TSTKIM Christiansfeld behandles som 0.'), 'N1 med -0,5');
+        t_true(str_contains($text, 'Negativ værdi „-1“ for TSTKIM Michael behandles som 0.'), 'N1 med -1 (hårde mellemrum fjernet)');
+        t_true(!str_contains($text, 'Negativ værdi „-0“'), 'ingen N1 for -0');
+        t_eq(2, substr_count($text, $N3A), 'N3a står præcis ved de to negative varer');
+        foreach ([[$ra, false], [$rb, false], [$rc, true]] as [$rid, $checked]) {
+            $found = preg_match('#<input type="checkbox" name="archive_res\[\]" value="'.$rid.'"([^>]*)>#', $body, $m) === 1;
+            t_true($found && str_contains($m[1], 'checked') === $checked, 'arkiveringsfeltet #'.$rid.($checked ? ' er forvalgt' : ' er uden checked'));
+        }
+        t_true(str_contains($text, 'på varer, der kræver din vurdering, er ikke valgt'), 'oversigten nævner de reservationer, der ikke er valgt');
+        // Anvend alle tre rækker uden at krydse noget af: kun -0-varen arkiveres ikke heller (feltet var forvalgt i browseren, men POST'en er tom).
+        $apply($t, [$ia, $ib, $ic], [$ia => $a, $ib => $b, $ic => $c], []);
+        t_eq(['reserved', 'reserved', 'reserved'], [res_status($pdo, $ra), res_status($pdo, $rb), res_status($pdo, $rc)], 'uden afkrydsning arkiveres intet');
+
+        // --- Tilstand T: "Lagerantal i alt" = -1. Reservationerne ligger på første lokation.
+        $d = db_product($pdo, 'TSTKIM-9854', 'TSTKIM Negativ Total', [$L1 => 2]);
+        $r1 = db_reserve($pdo, $d, $L1, 1, 'TSTKIM NT1'); $r2 = db_reserve($pdo, $d, $L1, 1, 'TSTKIM NT2');
+        $row = ['TSTKIM-9854', 'TSTKIM Negativ Total', 'TSTKIM Dist', '-1', '', '', ''];
+        [$t2, $pv2] = $upload([$row], 'stock_only', $GLOBALS['tMap']);
+        $i2 = item_index($pv2, 'TSTKIM-9854');
+        t_eq([false, [$r1, $r2], '-1'], [$pv2['items'][$i2]['archive']['default'] ?? null, array_column($pv2['items'][$i2]['archive']['reservations'] ?? [], 'id'), $pv2['items'][$i2]['stock_file']['total_negative'] ?? null], 'T: arkivering tilbydes uden forvalg, total_negative -1');
+        $body2 = $http->get('supplier_upload.php?preview='.$t2)['body'];
+        $text2 = page_text($body2);
+        t_true(str_contains($text2, 'Negativ værdi „-1“ for lagerantal i alt behandles som 0.'), 'T: N2');
+        t_true(str_contains($text2, $N3A), 'T: N3a');
+        foreach ([$r1, $r2] as $rid) {
+            $found = preg_match('#<input type="checkbox" name="archive_res\[\]" value="'.$rid.'"([^>]*)>#', $body2, $m) === 1;
+            t_true($found && !str_contains($m[1], 'checked'), 'T: arkiveringsfeltet #'.$rid.' er uden checked');
+        }
+        $apply($t2, [$i2], [$i2 => $d], []);
+        t_eq(['reserved', 'reserved'], [res_status($pdo, $r1), res_status($pdo, $r2)], 'T uden afkrydsning: r1 og r2 er stadig reserveret');
+        t_eq([$L1 => 2], db_stock($pdo, $d), 'T uden afkrydsning: 0 + 2 reserveret = 2 (uændret)');
+        [$t3, $pv3] = $upload([$row], 'stock_only', $GLOBALS['tMap']);
+        $i3 = item_index($pv3, 'TSTKIM-9854');
+        $apply($t3, [$i3], [$i3 => $d], [$r1, $r2]);
+        t_eq(['archived', 'archived'], [res_status($pdo, $r1), res_status($pdo, $r2)], 'T med begge afkrydset: r1 og r2 er arkiveret');
+        t_eq([$L1 => 0], db_stock($pdo, $d), 'T med begge afkrydset: lageret er 0');
+    });
+
+    // ------------------------------------------------------------------------------------------
+    t_case('Q20 KAN-3: en hook, der kaster efter commit, vælter ikke en gemt import (kriterie 188)', function () use ($pdo, $L3, $root, $adminUser, $adminPass, $csvOf, &$tokens) {
+        $prepend = $root.'/tests/hook_throw_prepend.php';
+        if (!is_file($prepend)) { t_true(false, 'tests/hook_throw_prepend.php findes ikke'); return; }
+        $sock = @stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+        if ($sock === false) { fwrite(STDOUT, "  (Q20: ingen ledig port – sprunget over)\n"); return; }
+        $port = (int)substr((string)stream_socket_get_name($sock, false), strrpos((string)stream_socket_get_name($sock, false), ':') + 1);
+        fclose($sock);
+        $logFile = sys_get_temp_dir().'/hsg-q20-'.bin2hex(random_bytes(4)).'.log';
+        $cmd = [PHP_BINARY, '-d', 'auto_prepend_file='.$prepend, '-d', 'log_errors=1', '-d', 'display_errors=0', '-d', 'upload_max_filesize=16M', '-d', 'post_max_size=24M', '-S', '127.0.0.1:'.$port, '-t', $root];
+        $proc = proc_open($cmd, [0 => ['pipe', 'r'], 1 => ['file', $logFile, 'a'], 2 => ['file', $logFile, 'a']], $pipes);
+        if (!is_resource($proc)) { t_true(false, 'kunne ikke starte den ekstra server'); return; }
+        try {
+            $up = false;
+            for ($n = 0; $n < 50 && !$up; $n++) { $c = @fsockopen('127.0.0.1', $port, $e1, $e2, 0.2); if ($c) { fclose($c); $up = true; } else usleep(100000); }
+            t_true($up, 'den ekstra server svarer');
+            if (!$up) return;
+            $h2 = new Http('http://127.0.0.1:'.$port);
+            preg_match('/name="csrf" value="([^"]+)"/', $h2->get('admin-login.php')['body'], $m);
+            $h2->request('POST', 'admin-login.php', http_build_query(['csrf' => $m[1] ?? '', 'username' => $adminUser, 'password' => $adminPass]), 'application/x-www-form-urlencoded');
+            t_true(str_contains($h2->get('supplier_upload.php')['body'], 'Kims uploadfil'), 'login på den ekstra server');
+
+            $p = db_product($pdo, 'TSTKIM-9861', 'TSTKIM Hook Whisky', [$L3 => 2]);
+            $r1 = db_reserve($pdo, $p, $L3, 1, 'TSTKIM H1'); $r2 = db_reserve($pdo, $p, $L3, 1, 'TSTKIM H2');
+            $r = $h2->upload('supplier_upload.php', ['csrf' => $h2->csrf(), 'action' => 'upload', 'import_scope' => 'stock_only'], 'file', 'tstkim-qa.csv', $csvOf([['TSTKIM-9861', 'TSTKIM Hook Whisky', 'TSTKIM Dist', '0', '0', '', '0']]));
+            $t = token_of($r['loc']); $tokens[] = $t;
+            $h2->follow($h2->post('supplier_upload.php', ['action' => 'remap', 'preview_token' => $t, 'col_map' => $GLOBALS['lMap']]));
+            $i = 0;   // filen har én række
+            $runs = count_of($pdo, 'SELECT COUNT(*) FROM hsg_supplier_import_runs');
+            $page = $h2->follow($h2->post('supplier_upload.php', ['action' => 'apply', 'preview_token' => $t, 'apply_rows' => [$i], 'product_'.$i => (string)$p, 'archive_res' => [$r1, $r2]]));
+            t_eq(['archived', 'archived'], [res_status($pdo, $r1), res_status($pdo, $r2)], 'reservationerne er arkiveret (importen er gemt)');
+            t_eq($runs + 1, count_of($pdo, 'SELECT COUNT(*) FROM hsg_supplier_import_runs'), 'importkørslen er registreret');
+            t_true(has_flash($page['body'], 'success', '2 reservationer (2 stk.) er arkiveret'), 'success-flashen vises', json_encode(flashes($page['body']), JSON_UNESCAPED_UNICODE));
+            t_true(!array_filter(flashes($page['body']), static fn($f) => $f[0] === 'error'), 'ingen fejl-flash', json_encode(flashes($page['body']), JSON_UNESCAPED_UNICODE));
+            $log = (string)@file_get_contents($logFile);
+            foreach ([$r1, $r2] as $rid) t_true(str_contains($log, 'hooken reservation.archived fejlede for reservation #'.$rid.': QA: hooken fejler med vilje'), 'fejlen for reservation #'.$rid.' står i fejlloggen (hver hook har sin egen try/catch)');
+        } finally {
+            foreach ($pipes as $pipe) if (is_resource($pipe)) fclose($pipe);
+            proc_terminate($proc);
+            usleep(300000);
+            proc_close($proc);
+            @unlink($logFile);
+        }
+    });
+
+    // ------------------------------------------------------------------------------------------
+    t_case('Q21 Tomt preview med kun fadnummer valgt viser T2 (ikke T1) – fadnummer tæller som nøglekolonne (kriterie 184)', function () use ($upload, $http, $T1, $T2) {
+        $map = $GLOBALS['lMap'];
+        $map[$GLOBALS['col']['Varenr.']] = ''; $map[$GLOBALS['col']['Variant:']] = ''; $map[$GLOBALS['col']['Destilleri:']] = 'cask_number';
+        foreach (['full', 'stock_only'] as $scope) {
+            // Fadnummeret (Destilleri:-kolonnen) er tomt i alle rækker, så filen giver ingen rækker.
+            [$t, $pv] = $upload([['', '', '', '1', '1', '', ''], ['', '', '', '2', '2', '', '']], $scope, $map);
+            t_eq([], $pv['items'], $scope.': ingen rækker');
+            $text = page_text($http->get('supplier_upload.php?preview='.$t)['body']);
+            t_true(str_contains($text, $T2) && !str_contains($text, $T1), $scope.': T2 (fadnummer er valgt), ikke T1');
+            t_true(!str_contains($text, 'Anvend valgte ændringer') && str_contains($text, 'Der er ingen rækker at anvende.'), $scope.': ingen Anvend, men "Der er ingen rækker at anvende."');
+        }
     });
 } finally {
     db_cleanup($pdo);

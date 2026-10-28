@@ -35,6 +35,12 @@ if php tests/supplier_import_test.php; then
 else
   bad "Enhedstest: Kims uploadfil fejlede"
 fi
+# Testerens supplement til opfølgningen på review (spec 2026-10-26-kims-upload-opfoelgning-review, kriterie 167-191)
+if php tests/supplier_opfoelgning_qa_test.php; then
+  ok "Enhedstest: Kims uploadfil, opfølgning på review (testerens supplement) bestået"
+else
+  bad "Enhedstest: Kims uploadfil, opfølgning på review (testerens supplement) fejlede"
+fi
 if php tests/product_enrichment_test.php; then
   ok "Enhedstest: fadnummer-udledning bestået"
 else
