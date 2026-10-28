@@ -42,7 +42,7 @@ Ekstra regler:
 - **Lokationskolonner gættes aldrig automatisk.** De vælges én gang manuelt ("Lagerantal for Christiansfeld" osv.) og huskes derefter.
 
 ### Kolonnevalg huskes
-Kolonnemappingen gemmes server-side i `hsg_settings` (nøgle `supplier_import_header_map`), når preview genberegnes, eller ændringerne anvendes. Den gælder derfor på tværs af enheder og browsere.
+Kolonnemappingen gemmes server-side i `hsg_settings` (nøgle `supplier_import_header_map`), når du trykker "Genberegn preview med tilpasset kolonnemapping" eller "Anvend valgte ændringer". Den gælder derfor på tværs af enheder og browsere.
 
 - Kolonner matches på overskriftsnavn (normaliseret), ikke på placering, så rækkefølgen må gerne ændre sig.
 - En kolonne, der sidst stod til "Ignorer kolonne", forbliver ignoreret – undtagen i redningen nedenfor.
@@ -50,7 +50,7 @@ Kolonnemappingen gemmes server-side i `hsg_settings` (nøgle `supplier_import_he
 - **Redning ved upload:** Står der derefter hverken varenummer, produktnavn eller fadnummer i kolonnevalget, kan ingen rækker matches. Så bruges et husket "Ignorer kolonne" ikke på en kolonne, hvis overskrift præcist er et alias for varenummer eller produktnavn (første kolonne fra venstre pr. felt). Panelet åbner af sig selv og viser "⚠ Husket valg "Ignorer kolonne" er ikke brugt: uden varenummer og produktnavn kan ingen rækker matches." ved kolonnen. Det rettede valg gemmes, når du trykker "Genberegn preview med tilpasset kolonnemapping" eller "Anvend valgte ændringer". Knapperne "Genberegn preview" ved "Hvad skal opdateres?" og "Reservationer" gemmer ikke kolonnevalget. Er en anden nøglekolonne valgt (fx fadnummer), respekteres "Ignorer". Andre kolonner (fx "Lagerbeholdning") reddes ikke, og et manuelt valg i kolonnemapping-panelet respekteres altid.
 
 ### Gæt kolonner forfra
-Knappen **"Gæt kolonner forfra"** i kolonnemapping-panelet ser bort fra det huskede valg og gætter alle kolonner igen. De huskede lokationskolonner lægges ind igen bagefter. Intet gemmes, før du trykker "Genberegn" eller "Anvend".
+Knappen **"Gæt kolonner forfra"** i kolonnemapping-panelet ser bort fra det huskede valg og gætter alle kolonner igen. De huskede lokationskolonner lægges ind igen bagefter. Intet gemmes, før du trykker "Genberegn preview med tilpasset kolonnemapping" eller "Anvend valgte ændringer".
 
 ## Varenumre med bogstav til sidst
 Et varenummer med ét bogstav direkte efter et tal (fx `17-1028a`) er en variant af varenummeret uden bogstav (`17-1028`).
