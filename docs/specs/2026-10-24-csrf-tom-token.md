@@ -1,7 +1,7 @@
 # Spec: CSRF – et tomt session-token må aldrig godtages
 
 - **Dato:** 2026-10-24
-- **Status:** Udkast 1, venter på Michaels godkendelse
+- **Status:** Godkendt af Michael 2026-10-26 uden ændringer (ingen versionsløft i denne PR; med i næste release efter v11.2.0)
 - **Type:** Sikkerhedsrettelse i kernen (`functions.php`). Ingen nye skærme, ingen databaseændring, intet modul og ingen migration.
 - **Baggrund:** Fundet i testrapporten for nyhedsbrevet (`docs/specs/2026-10-19-nyhedsbrev.testrapport.md`, "Fund uden for trin 1") og bekræftet igen under PR #179, hvor en POST helt uden session gav HTTP 200 i stedet for 419.
 - **Grundlag:** main `16cd3d0` (app-version 11.1.4)
