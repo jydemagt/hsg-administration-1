@@ -14,7 +14,7 @@ declare(strict_types=1);
  *        intet lager, ingen produktdata og ingen arkivering. Tom værdi + "Opret nyt" virker stadig i full (2.7 trin 1)
  * Opfølgning på review af PR #181 (spec 2026-10-26-kims-upload-opfoelgning-review):
  *  - Q8/Q9 nye trin: product_<i>='0' springer også rækken over, og et manglende felt bruger stadig matchet (178, 179)
- *  - Q10 negativ lagercelle: arkiveringen tilbydes, men er ikke forvalgt (173)
+ *  - Q10 negativ lagercelle: arkiveringen tilbydes, men er ikke forvalgt (173), og oversigtslinjen uden forvalg (192; forvalgt i Q8)
  *  - Q11 upload rydder previews op, der er ældre end 24 timer (175)
  *  - Q12 husket "Ignorer" på Varenr./Variant: reddes, og et tomt preview siger hvorfor og kan ikke anvendes (183-185)
  *  - Q13 KAN-2: samme række to gange i apply_rows behandles én gang (187)
@@ -377,7 +377,11 @@ try {
         t_eq($p, (int)($pv['items'][$i]['match']['id'] ?? 0), 'forudsætning: previewet har et match');
         t_eq(true, $pv['items'][$i]['archive']['default'] ?? null, 'forudsætning: arkiveringen er forvalgt');
         // En uændret dropdown sender matchets id (det er valgt), ikke ''.
-        $select = $selectOf($http->get('supplier_upload.php?preview='.$t)['body'], $i);
+        $previewBody = $http->get('supplier_upload.php?preview='.$t)['body'];
+        $select = $selectOf($previewBody, $i);
+        // Kriterie 192 (O4): et forvalgt tilfælde har stadig "Arkiveres: N reservationer …".
+        t_true(str_contains(page_text($previewBody), 'Arkiveres: 2 reservationer (2 stk.) på 1 vare, fordi Kims lager i alt er 0. Du kan fravælge dem på de enkelte varer.'), '192: forvalgt arkivering vises som "Arkiveres: 2 reservationer …"');
+        t_true(!str_contains(page_text($previewBody), 'Ingen reservationer er valgt til arkivering'), '192: ingen "Ingen reservationer er valgt", når der er forvalgt');
         t_true(str_contains($select, '<option value="'.$p.'" selected>'), 'uændret dropdown har matchet valgt');
         t_true(str_contains($select, '<option value="">– Intet match (springes over) –</option>'), 'dropdown har "– Intet match (springes over) –" med værdien \'\'');
         $events = count_of($pdo, "SELECT COUNT(*) FROM hsg_audit_log WHERE action='reservation.archive'");
@@ -467,6 +471,9 @@ try {
         $text = page_text($page['body']);
         t_true(str_contains($text, 'Negativ værdi „-1“ for TSTKIM Gert behandles som 0.'), 'previewet viser N1 for Gert');
         t_true(str_contains($text, 'Bemærk: Arkiveringen er ikke valgt på forhånd, fordi Kims fil har en negativ værdi for varen.'), 'previewet viser N3a');
+        // Kriterie 192 (O4): ingen "Arkiveres: 0 reservationer …", når intet er forvalgt.
+        t_true(!str_contains($text, 'Arkiveres: 0 reservationer'), '192: oversigten har ikke "Arkiveres: 0 reservationer"');
+        t_true(str_contains($text, 'Ingen reservationer er valgt til arkivering. 2 reservationer (2 stk.) på varer, der kræver din vurdering, er ikke valgt. Du kan vælge dem på de enkelte varer.'), '192: oversigten siger, at ingen er valgt, og hvor mange der kræver vurdering');
         foreach ([$r1, $r2] as $r) {
             $found = preg_match('#<input type="checkbox" name="archive_res\[\]" value="'.$r.'"([^>]*)>#', $page['body'], $m) === 1;
             t_true($found && !str_contains($m[1], 'checked'), 'arkiveringsfeltet for #'.$r.' findes og er uden checked');
