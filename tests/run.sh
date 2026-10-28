@@ -228,6 +228,9 @@ else
     # PHP-krav, testerens supplement: Systemstatus og install.php med og uden mbstring (kriterie 116-120)
     source "$ROOT/tests/php_krav_tester.sh"
 
+    # CSRF, testerens supplement: liste, forkert token og multipart mod login, linksession og auth-sider (spec 2026-10-24-csrf-tom-token)
+    source "$ROOT/tests/csrf_tester.sh"
+
     grep -iE 'Fatal|Uncaught' /tmp/hsg-php-server.log && bad "PHP-fejl i serverlog"
   fi
 fi
