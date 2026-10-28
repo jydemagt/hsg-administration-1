@@ -24,6 +24,8 @@ declare(strict_types=1);
  *  - Q17 handlingerne afvises uden login/CSRF, og oprydningen kan ikke udløses af andre (175)   - Q18 product_<i> som liste og skæve tal (178)
  *  - Q19 negative tal i hele flowet: decimaler, hårde mellemrum, tilstand T (173)   - Q20 KAN-3: en hook, der kaster, vælter ikke importen (188; egen server + tests/hook_throw_prepend.php)
  *  - Q21 tomt preview med kun fadnummer valgt viser T2 og ikke T1 (184)
+ *  - Q22 oversigtslinjen "Arkiveres: …" i alle tilstande: forvalgt, blandet, kun vurdering og ingen arkivering (192, tilføjet efter reviewet)
+ *  - Q23 hvornår kolonnevalget gemmes (de præciserede knapnavne i docs/SUPPLIER-UPLOAD.md): kun "Genberegn preview med tilpasset kolonnemapping" og "Anvend valgte ændringer"
  *
  * KØRES af tests/run.sh, mens røgtestens server kører:
  *     php tests/supplier_archive_qa_test.php http://127.0.0.1:8787 testadmin 'Test-Pass-12345!'
@@ -875,6 +877,99 @@ try {
             t_true(str_contains($text, $T2) && !str_contains($text, $T1), $scope.': T2 (fadnummer er valgt), ikke T1');
             t_true(!str_contains($text, 'Anvend valgte ændringer') && str_contains($text, 'Der er ingen rækker at anvende.'), $scope.': ingen Anvend, men "Der er ingen rækker at anvende."');
         }
+    });
+
+    // ------------------------------------------------------------------------------------------
+    t_case('Q22 Oversigtslinjen "Arkiveres: …" (kriterie 192, O4): forvalgt, blandet, kun vurdering og ingen arkivering', function () use ($pdo, $L3, $http, $upload) {
+        $dist = 'TSTKIM Dist';
+        $a = db_product($pdo, 'TSTKIM-9911', 'TSTKIM Oversigt Forvalgt A', [$L3 => 2]); db_reserve($pdo, $a, $L3, 1, 'TSTKIM OA1'); db_reserve($pdo, $a, $L3, 1, 'TSTKIM OA2');
+        $a2 = db_product($pdo, 'TSTKIM-9913', 'TSTKIM Oversigt Forvalgt A2', [$L3 => 1]); db_reserve($pdo, $a2, $L3, 1, 'TSTKIM OB1');
+        $b = db_product($pdo, 'TSTKIM-9912', 'TSTKIM Oversigt Vurdering B', [$L3 => 2]);
+        db_reserve($pdo, $b, $L3, 1, "TSTKIM <b>Fed</b> & 'æøå' <script>alert(1)</script>");   // kundenavnet står i en afkrydsningsetiket
+        $c = db_product($pdo, 'TSTKIM-9914', 'TSTKIM Oversigt Ingen Reservation', [$L3 => 2]);
+        $d = db_product($pdo, 'TSTKIM-9915', 'TSTKIM Usikker Match Whisky Fadstyrke', [$L3 => 1]); db_reserve($pdo, $d, $L3, 1, 'TSTKIM OD1');
+        $rowA = ['TSTKIM-9911', 'TSTKIM Oversigt Forvalgt A', $dist, '0', '0', '', '0'];
+        $rowA2 = ['TSTKIM-9913', 'TSTKIM Oversigt Forvalgt A2', $dist, '0', '0', '', '0'];
+        $rowB = ['TSTKIM-9912', 'TSTKIM Oversigt Vurdering B', $dist, '0', '0', '', '-1'];            // negativ værdi: arkiveringen tilbydes, ikke forvalgt
+        $rowC = ['TSTKIM-9914', 'TSTKIM Oversigt Ingen Reservation', $dist, '0', '0', '', '0'];       // ingen reservationer: ingen arkivering
+        $rowC2 = ['TSTKIM-9914', 'TSTKIM Oversigt Ingen Reservation', $dist, '5', '5', '', '0'];      // lager ikke 0: ingen arkivering
+        $rowD = ['ZZ-9915', 'TSTKIM Usikker Match Whisky Fadstyrke Special', $dist, '0', '0', '', '0']; // usikkert match (under 90 %), ingen negativ værdi
+        $archiveLine = static fn(string $t): string => str_contains($t, 'Arkiveres:') ? 'Arkiveres' : (str_contains($t, 'Ingen reservationer er valgt til arkivering') ? 'Ingen' : 'ingen linje');
+        $text = static function (array $rows) use ($upload, $http): array {
+            [$t, $pv] = $upload($rows, 'stock_only', $GLOBALS['lMap']);
+            $body = $http->get('supplier_upload.php?preview='.$t)['body'];
+            return [page_text($body), $body, $pv];
+        };
+
+        // Kun forvalgt (to varer): den gamle sætning, uden tilføjelsen om vurdering og uden den nye sætning.
+        [$t1, $b1] = $text([$rowA, $rowA2]);
+        t_true(str_contains($t1, 'Arkiveres: 3 reservationer (3 stk.) på 2 varer, fordi Kims lager i alt er 0. Du kan fravælge dem på de enkelte varer.'), 'kun forvalgt: "Arkiveres: 3 reservationer (3 stk.) på 2 varer …"');
+        t_true(!str_contains($t1, 'på varer, der kræver din vurdering, er ikke valgt') && !str_contains($t1, 'Ingen reservationer er valgt'), 'kun forvalgt: ingen tilføjelse om vurdering og ingen "Ingen reservationer er valgt"');
+
+        // Blandet: én vare forvalgt, én til vurdering – den gamle sætning med tilføjelsen (ental, fordi der kun er én reservation).
+        [$t2, $b2, $pv2] = $text([$rowA, $rowB]);
+        t_true(str_contains($t2, 'Arkiveres: 2 reservationer (2 stk.) på 1 vare, fordi Kims lager i alt er 0. Du kan fravælge dem på de enkelte varer. 1 reservation (1 stk.) på varer, der kræver din vurdering, er ikke valgt.'), 'blandet: "Arkiveres: 2 reservationer … på 1 vare … 1 reservation (1 stk.) på varer, der kræver din vurdering, er ikke valgt."');
+        t_true(!str_contains($t2, 'Ingen reservationer er valgt til arkivering') && !str_contains($t2, 'Arkiveres: 0'), 'blandet: ikke den nye sætning og ikke "Arkiveres: 0"');
+        // Escaping: kundenavnet i etiketten er HTML-escapet, og scriptet kører ikke.
+        t_true(str_contains($b2, '&lt;b&gt;Fed&lt;/b&gt; &amp; &#039;æøå&#039; &lt;script&gt;alert(1)&lt;/script&gt;') || str_contains($b2, '&lt;b&gt;Fed&lt;/b&gt; &amp; &#039;&aelig;&oslash;&aring;&#039;'), 'kundenavnet er escapet i HTML');
+        t_true(!str_contains($b2, '<b>Fed</b>') && !str_contains($b2, '<script>alert(1)</script>'), 'ingen rå <b> eller <script> fra kundenavnet');
+
+        // Kun til vurdering (negativ værdi, ental): den nye sætning, og aldrig "Arkiveres: 0 …".
+        [$t3, $b3] = $text([$rowB]);
+        t_true(str_contains($t3, 'Ingen reservationer er valgt til arkivering. 1 reservation (1 stk.) på varer, der kræver din vurdering, er ikke valgt. Du kan vælge dem på de enkelte varer.'), 'kun vurdering: den nye sætning (ental)');
+        t_eq('Ingen', $archiveLine($t3), 'kun vurdering: ingen "Arkiveres:"-linje');
+        t_true(!str_contains($t3, 'på 0 varer') && !str_contains($t3, '0 reservationer'), 'kun vurdering: hverken "på 0 varer" eller "0 reservationer"');
+        t_true(preg_match('#<p>Ingen reservationer er valgt til arkivering\. 1 reservation \(1 stk\.\) på varer, der kræver din vurdering, er ikke valgt\. Du kan vælge dem på de enkelte varer\.</p>#u', $b3) === 1, 'kun vurdering: sætningen står i sit eget <p>…</p>');
+        t_true(!str_contains($b3, 'O4:') && !str_contains($b3, 'ingen "0 reservationer'), 'kun vurdering: PHP-kommentaren i skabelonen siver ikke ud i HTML');
+
+        // Kun til vurdering (usikkert match, ingen negativ værdi), flertal.
+        [$t4, $b4, $pv4] = $text([$rowD]);
+        $d4 = $pv4['items'][0] ?? [];
+        t_eq([$d, false, true], [(int)($d4['match']['id'] ?? 0), $d4['archive']['default'] ?? null, (int)($d4['match']['score'] ?? 100) < 90], 'forudsætning: usikkert match (under 90 %) med tilbudt, ikke forvalgt arkivering');
+        t_true(str_contains($t4, 'Ingen reservationer er valgt til arkivering. 1 reservation (1 stk.) på varer, der kræver din vurdering, er ikke valgt. Du kan vælge dem på de enkelte varer.'), 'usikkert match: den nye sætning');
+        t_true(!str_contains($t4, 'negativ værdi for varen'), 'usikkert match: ingen N3a (der er ingen negativ værdi)');
+        // To varer til vurdering: flertal (2 reservationer (2 stk.) – B og D).
+        [$t5] = $text([$rowB, $rowD]);
+        t_true(str_contains($t5, 'Ingen reservationer er valgt til arkivering. 2 reservationer (2 stk.) på varer, der kræver din vurdering, er ikke valgt. Du kan vælge dem på de enkelte varer.'), 'to varer til vurdering: "2 reservationer (2 stk.)"');
+
+        // Ingen arkivering overhovedet: hverken reservationer, lager 0 eller nogen af de tre sætninger.
+        foreach ([[$rowC], [$rowC2], [$rowC, $rowC2]] as $k => $rows) {
+            [$t6] = $text($rows);
+            t_eq('ingen linje', $archiveLine($t6), 'ingen arkivering '.$k.': ingen oversigtslinje');
+            t_true(!str_contains($t6, 'kræver din vurdering, er ikke valgt') && !str_contains($t6, 'Arkiveres: 0'), 'ingen arkivering '.$k.': hverken tilføjelse eller "Arkiveres: 0"');
+        }
+        // Samme tre tilstande i "Produktdata og lager" (siden bruger samme linje i begge scopes).
+        [$tf, $pf] = $upload([$rowB], 'full', $GLOBALS['lMap']);
+        $tf = page_text($http->get('supplier_upload.php?preview='.$tf)['body']);
+        t_true(str_contains($tf, 'Ingen reservationer er valgt til arkivering. 1 reservation (1 stk.)') && !str_contains($tf, 'Arkiveres: 0'), 'Produktdata og lager: samme ny sætning, ikke "Arkiveres: 0"');
+    });
+
+    // ------------------------------------------------------------------------------------------
+    t_case('Q23 Hvornår kolonnevalget gemmes (docs): kun "Genberegn preview med tilpasset kolonnemapping" og "Anvend valgte ændringer"', function () use ($pdo, $L3, $http, $remember, $plainUpload) {
+        $p = db_product($pdo, 'TSTKIM-9921', 'TSTKIM Gemmer Kolonnevalg', [$L3 => 1]);
+        $row = ['TSTKIM-9921', 'TSTKIM Gemmer Kolonnevalg', 'TSTKIM Dist', '1', '0', '0', '1'];
+        $saved = static fn(): array => json_decode((string)setting_raw($GLOBALS['pdo'], 'supplier_import_header_map'), true) ?: [];
+        $iV = $GLOBALS['col']['Varenr.']; $iN = $GLOBALS['col']['Variant:'];
+        $remember('', '');   // varenr og variant er husket som "Ignorer kolonne" → uploaden redder dem (sku/name), men gemmer ikke noget
+        $before = setting_raw($pdo, 'supplier_import_header_map');
+        [$t, $body] = $plainUpload([$row]);
+        t_eq($before, setting_raw($pdo, 'supplier_import_header_map'), 'selve uploaden gemmer ikke kolonnevalget');
+        // Disse knapper gemmer ikke kolonnevalget: "Hvad skal opdateres?", "Reservationer" og "Gæt kolonner forfra".
+        foreach ([['import_scope', ['import_scope' => 'stock_only']], ['import_scope', ['import_scope' => 'full']], ['reservation_mode', ['reservation_mode' => 'none']], ['reservation_mode', ['reservation_mode' => 'add']], ['reguess', []]] as [$action, $extra]) {
+            $http->follow($http->post('supplier_upload.php', ['action' => $action, 'preview_token' => $t] + $extra));
+            t_eq($before, setting_raw($pdo, 'supplier_import_header_map'), $action.' '.json_encode($extra).' gemmer ikke kolonnevalget');
+        }
+        // "Genberegn preview med tilpasset kolonnemapping" gemmer det rettede valg (Varenr. → sku, Variant: → name).
+        [$t2] = $plainUpload([$row]);
+        $map = $GLOBALS['lMap'];
+        $http->follow($http->post('supplier_upload.php', ['action' => 'remap', 'preview_token' => $t2, 'col_map' => $map]));
+        t_eq(['sku', 'name'], [$saved()['varenr'] ?? null, $saved()['variant'] ?? null], 'remap gemmer varenr → sku og variant → name');
+        // "Anvend valgte ændringer" gemmer det også.
+        $remember('', '');
+        [$t3] = $plainUpload([$row]);
+        t_eq(['', ''], [$saved()['varenr'] ?? null, $saved()['variant'] ?? null], 'forudsætning: valget er stadig "Ignorer", før der anvendes');
+        $http->follow($http->post('supplier_upload.php', ['action' => 'apply', 'preview_token' => $t3, 'apply_rows' => [0], 'product_0' => (string)$p]));
+        t_eq(['sku', 'name'], [$saved()['varenr'] ?? null, $saved()['variant'] ?? null], 'apply gemmer varenr → sku og variant → name');
     });
 } finally {
     db_cleanup($pdo);

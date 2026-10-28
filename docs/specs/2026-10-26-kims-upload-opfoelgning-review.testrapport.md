@@ -7,7 +7,7 @@
 
 ## Konklusion
 
-**KLAR.**
+**KLAR.** (Tillæg 28-10-2026 om kriterie 192, O4 og tekstrettelserne efter reviewet: **KLAR**, se nederst.)
 
 - **Ingen fejl i produktionskoden fundet.** Alle 25 kriterier (167–191) er bestået, og hvert kriterie er dækket af mindst én test, der fejler, hvis adfærden er forkert (mutationstest, se nedenfor).
 - Den fulde testpakke (`bash tests/run.sh`, frisk database) er grøn. Det eneste røde tjek er den kendte baseline-fejl på MariaDB 10.4 ("KAN afmeldingssiden ved databasefejl: HTTP 500 …" i nyhedsbrevstesten), som også fejlede før ændringerne og ikke tæller.
@@ -154,7 +154,7 @@ M01, M05 og M14 er allerede fanget af enhedstestene, så deres HTTP-kørsel er i
 - **O1 – `supplier_upload.php:50`** (ældre kode, ikke en del af denne ændring): `$token=trim((string)($_GET['preview']??…))`. `supplier_upload.php?preview[]=x` giver `Warning: Array to string conversion` (siden svarer stadig 200, og tokenet bliver tomt). Samme klasse som KAN-1. Skjules af `display_errors=Off`. Forslag: `is_string(...)`-tjek i en senere rettelse.
 - **O2 – `core/supplier_import.php:1036`:** `@scandir($dir)?:[]` skriver intet i fejlloggen, når mappen ikke kan læses, selv om spec'en siger, at fejl skrives med `error_log`. Oprydningen kaster ikke og er harmløs, men en permanent læsefejl ville aldrig blive set. Lav prioritet.
 - **O3 – `core/supplier_import.php:135`:** negativitet afgøres med float-afrunding, så `-0,49999999999999999` (17 niner) regnes som negativ (floaten bliver −0,5), mens matematisk afrunding giver 0. Værdien er 0 i begge tilfælde; det påvirker kun, om N1 vises, og om arkiveringen er forvalgt. Urealistisk i en Excel-fil.
-- **O4 – oversigtslinjen i `supplier_upload.php` (ca. l. 432):** når alle arkiveringer er ikke-forvalgte (fx på grund af negative tal), står der "Arkiveres: 0 reservationer (0 stk.) på 0 varer, fordi Kims lager i alt er 0 … N reservationer (N stk.) på varer, der kræver din vurdering, er ikke valgt." Den første halvdel er misvisende, men er den eksisterende tekst for alle varer, der kræver vurdering (kriterie 135), og ikke noget nyt i denne ændring. Kosmetisk.
+- **O4 – oversigtslinjen i `supplier_upload.php` (ca. l. 432; rettet i `33b89ed`, se tillægget nederst):** når alle arkiveringer er ikke-forvalgte (fx på grund af negative tal), står der "Arkiveres: 0 reservationer (0 stk.) på 0 varer, fordi Kims lager i alt er 0 … N reservationer (N stk.) på varer, der kræver din vurdering, er ikke valgt." Den første halvdel er misvisende, men er den eksisterende tekst for alle varer, der kræver vurdering (kriterie 135), og ikke noget nyt i denne ændring. Kosmetisk.
 - **Spec-rettelse:** kriterie 186 skal sige "Alle reservationer" i stedet for "Aktive" (afvigelse 2).
 
 ## Ikke testet
@@ -168,10 +168,40 @@ M01, M05 og M14 er allerede fanget af enhedstestene, så deres HTTP-kørsel er i
 - **Browser og mobilbredde:** HTML'en er kontrolleret (klasser, `open`-attribut, checkbox-markup), men siden er ikke åbnet i en browser.
 - **Variant (b)/N3b** er ikke testet (brugeren valgte (a)).
 
+## Tillæg 28-10-2026: kriterie 192 (O4) og tekstrettelser efter review
+
+**Konklusion for tillægget: KLAR.** Ingen fejl fundet. Produktionskoden er ikke rørt af testeren.
+
+- **Testet:** `33b89ed` (oversigtslinjen og paneltekst i `supplier_upload.php`, testtrin i Q8 og Q10), `8da293f` (docs og kriterie 192 i afsnit 9 i spec-tillægget) og `9af3c88` (præcise knapnavne i `docs/SUPPLIER-UPLOAD.md`), oven på reviewerens godkendte `560117a`. Den eneste kodeændring er i `supplier_upload.php`: oversigtslinjen (l. 386–387) og paneltekst (l. 410).
+- **Fuld kørsel** (`bash tests/run.sh`, frisk database, port 8793, én enkelt run.sh): 191 `[OK]`, og den **eneste** røde er den kendte nyhedsbrevsfejl ("KAN afmeldingssiden ved databasefejl: HTTP 500 …"). Kims enhedstest 653, testerens enhedstest 190, DB-test 108 + 123, flowtest 175, QA-test **328** (var 293: +4 fra udviklerens trin i Q8/Q10, +22 fra Q22, +9 fra Q23). Smoke-tjekket for `reservations.php?status[]=…&q[]=…` er grønt.
+
+### Kriterie 192: oversigtslinjen "Arkiveres: …"
+
+| Tilstand | Forventet | Resultat | Bevis |
+|---|---|---|---|
+| Kun forvalgt (1 vare, 2 reservationer) | "Arkiveres: 2 reservationer (2 stk.) på 1 vare, fordi Kims lager i alt er 0. Du kan fravælge dem på de enkelte varer." uden tilføjelse og uden den nye sætning | BESTÅET | Q8 (udviklerens nye trin). |
+| Kun forvalgt (2 varer, 3 reservationer) | "Arkiveres: 3 reservationer (3 stk.) på 2 varer …", ingen "kræver din vurdering, er ikke valgt" | BESTÅET | Q22. |
+| Blandet (én vare forvalgt, én til vurdering) | Den gamle sætning for den forvalgte + "1 reservation (1 stk.) på varer, der kræver din vurdering, er ikke valgt." (ental). Ikke den nye sætning, ikke "Arkiveres: 0" | BESTÅET | Q22. |
+| Kun til vurdering, negativ værdi | "Ingen reservationer er valgt til arkivering. N reservationer (N stk.) på varer, der kræver din vurdering, er ikke valgt. Du kan vælge dem på de enkelte varer." og ingen "Arkiveres:"-linje | BESTÅET | Q10 (udvikler, flertal) + Q22 (ental og to varer; sætningen står i sit eget `<p>…</p>`). |
+| Kun til vurdering, usikkert match (81 %, ingen negativ værdi) | Samme nye sætning, ingen N3a | BESTÅET | Q22 (forudsætningen er tjekket: match under 90 %, `archive.default` falsk). |
+| Ingen arkivering overhovedet (vare uden reservationer; lager ≠ 0; begge) | Ingen af de tre sætninger | BESTÅET | Q22. |
+| Produktdata og lager (ikke kun Kun lagerantal) | Samme nye sætning | BESTÅET | Q22. |
+| "Arkiveres: 0 reservationer … på 0 varer" | Vises aldrig | BESTÅET | Q10 og Q22 tjekker både "Arkiveres: 0", "på 0 varer" og "0 reservationer". |
+
+**Mutationstest af ændringen** (kopi, aldrig i repoet): N1 (gammel betingelse), N3 (forvalgt-grenen slået fra), N5 (ny sætning udeladt) og N6 (forkert antal i den nye sætning) fanges alle (9, 4, 7 og 6 fejlende tjek, i Q8, Q10 og Q22).
+
+**Escaping og dansk:**
+- De to oversigtssætninger består af fast dansk tekst, `h(supplier_upload_count(…))` og `intval(…)`. Ingen brugerinput kommer ind i dem. Kundenavnet i afkrydsningsetiketten ved siden af er stadig HTML-escapet; Q22 prøver `TSTKIM <b>Fed</b> & 'æøå' <script>alert(1)</script>` og finder `&lt;b&gt;…`, `&amp;`, `&#039;`, ingen rå `<b>` eller `<script>`.
+- PHP-kommentaren i skabelonen (`<?php elseif(…): // O4: … ?>`) ender ved `?>` og kommer ikke ud i HTML'en (Q22 tjekker, at "O4:" ikke findes i siden).
+- Paneltekst (l. 410) og docs er på dansk. Knapnavnene i docs matcher knapperne i `supplier_upload.php`: "Genberegn preview med tilpasset kolonnemapping" (l. 440), "Genberegn preview" ved "Hvad skal opdateres?" og "Reservationer" (l. 392 og 397), "Gæt kolonner forfra" (l. 443), "Anvend valgte ændringer" (l. 494).
+- **Q23 (tester) bekræfter docs' udsagn om, hvornår kolonnevalget gemmes:** selve uploaden, "Hvad skal opdateres?", "Reservationer" og "Gæt kolonner forfra" gemmer det ikke; "Genberegn preview med tilpasset kolonnemapping" og "Anvend valgte ændringer" gemmer det rettede valg (`varenr → sku`, `variant → name`).
+
+**Observation (ikke-blokerende), O5:** paneltekstens "(undtagen varenummer og produktnavn – se ⚠ ved kolonnen)" er lidt bredere end reglen (redningen sker kun, når ingen anden nøglekolonne er valgt). Docs beskriver reglen præcist, og ⚠ vises kun, når redningen faktisk er sket, så det er ikke en fejl.
+
 ## Ændrede filer (testeren)
 
 - `tests/supplier_opfoelgning_qa_test.php` (ny)
 - `tests/hook_throw_prepend.php` (ny, kun brugt af Q20)
-- `tests/supplier_archive_qa_test.php` (Q14–Q21 + hoved)
+- `tests/supplier_archive_qa_test.php` (Q14–Q21 + hoved; Q22–Q23 i tillægget)
 - `tests/run.sh` (kalder den nye enhedstest)
 - `docs/specs/2026-10-26-kims-upload-opfoelgning-review.testrapport.md` (denne rapport)
