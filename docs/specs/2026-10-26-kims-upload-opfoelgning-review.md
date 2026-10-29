@@ -306,3 +306,5 @@ Tilføjet efter reviewet (fund O4 i testrapporten) og godkendt af brugeren 2026-
      - Er ingen forvalgt, men nogle tilbudt (fx ved en negativ værdi eller et usikkert match), står der: `Ingen reservationer er valgt til arkivering. N reservationer (N stk.) på varer, der kræver din vurdering, er ikke valgt. Du kan vælge dem på de enkelte varer.`
      - Sætningen "Arkiveres: 0 reservationer (0 stk.) på 0 varer …" vises aldrig.
      - **Test:** Q10 (negativ værdi) i `tests/supplier_archive_qa_test.php` har den nye sætning og ikke "Arkiveres: 0 reservationer". Q8 (forvalgt) har stadig "Arkiveres: 2 reservationer (2 stk.) på 1 vare …".
+
+193. **Panelteksten i Kolonnemapping** er præciseret efter review (O5 og knapnavnene) og godkendt af brugeren 2026-10-29. Panelet siger nu, at et husket "Ignorer kolonne" kun ikke bruges på varenummer eller produktnavn, når ingen kolonne ellers er valgt som varenummer, produktnavn eller fadnummer (4b). Det siger også, at kun "Genberegn preview med tilpasset kolonnemapping" og "Anvend valgte ændringer" gemmer valget. **Test:** Q23 i `tests/supplier_archive_qa_test.php`.

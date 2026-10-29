@@ -25,7 +25,7 @@ declare(strict_types=1);
  *  - Q19 negative tal i hele flowet: decimaler, hårde mellemrum, tilstand T (173)   - Q20 KAN-3: en hook, der kaster, vælter ikke importen (188; egen server + tests/hook_throw_prepend.php)
  *  - Q21 tomt preview med kun fadnummer valgt viser T2 og ikke T1 (184)
  *  - Q22 oversigtslinjen "Arkiveres: …" i alle tilstande: forvalgt, blandet, kun vurdering og ingen arkivering (192, tilføjet efter reviewet)
- *  - Q23 hvornår kolonnevalget gemmes (de præciserede knapnavne i docs/SUPPLIER-UPLOAD.md): kun "Genberegn preview med tilpasset kolonnemapping" og "Anvend valgte ændringer"
+ *  - Q23 hvornår kolonnevalget gemmes (de præciserede knapnavne i docs/SUPPLIER-UPLOAD.md): kun "Genberegn preview med tilpasset kolonnemapping" og "Anvend valgte ændringer", og panelteksten i Kolonnemapping (193)
  *
  * KØRES af tests/run.sh, mens røgtestens server kører:
  *     php tests/supplier_archive_qa_test.php http://127.0.0.1:8787 testadmin 'Test-Pass-12345!'
@@ -121,6 +121,8 @@ function flashes(string $html): array {
 function has_flash(string $html, string $type, string $needle): bool { foreach (flashes($html) as [$t, $x]) if ($t === $type && str_contains($x, $needle)) return true; return false; }
 /** Sidens synlige tekst (tags fjernet, entiteter afkodet). */
 function page_text(string $html): string { return html_entity_decode(strip_tags(preg_replace('#<(br|/li|/tr|/p|/div|/small)[^>]*>#i', "\n", $html) ?? $html), ENT_QUOTES | ENT_HTML5, 'UTF-8'); }
+/** Har siden selve knappen "Anvend valgte ændringer"? Panelteksten i Kolonnemapping nævner knapnavnet, så sidens tekst kan ikke bruges. */
+function has_apply_button(string $html): bool { return str_contains($html, '<button>Anvend valgte ændringer</button>'); }
 function q(PDO $pdo, string $sql, array $p = []): array { $s = $pdo->prepare($sql); $s->execute($p); return $s->fetchAll(); }
 function q1(PDO $pdo, string $sql, array $p = []): mixed { $r = q($pdo, $sql, $p); return $r ? array_values($r[0])[0] : null; }
 function db_product(PDO $pdo, string $sku, string $name, array $stock = []): int {
@@ -535,7 +537,7 @@ try {
         $text = page_text($body);
         t_true(str_contains($body, '<details class="card" open>'), '183: kolonnemapping-panelet er åbent');
         t_eq(2, substr_count($text, $T3), '183: T3 står ved begge reddede kolonner');
-        t_true(str_contains($text, 'Anvend valgte ændringer'), '183: "Anvend valgte ændringer" vises');
+        t_true(has_apply_button($body), '183: "Anvend valgte ændringer" vises');
         t_true(!str_contains($text, $T1) && !str_contains($text, $T2), '183: hverken T1 eller T2');
         foreach (['reservation_mode' => ['reservation_mode' => 'add'], 'import_scope' => ['import_scope' => 'full']] as $action => $extra) {
             $http->follow($http->post('supplier_upload.php', ['action' => $action, 'preview_token' => $t] + $extra));
@@ -558,7 +560,7 @@ try {
             t_true(!str_contains($text, $notNotice), $label.': den anden forklaring vises ikke');
             t_true(str_contains($text, 'Der er ingen rækker at anvende.') && str_contains($text, 'Annuller preview'), $label.': "Der er ingen rækker at anvende." og "Annuller preview"');
             t_true(str_contains($body, '<details class="card" open>'), $label.': panelet åbner automatisk');
-            t_true(!str_contains($text, 'Anvend valgte ændringer') && !str_contains($body, 'name="apply_rows[]"'), $label.': hverken tabel eller "Anvend valgte ændringer"');
+            t_true(!has_apply_button($body) && !str_contains($body, 'name="apply_rows[]"'), $label.': hverken tabel eller "Anvend valgte ændringer"');
         };
         $emptyPage($http->get('supplier_upload.php?preview='.$t)['body'], 'K1', $T1, $T2);   // uden &remap=1
         $page = $http->follow($http->post('supplier_upload.php', ['action' => 'import_scope', 'preview_token' => $t, 'import_scope' => 'stock_only']));
@@ -636,7 +638,7 @@ try {
         t_true(has_flash($page['body'], 'success', 'Kolonnerne er gættet forfra'), 'reguess lykkedes', json_encode(flashes($page['body']), JSON_UNESCAPED_UNICODE));
         t_eq(0, substr_count(page_text($page['body']), $T3), 'efter reguess står T3 ikke længere');
         t_eq(0, substr_count(page_text($http->get('supplier_upload.php?preview='.$t)['body']), $T3), 'og heller ikke ved næste visning (nulstillingen er gemt)');
-        t_true(str_contains(page_text($page['body']), 'Anvend valgte ændringer'), 'rækkerne er der stadig (Varenr. og Variant: er sku/name efter gættet)');
+        t_true(has_apply_button($page['body']), 'rækkerne er der stadig (Varenr. og Variant: er sku/name efter gættet)');
     });
 
     // ------------------------------------------------------------------------------------------
@@ -651,7 +653,7 @@ try {
         [$b, $bodyB] = $plainUpload([['TSTKIM-9822', 'TSTKIM Lækage B', 'TSTKIM Dist', '1', '0', '0', '1']]);
         t_eq(0, substr_count(page_text($bodyB), $T3), 'upload B: ingen T3');
         t_true(!str_contains($bodyB, '<details class="card" open>'), 'upload B: panelet er lukket (intet at gøre opmærksom på)');
-        t_true(str_contains(page_text($bodyB), 'Anvend valgte ændringer') && !str_contains(page_text($bodyB), $T1), 'upload B: rækker og Anvend, ingen T1');
+        t_true(has_apply_button($bodyB) && !str_contains(page_text($bodyB), $T1), 'upload B: rækker og Anvend, ingen T1');
         $http->follow($http->post('supplier_upload.php', ['action' => 'reservation_mode', 'preview_token' => $b, 'reservation_mode' => 'add']));
         t_eq(0, substr_count(page_text($http->get('supplier_upload.php?preview='.$b)['body']), $T3), 'upload B efter reservation_mode: stadig ingen T3');
         // A's eget preview er uberørt af B.
@@ -665,28 +667,28 @@ try {
         $p = db_product($pdo, 'TSTKIM-9831', 'TSTKIM Bevidst Ignorer', [$GLOBALS['L3'] => 1]);
         $remember('sku', 'name');
         [$t, $body] = $plainUpload([['TSTKIM-9831', 'TSTKIM Bevidst Ignorer', 'TSTKIM Dist', '1', '0', '0', '1']]);
-        t_true(str_contains(page_text($body), 'Anvend valgte ændringer'), 'forudsætning: rækken vises med det sunde valg');
+        t_true(has_apply_button($body), 'forudsætning: rækken vises med det sunde valg');
         $iV = $GLOBALS['col']['Varenr.']; $iN = $GLOBALS['col']['Variant:'];
         $map = $GLOBALS['lMap']; $map[$iV] = ''; $map[$iN] = '';
         $page = $http->follow($http->post('supplier_upload.php', ['action' => 'remap', 'preview_token' => $t, 'col_map' => $map]));
         $text = page_text($page['body']);
         t_true(str_contains($text, $T1), 'bevidst Ignorer på begge giver T1 (ikke redning)');
         t_eq(0, substr_count($text, $T3), 'ingen T3 (valget er manuelt og respekteres)');
-        t_true(!str_contains($text, 'Anvend valgte ændringer') && str_contains($text, 'Der er ingen rækker at anvende.'), 'ingen Anvend, men "Der er ingen rækker at anvende."');
+        t_true(!has_apply_button($page['body']) && str_contains($text, 'Der er ingen rækker at anvende.'), 'ingen Anvend, men "Der er ingen rækker at anvende."');
         // Skift af reservationsvalg og af opdateringsvalg på det tomme preview redder ikke noget bagefter.
         foreach ([['reservation_mode', ['reservation_mode' => 'none']], ['reservation_mode', ['reservation_mode' => 'add']], ['import_scope', ['import_scope' => 'stock_only']], ['import_scope', ['import_scope' => 'full']]] as [$action, $extra]) {
             $page = $http->follow($http->post('supplier_upload.php', ['action' => $action, 'preview_token' => $t] + $extra));
             $text = page_text($page['body']);
-            t_true(str_contains($text, $T1) && !str_contains($text, 'Anvend valgte ændringer') && substr_count($text, $T3) === 0, $action.' '.json_encode($extra).': stadig T1 og ingen redning');
+            t_true(str_contains($text, $T1) && !has_apply_button($page['body']) && substr_count($text, $T3) === 0, $action.' '.json_encode($extra).': stadig T1 og ingen redning');
         }
         // Det gemte valg har nu Ignorer på begge (Genberegn gemmer et manuelt valg). Næste upload redder dem igen (spec: "Næste upload redder det").
         [$t2, $body2] = $plainUpload([['TSTKIM-9831', 'TSTKIM Bevidst Ignorer', 'TSTKIM Dist', '1', '0', '0', '1']]);
         t_eq(2, substr_count(page_text($body2), $T3), 'næste upload: redningen virker igen (T3 ×2)');
-        t_true(str_contains(page_text($body2), 'Anvend valgte ændringer'), 'næste upload: rækken vises');
+        t_true(has_apply_button($body2), 'næste upload: rækken vises');
         // Vejen ud for det tomme preview: "Gæt kolonner forfra" giver rækkerne tilbage.
         $page = $http->follow($http->post('supplier_upload.php', ['action' => 'reguess', 'preview_token' => $t]));
         $text = page_text($page['body']);
-        t_true(str_contains($text, 'Anvend valgte ændringer') && !str_contains($text, $T1) && !str_contains($text, 'Der er ingen rækker at anvende.'), 'reguess på det tomme preview: rækkerne er tilbage, T1 væk');
+        t_true(has_apply_button($page['body']) && !str_contains($text, $T1) && !str_contains($text, 'Der er ingen rækker at anvende.'), 'reguess på det tomme preview: rækkerne er tilbage, T1 væk');
         // Og det kan anvendes uden fejl (rækken matcher TSTKIM-9831).
         $pv = $http->get('supplier_upload.php?preview='.$t)['body'];
         t_true(preg_match('#name="apply_rows\[\]" value="0"#', $pv) === 1, 'række 0 kan afkrydses');
@@ -873,9 +875,9 @@ try {
             // Fadnummeret (Destilleri:-kolonnen) er tomt i alle rækker, så filen giver ingen rækker.
             [$t, $pv] = $upload([['', '', '', '1', '1', '', ''], ['', '', '', '2', '2', '', '']], $scope, $map);
             t_eq([], $pv['items'], $scope.': ingen rækker');
-            $text = page_text($http->get('supplier_upload.php?preview='.$t)['body']);
+            $body = $http->get('supplier_upload.php?preview='.$t)['body']; $text = page_text($body);
             t_true(str_contains($text, $T2) && !str_contains($text, $T1), $scope.': T2 (fadnummer er valgt), ikke T1');
-            t_true(!str_contains($text, 'Anvend valgte ændringer') && str_contains($text, 'Der er ingen rækker at anvende.'), $scope.': ingen Anvend, men "Der er ingen rækker at anvende."');
+            t_true(!has_apply_button($body) && str_contains($text, 'Der er ingen rækker at anvende.'), $scope.': ingen Anvend, men "Der er ingen rækker at anvende."');
         }
     });
 
@@ -954,6 +956,12 @@ try {
         $before = setting_raw($pdo, 'supplier_import_header_map');
         [$t, $body] = $plainUpload([$row]);
         t_eq($before, setting_raw($pdo, 'supplier_import_header_map'), 'selve uploaden gemmer ikke kolonnevalget');
+        // Kriterie 193: panelteksten siger præcis, hvornår et husket "Ignorer" ikke bruges, og hvilke knapper der gemmer.
+        $panel = preg_match('#<details class="card"[^>]*>(.*?)</details>#s', $body, $pm) === 1 ? page_text($pm[1]) : '';
+        t_true(str_contains($panel, 'Undtagelse: Er ingen kolonne valgt som varenummer, produktnavn eller fadnummer, bruges et husket "Ignorer kolonne" ikke på en kolonne med overskriften for varenummer eller produktnavn (se ⚠ ved kolonnen).'), '193: panelet har undtagelsessætningen');
+        t_true(str_contains($panel, 'Dit valg gemmes, når du trykker "Genberegn preview med tilpasset kolonnemapping" eller "Anvend valgte ændringer".'), '193: panelet nævner begge fulde knapnavne');
+        t_true(!str_contains($panel, 'genberegner eller anvender ændringerne'), '193: panelet har ikke "genberegner eller anvender ændringerne"');
+        t_true(!str_contains($panel, '(undtagen varenummer og produktnavn – se ⚠ ved kolonnen)'), '193: panelet har ikke den brede undtagelse fra O4');
         // Disse knapper gemmer ikke kolonnevalget: "Hvad skal opdateres?", "Reservationer" og "Gæt kolonner forfra".
         foreach ([['import_scope', ['import_scope' => 'stock_only']], ['import_scope', ['import_scope' => 'full']], ['reservation_mode', ['reservation_mode' => 'none']], ['reservation_mode', ['reservation_mode' => 'add']], ['reguess', []]] as [$action, $extra]) {
             $http->follow($http->post('supplier_upload.php', ['action' => $action, 'preview_token' => $t] + $extra));
