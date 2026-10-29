@@ -26,6 +26,7 @@ declare(strict_types=1);
  *  - Q21 tomt preview med kun fadnummer valgt viser T2 og ikke T1 (184)
  *  - Q22 oversigtslinjen "Arkiveres: …" i alle tilstande: forvalgt, blandet, kun vurdering og ingen arkivering (192, tilføjet efter reviewet)
  *  - Q23 hvornår kolonnevalget gemmes (de præciserede knapnavne i docs/SUPPLIER-UPLOAD.md): kun "Genberegn preview med tilpasset kolonnemapping" og "Anvend valgte ændringer", og panelteksten i Kolonnemapping (193)
+ *  - Q24 "Anvend"-formularen og knappen findes kun, når der er rækker (selve formularen, ikke teksten i panelet, som nu nævner knapnavnet) (184, 193)
  *
  * KØRES af tests/run.sh, mens røgtestens server kører:
  *     php tests/supplier_archive_qa_test.php http://127.0.0.1:8787 testadmin 'Test-Pass-12345!'
@@ -978,6 +979,34 @@ try {
         t_eq(['', ''], [$saved()['varenr'] ?? null, $saved()['variant'] ?? null], 'forudsætning: valget er stadig "Ignorer", før der anvendes');
         $http->follow($http->post('supplier_upload.php', ['action' => 'apply', 'preview_token' => $t3, 'apply_rows' => [0], 'product_0' => (string)$p]));
         t_eq(['sku', 'name'], [$saved()['varenr'] ?? null, $saved()['variant'] ?? null], 'apply gemmer varenr → sku og variant → name');
+    });
+
+    // ------------------------------------------------------------------------------------------
+    t_case('Q24 "Anvend"-formularen findes kun, når der er rækker – selve formularen og knappen, ikke teksten i panelet (kriterie 184, 193)', function () use ($pdo, $http, $remember, $plainUpload) {
+        db_product($pdo, 'TSTKIM-9931', 'TSTKIM Anvend Formular', [$GLOBALS['L3'] => 1]);
+        $row = ['TSTKIM-9931', 'TSTKIM Anvend Formular', 'TSTKIM Dist', '1', '0', '0', '1'];
+        // Knappen skal stå efter apply-formens skjulte felt uden en </form> imellem (strpos i stedet for regex: dropdown'ene gør siden stor nok til at udtømme PCRE's JIT-stak).
+        $applyForm = static function (string $html): bool {
+            $p = strpos($html, 'name="action" value="apply">');
+            $b = $p === false ? false : strpos($html, '<button>Anvend valgte ændringer</button>', $p);
+            return $b !== false && !str_contains(substr($html, $p, $b - $p), '</form>');
+        };
+        $panelMentions = static fn(string $html): bool => preg_match('#<details class="card"[^>]*>(.*?)</details>#s', $html, $m) === 1 && str_contains(page_text($m[1]), 'Anvend valgte ændringer');
+        // Normalt preview: panelet nævner knapnavnet, og der er en rigtig apply-formular med knappen i.
+        $remember('sku', 'name');
+        [$t, $body] = $plainUpload([$row]);
+        t_true($panelMentions($body), 'normalt preview: panelet nævner "Anvend valgte ændringer"');
+        t_true(has_apply_button($body) && $applyForm($body), 'normalt preview: knappen står i apply-formularen');
+        t_true(preg_match('#name="apply_rows\[\]" value="0"#', $body) === 1, 'normalt preview: række 0 kan afkrydses');
+        // Tomt preview (bevidst Ignorer på begge): panelet nævner stadig knapnavnet, men der er hverken knap eller apply-formular.
+        $map = $GLOBALS['lMap']; $map[$GLOBALS['col']['Varenr.']] = ''; $map[$GLOBALS['col']['Variant:']] = '';
+        $page = $http->follow($http->post('supplier_upload.php', ['action' => 'remap', 'preview_token' => $t, 'col_map' => $map]));
+        $body0 = $page['body'];
+        t_true($panelMentions($body0), 'tomt preview: panelet nævner stadig "Anvend valgte ændringer" (derfor skal selve knappen tjekkes)');
+        t_true(!has_apply_button($body0) && !$applyForm($body0) && !str_contains($body0, 'name="action" value="apply"') && !str_contains($body0, 'name="apply_rows[]"'), 'tomt preview: hverken knap, apply-formular eller afkrydsningsfelter');
+        // Og "Gæt kolonner forfra" bringer formularen tilbage.
+        $back = $http->follow($http->post('supplier_upload.php', ['action' => 'reguess', 'preview_token' => $t]))['body'];
+        t_true(has_apply_button($back) && $applyForm($back), 'efter reguess er apply-formularen tilbage');
     });
 } finally {
     db_cleanup($pdo);

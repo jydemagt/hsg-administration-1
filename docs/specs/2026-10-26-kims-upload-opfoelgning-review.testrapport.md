@@ -7,7 +7,7 @@
 
 ## Konklusion
 
-**KLAR.** (Tillæg 28-10-2026 om kriterie 192, O4 og tekstrettelserne efter reviewet: **KLAR**, se nederst.)
+**KLAR.** (Tillæg 28-10-2026 om kriterie 192, O4 og tekstrettelserne efter reviewet: **KLAR**. Tillæg 2 29-10-2026 om kriterie 193 og panelteksten: **KLAR**. Se nederst.)
 
 - **Ingen fejl i produktionskoden fundet.** Alle 25 kriterier (167–191) er bestået, og hvert kriterie er dækket af mindst én test, der fejler, hvis adfærden er forkert (mutationstest, se nedenfor).
 - Den fulde testpakke (`bash tests/run.sh`, frisk database) er grøn. Det eneste røde tjek er den kendte baseline-fejl på MariaDB 10.4 ("KAN afmeldingssiden ved databasefejl: HTTP 500 …" i nyhedsbrevstesten), som også fejlede før ændringerne og ikke tæller.
@@ -198,10 +198,56 @@ M01, M05 og M14 er allerede fanget af enhedstestene, så deres HTTP-kørsel er i
 
 **Observation (ikke-blokerende), O5:** paneltekstens "(undtagen varenummer og produktnavn – se ⚠ ved kolonnen)" er lidt bredere end reglen (redningen sker kun, når ingen anden nøglekolonne er valgt). Docs beskriver reglen præcist, og ⚠ vises kun, når redningen faktisk er sket, så det er ikke en fejl.
 
+## Tillæg 2, 29-10-2026: kriterie 193 (panelteksten i Kolonnemapping) og `has_apply_button()`
+
+**Konklusion for tillægget: KLAR.** Ingen fejl fundet. Produktionskoden er ikke rørt af testeren.
+
+- **Testet:** `165cea5` oven på `34bebac`. Den ændrer paneltekst i `supplier_upload.php` (l. 410), tilføjer kriterie 193 i spec-tillægget og ændrer testene (nyt tjek i Q23, hjælperen `has_apply_button()` og ti tilpassede linjer).
+- **Fuld kørsel** (`bash tests/run.sh`, frisk database, port 8793, én enkelt run.sh): 191 `[OK]`, og den **eneste** røde er den kendte nyhedsbrevsfejl ("KAN afmeldingssiden ved databasefejl: HTTP 500 …"). Kims enhedstest 653, testerens enhedstest 190, DB-test 108 + 123, flowtest 175, QA-test **338** (var 328: +4 fra udviklerens 193-tjek i Q23, +6 fra Q24). Smoke-tjekket for `reservations.php?status[]=…&q[]=…` er grønt.
+
+### Kriterie 193 mod spec'en, regel 4b og `docs/SUPPLIER-UPLOAD.md`
+
+| Krav i kriterie 193 | Resultat | Bevis |
+|---|---|---|
+| Panelet siger, at et husket "Ignorer kolonne" kun ikke bruges på varenummer eller produktnavn, når ingen kolonne ellers er valgt som varenummer, produktnavn eller fadnummer | BESTÅET | Panelet (l. 410): "Undtagelse: Er ingen kolonne valgt som varenummer, produktnavn eller fadnummer, bruges et husket "Ignorer kolonne" ikke på en kolonne med overskriften for varenummer eller produktnavn (se ⚠ ved kolonnen)." Det er præcis betingelsen i 4b (ingen `sku`, `name` eller `cask_number` efter gennemløb 1 og 2; kun varenummer og produktnavn; "overskriften for …" er en forenkling af "præcist alias"). Adfærden bag teksten er prøvet i QO4 og test 181/182: `Varenr.` forbliver Ignorer, når `Variant:` er ny, og når fadnummer er valgt. |
+| Panelet siger, at kun "Genberegn preview med tilpasset kolonnemapping" og "Anvend valgte ændringer" gemmer valget | BESTÅET | Panelet: "Dit valg gemmes, når du trykker "Genberegn preview med tilpasset kolonnemapping" eller "Anvend valgte ændringer"." Q23 viser adfærden: uploaden, "Hvad skal opdateres?", "Reservationer" og "Gæt kolonner forfra" gemmer ikke; `remap` og `apply` gemmer. Knapnavnene findes ordret i `supplier_upload.php` (l. 440 og 494). |
+| O5 er lukket | BESTÅET | Q23 tjekker, at den brede formulering "(undtagen varenummer og produktnavn – se ⚠ ved kolonnen)" og den gamle "genberegner eller anvender ændringerne" er væk. |
+| Overensstemmelse med docs | BESTÅET | `docs/SUPPLIER-UPLOAD.md` er ikke ændret i `165cea5` og siger allerede det samme ("Står der derefter hverken varenummer, produktnavn eller fadnummer … præcist er et alias …" og de to fulde knapnavne). |
+
+### De ti tilpassede linjer (`has_apply_button()`)
+
+Panelteksten indeholder nu selv "Anvend valgte ændringer", så en tekstsøgning på siden kan ikke længere vise, om knappen findes. De ti tilpassede linjer er seks positive (183, Q14, Q15 og tre i Q16) og fire negative (`emptyPage` i Q12, to i Q16 og Q21).
+
+- **Ændringen var nødvendig.** Udviklerens gamle testfil (`34bebac`) kørt mod den nye kode giver **præcis 10 fejl**, alle de negative tekstsøgninger (Q12 K1, K1 efter Kun lagerantal og K2; Q16 "ingen Anvend" og de fire i løkken; Q21 begge scopes). De positive tekstsøgninger bestod, men kunne ikke længere fejle, så de var blevet tomme.
+- **De påstår det samme og er ikke svækket.** Hver linje tester stadig, om "Anvend valgte ændringer" findes henholdsvis ikke findes, men nu på selve knappen `<button>Anvend valgte ændringer</button>`. De øvrige led i linjerne (`name="apply_rows[]"`, T1/T3, "Der er ingen rækker at anvende." osv.) er uændrede.
+- **Mutationstest** (kopi, aldrig i repoet):
+
+| Mutant | Fejlende tjek | Hvor |
+|---|---|---|
+| MA: "Anvend" vises ved 0 rækker (tabel og knap) | 14 | Q12 ×6, Q16 ×5, Q21 ×2, Q24 ×1 (alle fire negative linjer fanger den) |
+| MB: knappen mangler ved et normalt preview | 8 | Q12 ×1 (183), Q14, Q15, Q16 ×3, Q24 ×2 (alle seks positive linjer fanger den) |
+| MC: knappen hedder noget andet | 8 | samme som MB |
+| MD: panelteksten tilbage til den gamle | 5 | Q23 (193) og Q24 |
+| ME: undtagelsessætningen mangler | 1 | Q23 (193) |
+| MF: undtagelsen igen uden betingelsen | 2 | Q23 (193) |
+| MG: knapnavnene i panelet forkortes til "Genberegn" / "Anvend" | 3 | Q23 (193) og Q24 |
+
+- **Hjælperen er lidt snæver, så der er et supplement (Q24, tester).** `has_apply_button()` finder kun den ordrette markup `<button>…</button>`. Q24 tjekker derfor selve formularen: på et normalt preview står knappen i formularen med det skjulte felt `action=apply` og med afkrydsningsfelterne `apply_rows[]`; på et tomt preview findes hverken knap, formular (`name="action" value="apply"`) eller afkrydsningsfelter, selv om panelet stadig nævner knapnavnet; efter "Gæt kolonner forfra" er formularen tilbage. (Q24 bruger `strpos` i stedet for et regulært udtryk: dropdown'ene med alle produkter gør siden så stor, at PCRE's JIT-stak løber tør.)
+
+### Andre tjek i `tests/`, der kunne blive ramt
+
+Jeg har søgt i alle filer i `tests/` efter "Anvend valgte ændringer", "Anvend", "Genberegn", "Ignorer kolonne", "varenummer", "produktnavn", "fadnummer", "kolonnemapping", "foreslås automatisk", "genberegner", "anvender ændringerne", "Husket fra seneste" og `<details`. Resultat: ingen andre tjek læser panelteksten.
+- Kun `supplier_archive_qa_test.php` leder efter "Anvend valgte ændringer" på siden (de ti linjer, Q23 og Q24).
+- T3 ("⚠ Husket valg "Ignorer kolonne" er ikke brugt: …", tælles ×2) er ikke en delstreng af panelet; panelets "(se ⚠ ved kolonnen)" er en anden tekst, så T3-tællingerne er uændrede. T1 og T2 er hele sætninger, som ikke står i panelet.
+- Flowtestens tjek på hjælpeteksten under "Reservationer" ('Genberegn preview') og flashen efter "Gæt kolonner forfra" er andre elementer end panelet. `supplier_import_test.php` l. 636 (test 57) læser kildekoden til hjælpeteksten under "Reservationer", ikke panelet.
+- Den fulde kørsel bekræfter det: ingen andre tjek er røde.
+
+**Observation (ikke-blokerende), O6:** Panelet nævner "Anvend valgte ændringer" som en af de to knapper, der gemmer, også på et tomt preview, hvor den knap ikke vises (der er det kun "Genberegn preview med tilpasset kolonnemapping", der gemmer). Sætningen beskriver den generelle regel, så det er ikke forkert, kun lidt overflødigt. O5 er lukket.
+
 ## Ændrede filer (testeren)
 
 - `tests/supplier_opfoelgning_qa_test.php` (ny)
 - `tests/hook_throw_prepend.php` (ny, kun brugt af Q20)
-- `tests/supplier_archive_qa_test.php` (Q14–Q21 + hoved; Q22–Q23 i tillægget)
+- `tests/supplier_archive_qa_test.php` (Q14–Q21 + hoved; Q22–Q23 i tillæg 1, Q24 i tillæg 2)
 - `tests/run.sh` (kalder den nye enhedstest)
 - `docs/specs/2026-10-26-kims-upload-opfoelgning-review.testrapport.md` (denne rapport)
