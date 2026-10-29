@@ -1,4 +1,23 @@
-HSG ADMINISTRATION v11.2.0
+HSG ADMINISTRATION v11.3.0
+
+Version 11.3.0 – Kims uploadfil: Kun lagerantal og arkivering af reservationer
+------------------------------------------------------------------------------
+- Kims uploadfil (Leverandør-upload 1.2.1): Nyt valg "Hvad skal opdateres?". "Kun lagerantal"
+  opdaterer kun lageret pr. lokation, ændrer ingen produktdata og opretter ingen nye produkter.
+  Rækker uden match springes over. Valget huskes.
+- Arkivering af reservationer (Reservationer 1.3.0): Når Kims lager i alt for en vare er 0,
+  foreslår previewet at arkivere varens aktive reservationer. På sikre match er de valgt på
+  forhånd, og du kan fravælge dem. Arkiverede reservationer ses under den nye fane "Arkiveret"
+  i Reservationer og kan ikke genåbnes. Opdateringen tilføjer status "Arkiveret" i databasen.
+- Negative tal i Kims fil (fx "-1") skrives som 0 og vises i en bemærkning. Arkiveringen er
+  da ikke valgt på forhånd.
+- Tomt preview: Står Varenummer og Produktnavn til "Ignorer kolonne" fra sidste upload, vælges
+  de igen ved upload og vises med ⚠ i Kolonnemapping. Et tomt preview siger nu hvorfor, og
+  "Anvend" vises ikke, når der ingen rækker er.
+- "– Intet match –" springer altid rækken over.
+- Previews, der ikke anvendes, slettes efter 24 timer og kommer ikke med i backup.
+- Robusthed: Reservationer-siden tåler forkerte adresser, og en fejl i en udvidelse efter
+  import vælter ikke en gemt import.
 
 Version 11.2.0 – Kims uploadfil, fadnumre, nyhedsbrev og PHP-krav
 ------------------------------------------------------------------
