@@ -137,8 +137,9 @@ t_case('88 modules/products/migrations.php', function () use ($root) {
     t_eq('1.5.1', $manifest['version'] ?? null, 'products-version 1.5.1');
     $supplier = require $root.'/modules/supplier_upload/module.php';
     // Q2 ændrede ikke supplier_upload. Q1 (#176, spec 2026-10-22-kims-upload-lagertal-q1) hævede den til 1.1.2, og
-    // "Kun lagerantal" (spec 2026-10-26-kims-upload-kun-lagerantal, kriterie 162) hævede den til 1.2.0.
-    t_eq('1.2.0', $supplier['version'] ?? null, 'supplier_upload er 1.2.0 (Kun lagerantal)');
+    // "Kun lagerantal" (spec 2026-10-26-kims-upload-kun-lagerantal, kriterie 162) hævede den til 1.2.0, og opfølgningen på
+    // reviewet (spec 2026-10-26-kims-upload-opfoelgning-review, kriterie 189-190) hævede den til 1.2.1.
+    t_eq('1.2.1', $supplier['version'] ?? null, 'supplier_upload er 1.2.1 (opfølgning på review af Kun lagerantal)');
 });
 
 /* Tabel T i spec 2026-10-22-fadnummer-batch-byteoffset: tekst => [gammel candidates med mbstring, ny extract].

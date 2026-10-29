@@ -35,6 +35,12 @@ if php tests/supplier_import_test.php; then
 else
   bad "Enhedstest: Kims uploadfil fejlede"
 fi
+# Testerens supplement til opfølgningen på review (spec 2026-10-26-kims-upload-opfoelgning-review, kriterie 167-191)
+if php tests/supplier_opfoelgning_qa_test.php; then
+  ok "Enhedstest: Kims uploadfil, opfølgning på review (testerens supplement) bestået"
+else
+  bad "Enhedstest: Kims uploadfil, opfølgning på review (testerens supplement) fejlede"
+fi
 if php tests/product_enrichment_test.php; then
   ok "Enhedstest: fadnummer-udledning bestået"
 else
@@ -90,7 +96,8 @@ else
     else ok "Admin-login lykkedes"; fi
 
     # Hver side skal svare uden 500 og uden PHP-fejl i output
-    PAGES="admin.php status.php products.php brands.php stock.php reservations.php reservations.php?status=archived locations.php
+    PAGES="admin.php status.php products.php brands.php stock.php reservations.php reservations.php?status=archived
+           reservations.php?status%5B%5D=archived&q%5B%5D=x locations.php
            catalog.php reports.php quality.php users.php system.php backup.php import_center.php
            supplier_upload.php image_check.php update.php admin-account.php
            newsletter.php newsletter_recipients.php newsletter_import.php
@@ -102,6 +109,11 @@ else
         bad "$p → HTTP $code / PHP-fejl i output"
       else ok "$p → HTTP $code"; fi
     done
+    # KAN-1 (spec 2026-10-26-kims-upload-opfoelgning-review, kriterie 186): status og q som lister giver standardfanen uden advarsler
+    code=$(curl -s -b "$JAR" -o /tmp/hsg-page.html -w '%{http_code}' "$BASE/reservations.php?status%5B%5D=archived&q%5B%5D=x")
+    if [ "$code" = "200" ] && ! grep -qiE 'Fatal error|Parse error|Uncaught|Warning:' /tmp/hsg-page.html && grep -qF 'class="button " href="reservations.php">Alle reservationer' /tmp/hsg-page.html; then
+      ok "reservations.php med status[] og q[] viser standardfanen (HTTP $code)"
+    else bad "reservations.php med status[] og q[] → HTTP $code / PHP-fejl eller forkert fane"; fi
 
     # Sikkerhed: admin-side uden login skal afvises
     code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/users.php")

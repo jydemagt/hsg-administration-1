@@ -42,14 +42,15 @@ Ekstra regler:
 - **Lokationskolonner gættes aldrig automatisk.** De vælges én gang manuelt ("Lagerantal for Christiansfeld" osv.) og huskes derefter.
 
 ### Kolonnevalg huskes
-Kolonnemappingen gemmes server-side i `hsg_settings` (nøgle `supplier_import_header_map`), når preview genberegnes, eller ændringerne anvendes. Den gælder derfor på tværs af enheder og browsere.
+Kolonnemappingen gemmes server-side i `hsg_settings` (nøgle `supplier_import_header_map`), når du trykker "Genberegn preview med tilpasset kolonnemapping" eller "Anvend valgte ændringer". Den gælder derfor på tværs af enheder og browsere.
 
 - Kolonner matches på overskriftsnavn (normaliseret), ikke på placering, så rækkefølgen må gerne ændre sig.
-- En kolonne, der sidst stod til "Ignorer kolonne", forbliver ignoreret.
-- Kun nye overskrifter gættes automatisk, og et HSG-felt, der sidst ikke var knyttet til nogen kolonne, gættes ikke igen.
+- En kolonne, der sidst stod til "Ignorer kolonne", forbliver ignoreret – undtagen i redningen nedenfor.
+- Kun nye overskrifter gættes automatisk, og et HSG-felt, der sidst ikke var knyttet til nogen kolonne, gættes ikke igen – undtagen varenummer og produktnavn ved et præcist match (fx "Varenr." og "Variant:"). Delvise match er stadig blokeret, så fx "Kundenummer" ikke bliver varenummer.
+- **Redning ved upload:** Står der derefter hverken varenummer, produktnavn eller fadnummer i kolonnevalget, kan ingen rækker matches. Så bruges et husket "Ignorer kolonne" ikke på en kolonne, hvis overskrift præcist er et alias for varenummer eller produktnavn (første kolonne fra venstre pr. felt). Panelet åbner af sig selv og viser "⚠ Husket valg "Ignorer kolonne" er ikke brugt: uden varenummer og produktnavn kan ingen rækker matches." ved kolonnen. Det rettede valg gemmes, når du trykker "Genberegn preview med tilpasset kolonnemapping" eller "Anvend valgte ændringer". Knapperne "Genberegn preview" ved "Hvad skal opdateres?" og "Reservationer" gemmer ikke kolonnevalget. Er en anden nøglekolonne valgt (fx fadnummer), respekteres "Ignorer". Andre kolonner (fx "Lagerbeholdning") reddes ikke, og et manuelt valg i kolonnemapping-panelet respekteres altid.
 
 ### Gæt kolonner forfra
-Knappen **"Gæt kolonner forfra"** i kolonnemapping-panelet ser bort fra det huskede valg og gætter alle kolonner igen. De huskede lokationskolonner lægges ind igen bagefter. Intet gemmes, før du trykker "Genberegn" eller "Anvend".
+Knappen **"Gæt kolonner forfra"** i kolonnemapping-panelet ser bort fra det huskede valg og gætter alle kolonner igen. De huskede lokationskolonner lægges ind igen bagefter. Intet gemmes, før du trykker "Genberegn preview med tilpasset kolonnemapping" eller "Anvend valgte ændringer".
 
 ## Varenumre med bogstav til sidst
 Et varenummer med ét bogstav direkte efter et tal (fx `17-1028a`) er en variant af varenummeret uden bogstav (`17-1028`).
@@ -87,6 +88,10 @@ Tomme felter fra leverandørfilen overskriver aldrig eksisterende HSG-data. Undt
 
 Previews fra en ældre version af systemet kan ikke anvendes. Upload filen igen.
 
+**Et tomt preview siger hvorfor.** Er hverken varenummer, produktnavn eller fadnummer valgt i kolonnemappingen, står der "Bemærk: Varenummer og produktnavn er ikke valgt, så ingen rækker kan matches. …". Er de valgt, men gav filen ingen rækker (kolonnerne er tomme), står der "Bemærk: Filen gav ingen rækker. …". Kolonnemapping-panelet åbner af sig selv, og i stedet for tabellen og "Anvend valgte ændringer" vises "Der er ingen rækker at anvende." med knappen "Annuller preview". Et tomt preview kan ikke anvendes: Intet gemmes, heller ikke kolonnevalget.
+
+**Previews ryddes op.** Et preview gemmes som en fil i `storage/import-previews/` og indeholder bl.a. kundenavne og referencer fra reservationerne. Det slettes, når ændringerne anvendes. Et preview, der ikke anvendes (også efter "Annuller preview"), slettes automatisk efter 24 timer (ved næste upload) og kommer ikke med i backup.
+
 ## Lager
 Hvordan lageret skrives, afgøres af kolonnevalget:
 
@@ -102,13 +107,14 @@ Hvordan lageret skrives, afgøres af kolonnevalget:
 
 - Mellemrum (også hårde mellemrum) før og efter tallet ignoreres. En celle med kun mellemrum er tom.
 - Der må højst være **5 cifre før decimaltegnet** (så højst 100.000 efter afrunding), og foranstillede nuller tæller med. Så bliver EAN-numre, lange varenumre og meget store tal ugyldige. Decimaldelen må være så lang, den vil.
-- Decimaler afrundes **én gang** til nærmeste hele tal (,5 rundes væk fra 0), så `0.4999` bliver 0. Negative tal bliver 0.
+- Decimaler afrundes **én gang** til nærmeste hele tal (,5 rundes væk fra 0), så `0.4999` bliver 0.
+- **Negative tal bliver 0, får en bemærkning, og arkiveringen er ikke forvalgt.** Et tal er negativt, når den afrundede værdi er under 0 (`-1`, `-0,5`, `-99999`, men ikke `-0` eller `-0,4`). Varen får bemærkningen "Negativ værdi „-1“ for Gert behandles som 0." (eller "… for lagerantal i alt behandles som 0."). "Fil:"-linjen viser 0. Se også [Forvalg](#forvalg).
 - Ugyldig tekst vises i bemærkningen og på "Fil:"-linjen, afkortet til 40 tegn + "…".
 
 | Celle | Tolkes som |
 |---|---|
 | `41`, `0`, `41.0` | 41, 0, 41 |
-| `2,4`, `2.6`, `-2` | 2, 3, 0 |
+| `2,4`, `2.6`, `-2` | 2, 3, 0 (negativ: bemærkning) |
 | `0.4999`, `2,4999` | 0, 2 |
 | `0.5`, `0,5`, `2,5`, `2,5000` | 1, 1, 3, 3 |
 | `99999` | 99999 |
@@ -179,6 +185,8 @@ Vurderingen sker **pr. vare i alt**, ikke pr. lokation:
 
 Derfor giver følgende **aldrig** arkivering: varer, der ikke står i filen (eller ligger uden for brand-filteret), varer uden match, rækker hvor alle lokationsceller er tomme, ugyldige celler, en ugyldig total og en kontrolafvigelse. En tom lokationscelle tæller som 0 efter den sædvanlige regel, når rækken har et tal i en anden lokationskolonne. Flettede varer (17-1028 + 17-1028a) bruger summen af rækkerne.
 
+Et negativt tal (fx "-1") tæller som 0, så varen kan være entydigt 0. Arkiveringen tilbydes da, men er aldrig valgt på forhånd (se [Forvalg](#forvalg)).
+
 **Eksempler:**
 
 | | Fil | HSG før | Resultat |
@@ -193,6 +201,7 @@ Alle aktive reservationer på det matchede produkt, **som ligger på en lokation
 ### Forvalg
 - På en række med et **sikkert match** (90 % eller mere uden flag) er alle varens reservationer forvalgt til arkivering, og rækken er valgt, også selv om lageret ikke ændres.
 - På rækker, der kræver vurdering, er arkiveringen ikke forvalgt.
+- Har Kims fil en negativ værdi for varen (en lokation eller "Lagerantal i alt"), er arkiveringen heller ikke forvalgt, selv ved et sikkert match. Varen får bemærkningen "Bemærk: Arkiveringen er ikke valgt på forhånd, fordi Kims fil har en negativ værdi for varen." Admin kan selv afkrydse reservationerne. Rækkens forvalg følger de normale regler (arkiveringen alene gør ikke rækken valgt).
 - Previewets tal bygger på forvalget: Lagerændringen beregnes, som om de forvalgte reservationer er arkiveret, og viser fx "Gert: 2 → 0 (fil 0, 2 reserveret arkiveres)". Advarslen ved "brug dem uændret" og bemærkningen i tilstand Total bruger også tallene efter forvalget.
 - Fravælges en reservation i browseren, beregnes previewet ikke igen. "Anvend" beregner altid ud fra de reservationer, der faktisk er afkrydset. En fravalgt reservation forbliver aktiv og lægges oven i Kims tal (eller giver negativt disponibelt med "brug dem uændret").
 - "Reserveret i HSG: …" viser stadig alle aktive reservationer.
@@ -232,4 +241,4 @@ Afkrydsede reservationer, der ikke er kandidater på en markeret række, ignorer
 ### Audit og hooks
 - `supplier_import.apply` får `import_scope`, `reservations_archived`, `reservations_archived_qty` og `rows_skipped`. Pr. produkt står de arkiverede reservationer i `archived_reservations`, og lagerændringerne har `archived`.
 - Hver arkiveret reservation logges som `reservation.archive` med kørslens id (`import_run_id`), så den kan findes i audit-loggen på sit id.
-- Efter commit kaldes hooken `reservation.archived` pr. reservation (`reservation_id`, `product_id`, `location_id`, `quantity`, `source`).
+- Efter commit kaldes hooken `reservation.archived` pr. reservation (`reservation_id`, `product_id`, `location_id`, `quantity`, `source`). En hook, der fejler, skrives i fejlloggen og vælter ikke den gemte import.

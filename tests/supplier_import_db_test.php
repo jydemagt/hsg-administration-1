@@ -400,7 +400,8 @@ try {
         t_eq($newType, db_status_column_type($pdo), 'COLUMN_TYPE på den friske installation');
         $ver = $pdo->prepare('SELECT version FROM hsg_module_versions WHERE module_id=?');
         $ver->execute(['reservations']); t_eq('1.3.0', $ver->fetchColumn(), 'hsg_module_versions.reservations = 1.3.0');
-        $ver->execute(['supplier_upload']); t_eq('1.2.0', $ver->fetchColumn(), 'hsg_module_versions.supplier_upload = 1.2.0');
+        // 1.2.1: opfølgning på review (spec 2026-10-26-kims-upload-opfoelgning-review, kriterie 189-190).
+        $ver->execute(['supplier_upload']); t_eq('1.2.1', $ver->fetchColumn(), 'hsg_module_versions.supplier_upload = 1.2.1');
         $file = $root.'/modules/reservations/migrations.php';
         $before = get_defined_functions()['user'];
         ob_start();
