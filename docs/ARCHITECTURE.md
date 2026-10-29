@@ -76,6 +76,7 @@ Et moduls `hooks.php` indlæses af `auth.php` på hver side, når modulet er sl�
 - Fuld administration kræver separat admin-login.
 - Nye sider skal altid bruge `require_capability()` eller `require_admin()`.
 - POST-formularer beskyttes af CSRF-kontrol.
+- En POST afvises (419), hvis sessionen ikke har et token, også når formularen heller ikke sender et.
 - SQL skal bruge prepared statements ved brugerinput.
 
 ## Opdateringsflow

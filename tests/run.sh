@@ -29,6 +29,12 @@ if out=$(php tests/newsletter_test.php 2>&1); then
 else
   echo "$out"; bad "Enhedstest af nyhedsbrevet fejlede"
 fi
+# CSRF: verify_csrf() godtager aldrig et tomt eller manglende token (spec 2026-10-24-csrf-tom-token, blok C)
+if out=$(php tests/csrf_test.php 2>&1); then
+  ok "$out"
+else
+  echo "$out"; bad "Enhedstest af verify_csrf fejlede"
+fi
 info "Enhedstest: Kims uploadfil og fadnummer-udledning (ingen ZipArchive)"
 if php tests/supplier_import_test.php; then
   ok "Enhedstest: Kims uploadfil bestået"
@@ -79,6 +85,13 @@ else
     sleep 1
     token() { curl -s -b "$JAR" -c "$JAR" "$1" | grep -o 'name="csrf" value="[^"]*"' | head -1 | sed 's/.*value="//;s/"$//'; }
 
+    # CSRF: install.php før installationen. En POST uden cookie og uden csrf afvises (419). Uden db_user
+    # kan den aldrig installere, heller ikke hvis kontrollen mangler (spec 2026-10-24-csrf-tom-token, blok A).
+    code=$(curl -s -o /tmp/hsg-page.html -w '%{http_code}' -d 'db_name=csrf-test' "$BASE/install.php")
+    if [ "$code" = "419" ] && [ ! -f config.php ]; then ok "install.php: POST uden session og uden csrf afvist (HTTP 419), ingen config.php"
+    elif grep -qF 'Webhotellet mangler' /tmp/hsg-page.html; then bad "install.php viser manglesiden (en krævet PHP-udvidelse mangler på testserveren), så CSRF-kontrollen blev ikke nået"
+    else bad "install.php: POST uden session og uden csrf gav HTTP $code (config.php findes: $([ -f config.php ] && echo ja || echo nej))"; fi
+
     T=$(token "$BASE/install.php")
     curl -s -b "$JAR" -c "$JAR" -o /tmp/hsg-install.html -w '%{http_code}' "$BASE/install.php" \
       --data-urlencode "csrf=$T" --data-urlencode "db_host=${HSG_TEST_DB_HOST:-127.0.0.1}" \
@@ -121,6 +134,46 @@ else
     # Sikkerhed: POST uden CSRF skal afvises
     code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' -d 'x=1' "$BASE/locations.php")
     [ "$code" = "419" ] || [ "$code" = "403" ] && ok "POST uden CSRF afvist (HTTP $code)" || bad "POST uden CSRF gav HTTP $code"
+
+    # CSRF: sessioner uden token kan ikke poste, heller ikke med et tomt csrf (spec 2026-10-24-csrf-tom-token, blok B).
+    # Referencen er dagens 419-svar fra locations.php med admin-sessionen (som tjekket lige ovenfor).
+    CS_REF=$(mktemp); CS_BODY=$(mktemp); CS_J1=$(mktemp); CS_J2=$(mktemp); CS_J3=$(mktemp)
+    code=$(curl -s -b "$JAR" -o "$CS_REF" -w '%{http_code}' -d 'x=1' "$BASE/locations.php")
+    [ "$code" = "419" ] && [ -s "$CS_REF" ] && ok "CSRF-reference: locations.php uden csrf giver HTTP 419" || bad "CSRF-reference: locations.php uden csrf gav HTTP $code"
+    cs_419() { # <http-kode> <beskrivelse>: 419 og brødteksten er byte-identisk med referencen
+      if [ "$1" = "419" ] && cmp -s "$CS_REF" "$CS_BODY"; then ok "$2 afvist (HTTP 419, samme svar som før)"
+      else bad "$2 gav HTTP $1, ikke 419 med samme svar ($(head -c 120 "$CS_BODY" | tr '\n' ' '))"; fi
+    }
+    cs_attempts() { # admin-login.php må ikke være nået: ingen loginforsøg for csrf-test
+      local n; n=$(php tests/newsletter_sql.php "SELECT COUNT(*) FROM lager_login_attempts WHERE username='csrf-test'")
+      [ "$n" = "0" ] && ok "$1: login-logikken blev ikke nået (0 loginforsøg for csrf-test)" || bad "$1: login-logikken blev nået ($n loginforsøg for csrf-test)"
+    }
+    code=$(curl -s -o "$CS_BODY" -w '%{http_code}' -d 'username=csrf-test' -d 'password=forkert' "$BASE/admin-login.php")
+    cs_419 "$code" "admin-login.php uden cookie og uden csrf"; cs_attempts "admin-login.php uden cookie og uden csrf"
+    code=$(curl -s -o "$CS_BODY" -w '%{http_code}' -d 'csrf=' -d 'username=csrf-test' -d 'password=forkert' "$BASE/admin-login.php")
+    cs_419 "$code" "admin-login.php uden cookie med tomt csrf"; cs_attempts "admin-login.php uden cookie med tomt csrf"
+    code=$(curl -s -o "$CS_BODY" -w '%{http_code}' -X POST "$BASE/admin-login.php")
+    cs_419 "$code" "admin-login.php uden cookie og uden body"
+    # Linksession uden token: direkte link fra installationen, hentet uden -L, så sessionen ikke viser en formular
+    CS_LINK=$(grep -o '?k=[a-f0-9]\{64\}' /tmp/hsg-install.html | head -1)
+    if [ -z "$CS_LINK" ]; then bad "CSRF: fandt intet direkte link (?k=) i installationssiden"
+    else
+      code=$(curl -s -b "$CS_J1" -c "$CS_J1" -o /dev/null -w '%{http_code}' "$BASE/$CS_LINK")
+      [ "$code" = "302" ] && ok "Direkte link uden at følge viderestillingen giver HTTP 302" || bad "Direkte link gav HTTP $code, ikke 302"
+      code=$(curl -s -b "$CS_J1" -c "$CS_J1" -o "$CS_BODY" -w '%{http_code}' -d 'x=1' "$BASE/status.php")
+      cs_419 "$code" "status.php fra linksession uden token, uden csrf"
+      code=$(curl -s -b "$CS_J2" -c "$CS_J2" -o /dev/null -w '%{http_code}' "$BASE/$CS_LINK")
+      [ "$code" = "302" ] || bad "Direkte link (anden session) gav HTTP $code, ikke 302"
+      code=$(curl -s -b "$CS_J2" -c "$CS_J2" -o "$CS_BODY" -w '%{http_code}' -d 'csrf=' -d 'x=1' "$BASE/status.php")
+      cs_419 "$code" "status.php fra linksession uden token, med tomt csrf"
+      # Kontrol: en linksession, der har vist status.php (og dermed fået et token), kan stadig poste
+      curl -s -b "$CS_J3" -c "$CS_J3" -o /dev/null "$BASE/$CS_LINK"
+      CS_T=$(curl -s -b "$CS_J3" -c "$CS_J3" "$BASE/status.php" | grep -o 'name="csrf" value="[^"]*"' | head -1 | sed 's/.*value="//;s/"$//')
+      code=$(curl -s -b "$CS_J3" -c "$CS_J3" -o "$CS_BODY" -w '%{http_code}' --data-urlencode "csrf=$CS_T" -d 'x=1' "$BASE/status.php")
+      if [ -n "$CS_T" ] && [ "$code" = "200" ] && ! grep -qiE 'Fatal error|Parse error|Uncaught|Warning:' "$CS_BODY"; then ok "status.php fra linksession med sidens csrf godtaget (HTTP 200)"
+      else bad "status.php fra linksession med sidens csrf gav HTTP $code (token fundet: $([ -n "$CS_T" ] && echo ja || echo nej))"; fi
+    fi
+    rm -f "$CS_REF" "$CS_BODY" "$CS_J1" "$CS_J2" "$CS_J3"
     # Sikkerhed: status fra URL'en må ikke kunne bryde ud af href i Produkter (XSS-regression)
     code=$(curl -s -g -b "$JAR" -o /tmp/hsg-page.html -w '%{http_code}' "$BASE/products.php?status=%22%3E%3Cscript%3Ealert(1)%3C/script%3E")
     if [ "$code" != "200" ] || grep -qiE 'Fatal error|Parse error|Uncaught|Warning:' /tmp/hsg-page.html; then
@@ -189,6 +242,9 @@ else
 
     # PHP-krav, testerens supplement: Systemstatus og install.php med og uden mbstring (kriterie 116-120)
     source "$ROOT/tests/php_krav_tester.sh"
+
+    # CSRF, testerens supplement: liste, forkert token og multipart mod login, linksession og auth-sider (spec 2026-10-24-csrf-tom-token)
+    source "$ROOT/tests/csrf_tester.sh"
 
     grep -iE 'Fatal|Uncaught' /tmp/hsg-php-server.log && bad "PHP-fejl i serverlog"
   fi

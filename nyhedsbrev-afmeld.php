@@ -71,8 +71,8 @@ try {
             exit;
         }
 
-        // verify_csrf() godtager en tom formular, hvis sessionen heller ikke har et token (fx en POST
-        // uden cookies). Her kræves derfor også, at både formular og session har et token.
+        // Siden har sin egen kontrol (token i både formular og session), så en udløbet formular får
+        // sin egen 419-side med et link til at prøve igen. verify_csrf() bagefter er lige så streng.
         $postedCsrf = $_POST['csrf'] ?? '';
         if (!is_string($postedCsrf) || $postedCsrf === '' || (string)($_SESSION['csrf'] ?? '') === '' || !hash_equals((string)$_SESSION['csrf'], $postedCsrf)) {
             hsg_newsletter_public_page(419, 'Afmeld nyhedsbrevet', '<p>Formularen er udløbet. <a href="nyhedsbrev-afmeld.php?t='.h($token).'">Åbn siden igen</a>, og tryk på knappen.</p>');
