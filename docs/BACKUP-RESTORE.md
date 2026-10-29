@@ -3,7 +3,7 @@
 ## Backupstrategi
 
 - Natlig DATA-backup: database + mutable uploads.
-- Ugentlig FULL-backup: hele applikationen (undtagen `config.php` og gamle backups) + database + uploads + restore-værktøj.
+- Ugentlig FULL-backup: hele applikationen (undtagen `config.php`, gamle backups og ikke-anvendte previews fra Kims uploadfil) + database + uploads + restore-værktøj.
 - Lokal kopi gemmes i `storage/backups/`, som er beskyttet mod direkte webadgang via `.htaccess`.
 - Hvis OneDrive er aktiveret, uploades samme ZIP til OneDrive.
 - OneDrive client secret og cron-nøgle udelades fra database-dumpet og skal genindtastes efter en fuld restore.

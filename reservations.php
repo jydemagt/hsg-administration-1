@@ -101,8 +101,9 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 }
 
 $pid=(int)($_GET['product']??0);
-$q=trim((string)($_GET['q']??''));
-$showStatus=trim((string)($_GET['status']??''));
+// Kun tekst bruges (status[]=… eller q[]=… i adressen giver standardvisningen uden PHP-advarsler).
+$q=is_string($_GET['q']??null)?trim($_GET['q']):'';
+$showStatus=is_string($_GET['status']??null)?trim($_GET['status']):'';
 
 $products=$pdo->query("SELECT p.id,p.sku,p.name FROM lager_products p LEFT JOIN (SELECT product_id,SUM(quantity) physical FROM lager_stock GROUP BY product_id) st ON st.product_id=p.id LEFT JOIN (SELECT product_id,SUM(quantity) reserved FROM lager_reservations WHERE status='reserved' GROUP BY product_id) rs ON rs.product_id=p.id WHERE p.status='active' AND COALESCE(st.physical,0)-COALESCE(rs.reserved,0)>0 ORDER BY p.name")->fetchAll();
 $locs=get_locations($pdo,true);
@@ -122,7 +123,7 @@ if($q !== ''){
   $params = array_merge($params, [$like, $like, $like, $like, $like]);
 }
 
-if(in_array($showStatus, ['reserved','completed','cancelled'], true)){
+if(in_array($showStatus, ['reserved','completed','cancelled','archived'], true)){
   $conditions[] = "r.status = ?";
   $params[] = $showStatus;
 }
@@ -151,7 +152,9 @@ page_header('Reservationer');
     <a class="button <?=$showStatus==='reserved'?'':'secondary'?>" href="reservations.php?status=reserved<?= $q ? '&q='.urlencode($q) : '' ?>">Reserverede</a>
     <a class="button <?=$showStatus==='completed'?'':'secondary'?>" href="reservations.php?status=completed<?= $q ? '&q='.urlencode($q) : '' ?>">Solgt / Afsluttet</a>
     <a class="button <?=$showStatus==='cancelled'?'':'secondary'?>" href="reservations.php?status=cancelled<?= $q ? '&q='.urlencode($q) : '' ?>">Annulleret</a>
+    <a class="button <?=$showStatus==='archived'?'':'secondary'?>" href="reservations.php?status=archived<?= $q ? '&q='.urlencode($q) : '' ?>">Arkiveret</a>
   </div>
+  <?php if($showStatus==='archived'):?><p class="muted">Arkiverede reservationer er afsluttet ved upload af Kims fil, fordi varen ikke længere havde lager i filen. Lageret blev ikke nedskrevet ved arkiveringen. Detaljer står i audit-loggen.</p><?php endif;?>
 </div>
 
 <?php if(can('reservations.create')):?>

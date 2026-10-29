@@ -47,7 +47,7 @@ function require_admin(): void { if(!is_admin()){http_response_code(403);exit('D
 function money_dkk(mixed $value): string { return ($value===null||$value==='')?'-':number_format((float)$value,2,',','.').' kr.'; }
 function parse_decimal(mixed $value): ?float { $s=trim((string)$value);if($s==='')return null;$s=str_replace(['kr.','kr',' '],'',$s);if(str_contains($s,',')&&str_contains($s,'.'))$s=str_replace('.','',$s);$s=str_replace(',','.',$s);return is_numeric($s)?(float)$s:null; }
 function product_status_label(string $s): string { return ['active'=>'Aktiv','inactive'=>'Inaktiv','discontinued'=>'Udgået'][$s]??$s; }
-function reservation_status_label(string $s): string { return ['reserved'=>'Reserveret','completed'=>'Solgt/afsluttet','cancelled'=>'Annulleret'][$s]??$s; }
+function reservation_status_label(string $s): string { return ['reserved'=>'Reserveret','completed'=>'Solgt/afsluttet','cancelled'=>'Annulleret','archived'=>'Arkiveret'][$s]??$s; }
 function app_version(): string { return (string)(require __DIR__.'/app_version.php'); }
 function nav_active(string $file): string { return basename($_SERVER['SCRIPT_NAME']??'')===$file?'active':''; }
 function product_image_url(?string $path): string { return ($path&&is_file(__DIR__.'/'.$path))?$path:'assets/bottle-placeholder.svg'; }

@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS lager_reservations (
   customer_name VARCHAR(180) NULL,
   reference VARCHAR(180) NULL,
   note TEXT NULL,
-  status ENUM('reserved','completed','cancelled') NOT NULL DEFAULT 'reserved',
+  status ENUM('reserved','completed','cancelled','archived') NOT NULL DEFAULT 'reserved',
   created_by INT UNSIGNED NULL,
   created_by_admin INT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

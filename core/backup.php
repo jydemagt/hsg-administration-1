@@ -62,7 +62,7 @@ function hsg_dump_database(PDO $pdo, string $dest): array {
 function hsg_backup_excluded_relpath(string $rel): bool {
     $rel=ltrim(str_replace('\\','/',$rel),'/');
     if(in_array($rel,['config.php','.env','config.local.php'],true)) return true; // new secrets are entered during restore
-    foreach(['storage/backups/','storage/tmp/','.git/','.idea/'] as $prefix){
+    foreach(['storage/backups/','storage/tmp/','storage/import-previews/','.git/','.idea/'] as $prefix){ // import-previews: ikke-anvendte previews med kundenavne
         if(str_starts_with($rel,$prefix)) return true;
     }
     if(in_array($rel,['restore.php','database.sql','manifest.json','README-RESTORE.txt'],true)) return true;
